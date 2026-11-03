@@ -1,0 +1,82 @@
+interpreters:
+  - id: interpreter.shell-code
+    commands:
+      - bash
+      - sh
+    options:
+      - name: -c
+        value-styles:
+          - next
+          - attached
+    capability: dynamic-execution
+
+  - id: interpreter.python-code
+    commands:
+      - python
+      - python3
+    options:
+      - name: -c
+        value-styles:
+          - next
+          - attached
+    capability: dynamic-execution
+
+  - id: interpreter.perl-code
+    commands:
+      - perl
+    options:
+      - name: -e
+        value-styles:
+          - next
+          - attached
+      - name: -E
+        value-styles:
+          - next
+          - attached
+    capability: dynamic-execution
+
+  - id: interpreter.ruby-code
+    commands:
+      - ruby
+    options:
+      - name: -e
+        value-styles:
+          - next
+          - attached
+    capability: dynamic-execution
+
+  - id: interpreter.node-code
+    commands:
+      - node
+    options:
+      - name: -e
+        value-styles:
+          - next
+          - attached
+      - name: --eval
+        value-styles:
+          - next
+          - equals
+    capability: dynamic-execution
+
+  - id: interpreter.php-code
+    commands:
+      - php
+    options:
+      - name: -r
+        value-styles:
+          - next
+          - attached
+    capability: dynamic-execution
+
+  - id: interpreter.lua-code
+    commands:
+      - lua
+      - luajit
+    options:
+      - name: -e
+        value-styles:
+          - next
+          - attached
+    capability: dynamic-execution
+

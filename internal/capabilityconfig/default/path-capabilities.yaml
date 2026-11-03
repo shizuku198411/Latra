@@ -1,0 +1,17 @@
+path-capabilities:
+  project:
+    read: {id: path.project.read, capability: project-read}
+    write: {id: path.project.write, capability: project-write}
+  sensitive:
+    read: {id: path.sensitive.read, capability: credential-read}
+  state:
+    read: {id: path.state.read, capability: state-read}
+    write: {id: path.state.write, capability: state-write}
+  device:
+    read: {id: path.device.read, capability: device-access}
+    write: {id: path.device.write, capability: device-access}
+  persistence:
+    read: {id: path.persistence.read, capability: persistence}
+    write: {id: path.persistence.write, capability: persistence}
+  system:
+    write: {id: path.system.write, capability: system-modification}

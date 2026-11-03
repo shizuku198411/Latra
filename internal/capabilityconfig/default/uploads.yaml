@@ -1,0 +1,45 @@
+upload-rules:
+  - id: command.curl-upload
+    commands:
+      - curl
+    options:
+      - name: -d
+        value-styles:
+          - next
+          - attached
+      - name: --data
+        value-styles:
+          - next
+          - equals
+      - name: --data-binary
+        value-styles:
+          - next
+          - equals
+      - name: -F
+        value-styles:
+          - next
+          - attached
+      - name: --form
+        value-styles:
+          - next
+          - equals
+      - name: -T
+        value-styles:
+          - next
+          - attached
+      - name: --upload-file
+        value-styles:
+          - next
+          - equals
+    capability: external-send
+
+  - id: command.wget-upload
+    commands:
+      - wget
+    options:
+      - name: --post-file
+        value-styles:
+          - next
+          - equals
+    capability: external-send
+

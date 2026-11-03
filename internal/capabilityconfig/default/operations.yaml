@@ -1,0 +1,23 @@
+operation-rules:
+  - id: operation.dynamic-eval-source
+    operation-kinds:
+      - eval
+      - source
+    capabilities:
+      - dynamic-execution
+
+  - id: operation.dynamic-command
+    operation-kinds:
+      - command-invocation
+    command-resolution: unresolved
+    capabilities:
+      - dynamic-execution
+
+  - id: operation.code-execution
+    operation-kinds:
+      - eval
+      - source
+      - function-invocation
+    capabilities:
+      - code-execution
+

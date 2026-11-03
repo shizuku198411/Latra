@@ -1,0 +1,440 @@
+file-command-rules:
+  - id: file.copy-normal
+    commands:
+      - cp
+      - mv
+      - install
+    match:
+      excluded-options:
+        - name: -t
+          value-styles:
+            - next
+        - name: --target-directory
+          value-styles:
+            - next
+            - equals
+    operands:
+      - selector: all-but-last
+        access: read
+      - selector: last
+        access: write
+
+  - id: file.copy-target-directory
+    commands:
+      - cp
+      - mv
+      - install
+    match:
+      any-options:
+        - name: -t
+          value-styles:
+            - next
+        - name: --target-directory
+          value-styles:
+            - next
+            - equals
+    options:
+      - name: -t
+        value-styles:
+          - next
+      - name: --target-directory
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: all
+        access: read
+    option-operands:
+      - options:
+          - name: -t
+            value-styles:
+              - next
+          - name: --target-directory
+            value-styles:
+              - next
+              - equals
+        access: write
+
+  - id: file.read-all
+    commands:
+      - cat
+      - less
+    operands:
+      - selector: all
+        access: read
+
+  - id: file.read-head-tail
+    commands:
+      - head
+      - tail
+    options:
+      - name: -n
+        value-styles:
+          - next
+          - attached
+      - name: --lines
+        value-styles:
+          - next
+          - equals
+      - name: -c
+        value-styles:
+          - next
+          - attached
+      - name: --bytes
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: all
+        access: read
+
+  - id: file.grep-pattern-operand
+    commands:
+      - grep
+    match:
+      excluded-options:
+        - name: -e
+          value-styles:
+            - next
+            - attached
+        - name: --regexp
+          value-styles:
+            - next
+            - equals
+        - name: -f
+          value-styles:
+            - next
+            - attached
+        - name: --file
+          value-styles:
+            - next
+            - equals
+    options:
+      - name: -A
+        value-styles:
+          - next
+          - attached
+      - name: --after-context
+        value-styles:
+          - next
+          - equals
+      - name: -B
+        value-styles:
+          - next
+          - attached
+      - name: --before-context
+        value-styles:
+          - next
+          - equals
+      - name: -C
+        value-styles:
+          - next
+          - attached
+      - name: --context
+        value-styles:
+          - next
+          - equals
+      - name: -f
+        value-styles:
+          - next
+          - attached
+      - name: --file
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: all-but-first
+        access: read
+    option-operands:
+      - options:
+          - name: -f
+            value-styles:
+              - next
+              - attached
+          - name: --file
+            value-styles:
+              - next
+              - equals
+        access: read
+
+  - id: file.grep-option-pattern
+    commands:
+      - grep
+    match:
+      any-options:
+        - name: -e
+          value-styles:
+            - next
+            - attached
+        - name: --regexp
+          value-styles:
+            - next
+            - equals
+        - name: -f
+          value-styles:
+            - next
+            - attached
+        - name: --file
+          value-styles:
+            - next
+            - equals
+    options:
+      - name: -A
+        value-styles:
+          - next
+          - attached
+      - name: --after-context
+        value-styles:
+          - next
+          - equals
+      - name: -B
+        value-styles:
+          - next
+          - attached
+      - name: --before-context
+        value-styles:
+          - next
+          - equals
+      - name: -C
+        value-styles:
+          - next
+          - attached
+      - name: --context
+        value-styles:
+          - next
+          - equals
+      - name: -e
+        value-styles:
+          - next
+          - attached
+      - name: --regexp
+        value-styles:
+          - next
+          - equals
+      - name: -f
+        value-styles:
+          - next
+          - attached
+      - name: --file
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: all
+        access: read
+    option-operands:
+      - options:
+          - name: -f
+            value-styles:
+              - next
+              - attached
+          - name: --file
+            value-styles:
+              - next
+              - equals
+        access: read
+
+  - id: file.tee-output
+    commands:
+      - tee
+    operands:
+      - selector: all
+        access: write
+
+  - id: file.touch-output
+    commands:
+      - touch
+    options:
+      - name: -d
+        value-styles:
+          - next
+      - name: --date
+        value-styles:
+          - next
+          - equals
+      - name: -r
+        value-styles:
+          - next
+      - name: --reference
+        value-styles:
+          - next
+          - equals
+      - name: -t
+        value-styles:
+          - next
+    operands:
+      - selector: all
+        access: write
+    option-operands:
+      - options:
+          - name: -r
+            value-styles:
+              - next
+          - name: --reference
+            value-styles:
+              - next
+              - equals
+        access: read
+
+  - id: file.mkdir-output
+    commands:
+      - mkdir
+    options:
+      - name: -m
+        value-styles:
+          - next
+          - attached
+      - name: --mode
+        value-styles:
+          - next
+          - equals
+      - name: -Z
+        value-styles:
+          - next
+          - attached
+      - name: --context
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: all
+        access: write
+
+  - id: file.rsync-local
+    commands:
+      - rsync
+    match:
+      options-consuming-next:
+        - -e
+        - --rsh
+        - --rsync-path
+      remote-operands: none
+    options:
+      - name: -e
+        value-styles:
+          - next
+          - attached
+      - name: --rsh
+        value-styles:
+          - next
+          - equals
+      - name: --rsync-path
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: all-but-last
+        access: read
+      - selector: last
+        access: write
+
+  - id: file.sftp-batch
+    commands:
+      - sftp
+    options:
+      - name: -b
+        value-styles:
+          - next
+          - attached
+    option-operands:
+      - options:
+          - name: -b
+            value-styles:
+              - next
+              - attached
+        access: read
+
+  - id: file.awk-program
+    commands:
+      - awk
+      - gawk
+      - mawk
+    options:
+      - name: -f
+        value-styles:
+          - next
+          - attached
+      - name: --file
+        value-styles:
+          - next
+          - equals
+    option-operands:
+      - options:
+          - name: -f
+            value-styles:
+              - next
+              - attached
+          - name: --file
+            value-styles:
+              - next
+              - equals
+        access: read
+
+  - id: file.script-input
+    commands:
+      - lua
+      - luajit
+      - php
+    match:
+      excluded-options:
+        - name: -e
+          value-styles:
+            - next
+            - attached
+        - name: -r
+          value-styles:
+            - next
+            - attached
+    options:
+      - name: -e
+        value-styles:
+          - next
+          - attached
+      - name: -r
+        value-styles:
+          - next
+          - attached
+    operands:
+      - selector: first
+        access: read
+
+  - id: file.mount-operands
+    commands:
+      - mount
+    options:
+      - name: -t
+        value-styles:
+          - next
+          - attached
+      - name: --types
+        value-styles:
+          - next
+          - equals
+      - name: -o
+        value-styles:
+          - next
+          - attached
+      - name: --options
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: all-but-last
+        access: read
+      - selector: last
+        access: write
+
+  - id: file.storage-targets
+    commands:
+      - blkdiscard
+      - fdisk
+      - mkfs
+      - parted
+      - sfdisk
+      - shred
+      - truncate
+      - wipefs
+    operands:
+      - selector: all
+        access: read-write
+

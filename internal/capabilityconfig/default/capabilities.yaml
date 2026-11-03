@@ -1,0 +1,42 @@
+schema-version: "1"
+
+capability-definitions:
+  network-access:
+    description: Uses a network protocol to communicate with an endpoint, including loopback, containers, virtual machines, and the host; Unix-domain sockets are excluded.
+  network-download:
+    description: Retrieves or consumes response content, files, repositories, or packages from a remote endpoint.
+  external-send:
+    description: Sends local or generated data to a remote endpoint.
+  code-execution:
+    description: Executes a shell, interpreter, function, or dynamically supplied program.
+  dynamic-execution:
+    description: Evaluates code whose complete behavior cannot be determined statically.
+  privilege-modification:
+    description: Changes permissions, ownership, or file capabilities.
+  destructive-operation:
+    description: Deletes or overwrites data, filesystems, devices, or broad path sets.
+  project-read:
+    description: Reads data from the mounted Workshop project.
+  project-write:
+    description: Writes data to the mounted Workshop project.
+  credential-read:
+    description: Reads a path likely to contain credentials or other sensitive data.
+  state-read:
+    description: Reads persisted Workshop SDK state.
+  state-write:
+    description: Writes persisted Workshop SDK state.
+  device-access:
+    description: Reads from or writes to a device or kernel interface path.
+  persistence:
+    description: Changes or writes a location used to retain behavior across sessions or boots.
+  system-modification:
+    description: Changes system packages, services, or protected system paths.
+  environment-modification:
+    description: Installs, removes, or changes packages or tools in a language or user environment.
+  identity-change:
+    description: Executes a command with a different user or group identity.
+  execution-context-change:
+    description: Executes a command with a changed root, session, scheduling, or process context.
+  namespace-access:
+    description: Creates or enters Linux namespaces or another process execution context.
+

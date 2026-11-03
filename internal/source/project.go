@@ -1,0 +1,256 @@
+package source
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+
+	"github.com/shizuku198411/Latra/internal/sdk"
+	"go.yaml.in/yaml/v3"
+)
+
+const maxDefinitionBytes int64 = 1 << 20
+
+var workshopNamePattern = regexp.MustCompile(`^[a-z](?:-?[a-z0-9])*$`)
+
+type projectDefinition struct {
+	Name        string            `yaml:"name"`
+	Base        string            `yaml:"base"`
+	Runtime     string            `yaml:"runtime,omitempty"`
+	SDKs        []sdkDeclaration  `yaml:"sdks,omitempty"`
+	Connections []connection      `yaml:"connections,omitempty"`
+	Actions     map[string]string `yaml:"actions,omitempty"`
+}
+
+type sdkDeclaration struct {
+	Name    string         `yaml:"name"`
+	Channel string         `yaml:"channel,omitempty"`
+	Plugs   map[string]any `yaml:"plugs,omitempty"`
+	Slots   map[string]any `yaml:"slots,omitempty"`
+}
+
+type connection struct {
+	Plug string `yaml:"plug"`
+	Slot string `yaml:"slot"`
+}
+
+func readProject(projectPath string, limits sdk.Limits) (*Result, error) {
+	root, err := os.OpenRoot(projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("open project: %w", err)
+	}
+	defer root.Close()
+
+	entries, err := fs.ReadDir(root.FS(), ".workshop")
+	if err != nil {
+		return nil, fmt.Errorf("read .workshop: %w", err)
+	}
+	definitionNames := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || path.Ext(entry.Name()) != ".yaml" {
+			continue
+		}
+		definitionNames = append(definitionNames, entry.Name())
+	}
+	sort.Strings(definitionNames)
+	if len(definitionNames) == 0 {
+		return nil, fmt.Errorf("no Workshop definitions found under .workshop")
+	}
+
+	result := &Result{Kind: InputProject, Root: projectPath}
+	index := make(map[string]int)
+	for _, definitionName := range definitionNames {
+		relative := path.Join(".workshop", definitionName)
+		content, err := readBounded(root, relative, maxDefinitionBytes)
+		if err != nil {
+			return nil, err
+		}
+		definition, err := decodeProjectDefinition(content)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", relative, err)
+		}
+		if err := validateProjectDefinition(definition); err != nil {
+			return nil, fmt.Errorf("%s: %w", relative, err)
+		}
+
+		result.Workshops = append(result.Workshops, Workshop{
+			Name:       definition.Name,
+			Base:       definition.Base,
+			Runtime:    definition.Runtime,
+			Definition: relative,
+		})
+
+		seen := make(map[string]bool)
+		for _, declaration := range definition.SDKs {
+			name, sourceType, err := classifyDeclaration(declaration.Name)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", relative, err)
+			}
+			if seen[name] {
+				return nil, fmt.Errorf("%s: SDK %q must only be included once", relative, name)
+			}
+			seen[name] = true
+			if declaration.Channel != "" {
+				if err := sdk.ValidateChannel(declaration.Channel); err != nil {
+					return nil, fmt.Errorf("%s: SDK %q: %w", relative, name, err)
+				}
+			}
+
+			usage := sdk.Declaration{
+				Definition: relative,
+				Workshop:   definition.Name,
+				Base:       definition.Base,
+				Channel:    declaration.Channel,
+				Plugs:      declaration.Plugs,
+				Slots:      declaration.Slots,
+			}
+			key := string(sourceType) + "\x00" + name + "\x00" + declaration.Channel + "\x00" + definition.Base
+			if sourceType == sdk.SourceProject {
+				key = string(sourceType) + "\x00" + name
+			}
+			if position, exists := index[key]; exists {
+				resolved := &result.SDKs[position]
+				if resolved.Metadata != nil && resolved.Metadata.Base != "" && resolved.Metadata.Base != definition.Base {
+					return nil, fmt.Errorf("%s: SDK %q targets %q, required %q", relative, name, resolved.Metadata.Base, definition.Base)
+				}
+				resolved.Declarations = append(resolved.Declarations, usage)
+				continue
+			}
+
+			var resolved *sdk.SDK
+			if sourceType == sdk.SourceProject {
+				sdkRelative := path.Join(".workshop", name)
+				sdkRoot, err := root.OpenRoot(sdkRelative)
+				if err != nil {
+					return nil, &sdk.Error{Code: sdk.CodeUnsafePath, Path: sdkRelative, Err: fmt.Errorf("resolve project SDK %q: %w", name, err)}
+				}
+				resolved, err = sdk.ReadRoot(sdkRoot, filepath.Join(projectPath, filepath.FromSlash(sdkRelative)), name, limits)
+				closeErr := sdkRoot.Close()
+				if err != nil {
+					return nil, err
+				}
+				if closeErr != nil {
+					return nil, closeErr
+				}
+				if resolved.Metadata.Base != "" && resolved.Metadata.Base != definition.Base {
+					return nil, fmt.Errorf("%s: SDK %q targets %q, required %q", relative, name, resolved.Metadata.Base, definition.Base)
+				}
+			} else {
+				resolved = &sdk.SDK{
+					Name:    name,
+					Source:  sourceType,
+					State:   sdk.StateNotResolved,
+					Channel: declaration.Channel,
+				}
+			}
+			resolved.Declarations = []sdk.Declaration{usage}
+			index[key] = len(result.SDKs)
+			result.SDKs = append(result.SDKs, *resolved)
+		}
+	}
+
+	sort.Slice(result.SDKs, func(i, j int) bool {
+		if result.SDKs[i].Source != result.SDKs[j].Source {
+			return result.SDKs[i].Source < result.SDKs[j].Source
+		}
+		if result.SDKs[i].Name != result.SDKs[j].Name {
+			return result.SDKs[i].Name < result.SDKs[j].Name
+		}
+		return result.SDKs[i].Channel < result.SDKs[j].Channel
+	})
+	return result, nil
+}
+
+func decodeProjectDefinition(content []byte) (*projectDefinition, error) {
+	decoder := yaml.NewDecoder(strings.NewReader(string(content)))
+	decoder.KnownFields(true)
+	var definition projectDefinition
+	if err := decoder.Decode(&definition); err != nil {
+		return nil, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, fmt.Errorf("multiple YAML documents are not supported")
+		}
+		return nil, err
+	}
+	return &definition, nil
+}
+
+func validateProjectDefinition(definition *projectDefinition) error {
+	if !workshopNamePattern.MatchString(definition.Name) {
+		return fmt.Errorf("invalid Workshop name %q", definition.Name)
+	}
+	if !slicesContains([]string{"ubuntu@20.04", "ubuntu@22.04", "ubuntu@24.04", "ubuntu@26.04"}, definition.Base) {
+		return fmt.Errorf("unsupported Workshop base %q", definition.Base)
+	}
+	if definition.Runtime != "" && definition.Runtime != "lxd-container" && definition.Runtime != "lxd-vm" {
+		return fmt.Errorf("unsupported Workshop runtime %q", definition.Runtime)
+	}
+	return nil
+}
+
+func classifyDeclaration(raw string) (string, sdk.Source, error) {
+	if raw == "system" {
+		return raw, sdk.SourceSystem, nil
+	}
+	if suffix, ok := strings.CutPrefix(raw, "project-"); ok {
+		if err := sdk.ValidateName(suffix); err != nil {
+			return "", "", err
+		}
+		return suffix, sdk.SourceProject, nil
+	}
+	if suffix, ok := strings.CutPrefix(raw, "try-"); ok {
+		if err := sdk.ValidateName(suffix); err != nil {
+			return "", "", err
+		}
+		return suffix, sdk.SourceTry, nil
+	}
+	if err := sdk.ValidateName(raw); err != nil {
+		return "", "", err
+	}
+	return raw, sdk.SourceStore, nil
+}
+
+func readBounded(root *os.Root, name string, limit int64) ([]byte, error) {
+	info, err := root.Stat(name)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s must be a regular file", name)
+	}
+	if info.Size() > limit {
+		return nil, fmt.Errorf("%s exceeds %d bytes", name, limit)
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > limit {
+		return nil, fmt.Errorf("%s exceeds %d bytes", name, limit)
+	}
+	return content, nil
+}
+
+func slicesContains(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
+}

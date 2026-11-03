@@ -23,9 +23,23 @@ Keep each pull request focused on one logical change. A pull request should:
 
 All commits must be your own work or otherwise legally contributed under the project's MIT License. By submitting a contribution, you agree that it may be distributed under that license.
 
+## Development
+
+Latra development uses the committed Workshop environment and its Go 1.27 SDK. Do not use a host Go installation for project development. See [docs/development.md](docs/development.md) for setup and environment details.
+
+The standard development commands are:
+
+```shell
+workshop run dev -- build
+workshop run dev -- test
+workshop run dev -- vet
+workshop run dev -- check
+workshop run dev -- format
+```
+
+Run `workshop run dev -- latra version` to execute Latra from the current source tree.
+
 ## Test fixtures
 
 Treat all SDK fixtures as untrusted input. Hooks in `testdata/` are for static analysis and must not be executed directly on the host. Keep fixtures minimal, deterministic, free of real credentials, and clear about the behavior they are intended to exercise.
-
-Build, test, formatting, and lint commands will be documented here once the initial implementation is available.
 

@@ -1,0 +1,62 @@
+path-classes:
+  sensitive:
+    case-insensitive-contains:
+      - /.ssh
+      - /.aws
+      - /.config
+      - credential
+      - token
+      - secret
+  persistence:
+    contains:
+      - /systemd/
+      - /cron
+      - /profile
+      - /.bashrc
+      - /.zshrc
+      - /.git/hooks/
+  state:
+    variable-names:
+      - SDK_STATE_DIR
+    contains:
+      - /state/
+    suffixes:
+      - /state
+  sdk:
+    variable-names:
+      - SDK
+    prefixes:
+      - /var/lib/workshop/sdk/
+    contains:
+      - /sdk/
+  project:
+    exact:
+      - /project
+    prefixes:
+      - /project/
+  root-home:
+    exact:
+      - /root
+    prefixes:
+      - /root/
+  user-home:
+    prefixes:
+      - /home/workshop/
+  runtime:
+    prefixes:
+      - /run/
+  device:
+    prefixes:
+      - /proc/
+      - /sys/
+      - /dev/
+  temporary:
+    prefixes:
+      - /tmp/
+      - /var/tmp/
+  system:
+    prefixes:
+      - /etc/
+      - /usr/
+      - /opt/
+
