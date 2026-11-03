@@ -79,6 +79,7 @@ type scanOptions struct {
 	output  string
 	noColor bool
 	quiet   bool
+	verbose bool
 }
 
 func parseScanOptions(args []string) (scanOptions, error) {
@@ -106,6 +107,8 @@ func parseScanOptions(args []string) (scanOptions, error) {
 			options.noColor = true
 		case argument == "--quiet":
 			options.quiet = true
+		case argument == "--verbose":
+			options.verbose = true
 		case strings.HasPrefix(argument, "-"):
 			return options, fmt.Errorf("unknown scan option %q", argument)
 		case options.path == "":
@@ -128,7 +131,13 @@ func parseScanOptions(args []string) (scanOptions, error) {
 
 func writeReport(options scanOptions, stdout io.Writer, result *source.Result) error {
 	if options.output == "-" {
+		if !options.verbose {
+			return report.WriteSummary(stdout, options.format, result)
+		}
 		return report.Write(stdout, options.format, result)
+	}
+	if !options.verbose {
+		return report.WriteSummaryFile(options.output, options.format, result)
 	}
 	return report.WriteFile(options.output, options.format, result)
 }
@@ -153,6 +162,7 @@ Options:
   --output, -o PATH   Write report to PATH or stdout with - (default: -)
   --no-color          Disable terminal colors
   --quiet             Suppress non-error status output
+  --verbose           Include complete SDK, file, hook, and analysis details
 
 Commands:
   scan       Inspect a Workshop project or project SDK

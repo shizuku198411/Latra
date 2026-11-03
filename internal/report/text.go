@@ -39,12 +39,76 @@ func WriteText(writer io.Writer, result *source.Result) error {
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(writer,
-		"\nSummary\n  SDKs: %d (%d resolved, %d unresolved)\n  Files: %d\n  Hooks: %d\n  Operations: %d\n  Capabilities: %d\n  Diagnostics: %d\n",
-		document.Summary.SDKs, document.Summary.ResolvedSDKs, document.Summary.UnresolvedSDKs,
-		document.Summary.Files, document.Summary.Hooks, document.Summary.Operations,
-		document.Summary.Capabilities, document.Summary.Diagnostics)
+	return writeSummary(writer, document.Summary)
+}
+
+// WriteTextSummary renders input, Workshop definitions, and the summary only.
+func WriteTextSummary(writer io.Writer, result *source.Result) error {
+	document := NewDocument(result)
+	if _, err := fmt.Fprintf(writer, "Input\n  Kind: %s\n  Root: %s\n", document.Input.Kind, document.Input.Root); err != nil {
+		return err
+	}
+	if len(document.Workshops) > 0 {
+		if _, err := fmt.Fprintln(writer, "\nWorkshops"); err != nil {
+			return err
+		}
+		for _, workshop := range document.Workshops {
+			if _, err := fmt.Fprintf(writer, "  %s\n    Definition: %s\n    Base: %s\n", workshop.Name, workshop.Definition, workshop.Base); err != nil {
+				return err
+			}
+		}
+	}
+	return writeSummary(writer, document.Summary)
+}
+
+func writeSummary(writer io.Writer, summary Summary) error {
+	if _, err := fmt.Fprintf(writer, "\nSummary\n  SDKs: %d (%d resolved, %d unresolved)\n    Resolved: %s\n    Unresolved: %s\n",
+		summary.SDKs.Count, summary.SDKs.Resolved, summary.SDKs.Unresolved,
+		formatSummaryItems(summary.SDKs.SDKNames.Resolved),
+		formatSummaryItems(summary.SDKs.SDKNames.Unresolved)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(writer, "  Files: %d\n", summary.Files.Count); err != nil {
+		return err
+	}
+	for _, item := range summary.Files.BySDK {
+		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatSummaryItems(item.FilePaths)); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(writer, "  Hooks: %d\n", summary.Hooks.Count); err != nil {
+		return err
+	}
+	for _, item := range summary.Hooks.BySDK {
+		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatSummaryItems(item.HookNames)); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(writer, "  Operations: %d\n", summary.Operations.Count); err != nil {
+		return err
+	}
+	for _, item := range summary.Operations.BySDK {
+		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatSummaryItems(item.OperationKinds)); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(writer, "  Capabilities: %d\n", summary.Capabilities.Count); err != nil {
+		return err
+	}
+	for _, item := range summary.Capabilities.BySDK {
+		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatSummaryItems(item.CapabilityNames)); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(writer, "  Diagnostics: %d\n", summary.Diagnostics.Count)
 	return err
+}
+
+func formatSummaryItems(items []string) string {
+	if len(items) == 0 {
+		return "-"
+	}
+	return strings.Join(items, ", ")
 }
 
 func writeSDK(writer io.Writer, item SDK) error {

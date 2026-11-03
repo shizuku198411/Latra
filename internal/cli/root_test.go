@@ -84,7 +84,7 @@ func TestRunScanProject(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"scan", "../../testdata/project-sdks/valid-project"}, &stdout, &stderr)
+	code := cli.Run([]string{"scan", "../../testdata/project-sdks/valid-project", "--verbose"}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("Run() code = %d, want 0; stderr = %q", code, stderr.String())
@@ -131,7 +131,7 @@ func TestRunScanReportsMalformedHookAsIncomplete(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"scan", root}, &stdout, &stderr)
+	code := cli.Run([]string{"scan", root, "--verbose"}, &stdout, &stderr)
 
 	if code != 1 {
 		t.Errorf("Run() code = %d, want 1", code)
@@ -160,14 +160,17 @@ func TestRunScanJSONToStandardOutput(t *testing.T) {
 	}
 	var document struct {
 		SchemaVersion string `json:"schemaVersion"`
-		SDKs          []struct {
-			Name string `json:"name"`
-		} `json:"sdks"`
+		Summary       struct {
+			SDKs struct {
+				Count int `json:"count"`
+			} `json:"sdks"`
+		} `json:"summary"`
+		SDKs json.RawMessage `json:"sdks"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout.String())
 	}
-	if document.SchemaVersion != "1" || len(document.SDKs) != 5 {
+	if document.SchemaVersion != "1" || document.Summary.SDKs.Count != 5 || len(document.SDKs) != 0 {
 		t.Errorf("document = %#v", document)
 	}
 	if stderr.Len() != 0 {
@@ -181,14 +184,14 @@ func TestRunScanJSONFileMatchesStandardOutput(t *testing.T) {
 	project := "../../testdata/project-sdks/valid-project"
 	var standardOutput bytes.Buffer
 	var standardError bytes.Buffer
-	if code := cli.Run([]string{"scan", project, "--format=json"}, &standardOutput, &standardError); code != 0 {
+	if code := cli.Run([]string{"scan", project, "--format=json", "--verbose"}, &standardOutput, &standardError); code != 0 {
 		t.Fatalf("stdout scan code = %d; stderr = %q", code, standardError.String())
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "inventory.json")
 	var fileStdout bytes.Buffer
 	var fileStderr bytes.Buffer
-	if code := cli.Run([]string{"scan", project, "--format", "json", "-o", outputPath}, &fileStdout, &fileStderr); code != 0 {
+	if code := cli.Run([]string{"scan", project, "--format", "json", "-o", outputPath, "--verbose"}, &fileStdout, &fileStderr); code != 0 {
 		t.Fatalf("file scan code = %d; stderr = %q", code, fileStderr.String())
 	}
 	if fileStdout.Len() != 0 {
@@ -200,6 +203,57 @@ func TestRunScanJSONFileMatchesStandardOutput(t *testing.T) {
 	}
 	if !bytes.Equal(fileOutput, standardOutput.Bytes()) {
 		t.Error("file JSON and stdout JSON differ")
+	}
+}
+
+func TestRunScanJSONFileIsCompactByDefault(t *testing.T) {
+	t.Parallel()
+
+	outputPath := filepath.Join(t.TempDir(), "inventory.json")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := cli.Run([]string{
+		"scan", "../../testdata/project-sdks/valid-project",
+		"--format", "json", "--output", outputPath,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
+	}
+	content, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Summary json.RawMessage `json:"summary"`
+		SDKs    json.RawMessage `json:"sdks"`
+	}
+	if err := json.Unmarshal(content, &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Summary) == 0 || len(document.SDKs) != 0 {
+		t.Errorf("compact document has summary=%s sdks=%s", document.Summary, document.SDKs)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunScanTextIsCompactByDefault(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := cli.Run([]string{"scan", "../../testdata/project-sdks/valid-project"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
+	}
+	for _, want := range []string{"Input\n", "Workshops\n", "Summary\n"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("stdout does not contain %q", want)
+		}
+	}
+	if strings.Contains(stdout.String(), "\nSDKs\n") {
+		t.Errorf("compact stdout contains SDK details:\n%s", stdout.String())
 	}
 }
 

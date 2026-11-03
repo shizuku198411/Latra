@@ -11,14 +11,69 @@
     "root": "/fixture/example"
   },
   "summary": {
-    "sdks": 1,
-    "resolvedSdks": 1,
-    "unresolvedSdks": 0,
-    "files": 1,
-    "hooks": 1,
-    "operations": 1,
-    "capabilities": 1,
-    "diagnostics": 0
+    "sdks": {
+      "count": 1,
+      "sdkNames": {
+        "resolved": [
+          "example"
+        ],
+        "unresolved": []
+      },
+      "resolved": 1,
+      "unresolved": 0
+    },
+    "files": {
+      "count": 1,
+      "bySdk": [
+        {
+          "sdkName": "example",
+          "count": 1,
+          "filePaths": [
+            "hooks/setup-project"
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "count": 1,
+      "bySdk": [
+        {
+          "sdkName": "example",
+          "count": 1,
+          "hookNames": [
+            "setup-project"
+          ]
+        }
+      ]
+    },
+    "operations": {
+      "count": 1,
+      "bySdk": [
+        {
+          "sdkName": "example",
+          "count": 1,
+          "operationKinds": [
+            "command-invocation"
+          ]
+        }
+      ]
+    },
+    "capabilities": {
+      "count": 1,
+      "bySdk": [
+        {
+          "sdkName": "example",
+          "count": 1,
+          "capabilityNames": [
+            "network-download"
+          ]
+        }
+      ]
+    },
+    "diagnostics": {
+      "count": 0,
+      "diagnosticCodes": []
+    }
   },
   "workshops": [],
   "sdks": [

@@ -39,14 +39,73 @@ type Input struct {
 }
 
 type Summary struct {
-	SDKs           int `json:"sdks"`
-	ResolvedSDKs   int `json:"resolvedSdks"`
-	UnresolvedSDKs int `json:"unresolvedSdks"`
-	Files          int `json:"files"`
-	Hooks          int `json:"hooks"`
-	Operations     int `json:"operations"`
-	Capabilities   int `json:"capabilities"`
-	Diagnostics    int `json:"diagnostics"`
+	SDKs         SDKSummary        `json:"sdks"`
+	Files        FileSummary       `json:"files"`
+	Hooks        HookSummary       `json:"hooks"`
+	Operations   OperationSummary  `json:"operations"`
+	Capabilities CapabilitySummary `json:"capabilities"`
+	Diagnostics  DiagnosticSummary `json:"diagnostics"`
+}
+
+type SDKSummary struct {
+	Count      int            `json:"count"`
+	SDKNames   SDKNameSummary `json:"sdkNames"`
+	Resolved   int            `json:"resolved"`
+	Unresolved int            `json:"unresolved"`
+}
+
+type SDKNameSummary struct {
+	Resolved   []string `json:"resolved"`
+	Unresolved []string `json:"unresolved"`
+}
+
+type FileSummary struct {
+	Count int              `json:"count"`
+	BySDK []SDKFileSummary `json:"bySdk"`
+}
+
+type HookSummary struct {
+	Count int              `json:"count"`
+	BySDK []SDKHookSummary `json:"bySdk"`
+}
+
+type OperationSummary struct {
+	Count int                   `json:"count"`
+	BySDK []SDKOperationSummary `json:"bySdk"`
+}
+
+type CapabilitySummary struct {
+	Count int                    `json:"count"`
+	BySDK []SDKCapabilitySummary `json:"bySdk"`
+}
+
+type SDKFileSummary struct {
+	SDKName   string   `json:"sdkName"`
+	Count     int      `json:"count"`
+	FilePaths []string `json:"filePaths"`
+}
+
+type SDKHookSummary struct {
+	SDKName   string   `json:"sdkName"`
+	Count     int      `json:"count"`
+	HookNames []string `json:"hookNames"`
+}
+
+type SDKOperationSummary struct {
+	SDKName        string   `json:"sdkName"`
+	Count          int      `json:"count"`
+	OperationKinds []string `json:"operationKinds"`
+}
+
+type SDKCapabilitySummary struct {
+	SDKName         string   `json:"sdkName"`
+	Count           int      `json:"count"`
+	CapabilityNames []string `json:"capabilityNames"`
+}
+
+type DiagnosticSummary struct {
+	Count           int      `json:"count"`
+	DiagnosticCodes []string `json:"diagnosticCodes"`
 }
 
 type SDK struct {
@@ -180,21 +239,82 @@ func NewDocument(result *source.Result) Document {
 }
 
 func summarize(document Document) Summary {
-	summary := Summary{SDKs: len(document.SDKs), Diagnostics: len(document.Diagnostics)}
+	summary := Summary{
+		SDKs: SDKSummary{
+			Count:    len(document.SDKs),
+			SDKNames: SDKNameSummary{Resolved: []string{}, Unresolved: []string{}},
+		},
+		Files:        FileSummary{BySDK: []SDKFileSummary{}},
+		Hooks:        HookSummary{BySDK: []SDKHookSummary{}},
+		Operations:   OperationSummary{BySDK: []SDKOperationSummary{}},
+		Capabilities: CapabilitySummary{BySDK: []SDKCapabilitySummary{}},
+		Diagnostics:  DiagnosticSummary{Count: len(document.Diagnostics), DiagnosticCodes: []string{}},
+	}
+	resolvedSDKNames := make(map[string]struct{})
+	unresolvedSDKNames := make(map[string]struct{})
+	diagnosticCodes := make(map[string]struct{})
+	for _, diagnostic := range document.Diagnostics {
+		diagnosticCodes[diagnostic.Diagnostic.Code] = struct{}{}
+	}
 	for _, item := range document.SDKs {
 		if item.State == sdk.StateResolved {
-			summary.ResolvedSDKs++
+			summary.SDKs.Resolved++
+			resolvedSDKNames[item.Name] = struct{}{}
 		} else {
-			summary.UnresolvedSDKs++
+			summary.SDKs.Unresolved++
+			unresolvedSDKNames[item.Name] = struct{}{}
 		}
-		summary.Files += len(item.Files)
-		summary.Hooks += len(item.Hooks)
+		fileSummary := SDKFileSummary{SDKName: item.Name, Count: len(item.Files), FilePaths: []string{}}
+		for _, file := range item.Files {
+			fileSummary.FilePaths = append(fileSummary.FilePaths, file.Path)
+		}
+		hookSummary := SDKHookSummary{SDKName: item.Name, Count: len(item.Hooks), HookNames: []string{}}
+		operationSummary := SDKOperationSummary{SDKName: item.Name, OperationKinds: []string{}}
+		capabilitySummary := SDKCapabilitySummary{SDKName: item.Name, CapabilityNames: []string{}}
+		hookNames := make(map[string]struct{})
+		operationKinds := make(map[string]struct{})
+		capabilityNames := make(map[string]struct{})
 		for _, hook := range item.Hooks {
-			summary.Operations += countOperations(hook.Operations)
-			summary.Capabilities += len(hook.Capabilities)
+			hookNames[string(hook.Name)] = struct{}{}
+			operationSummary.Count += countOperations(hook.Operations)
+			collectOperationKinds(hook.Operations, operationKinds)
+			capabilitySummary.Count += len(hook.Capabilities)
+			for _, capability := range hook.Capabilities {
+				capabilityNames[capability.Kind] = struct{}{}
+			}
 		}
+		hookSummary.HookNames = sortedSet(hookNames)
+		operationSummary.OperationKinds = sortedSet(operationKinds)
+		capabilitySummary.CapabilityNames = sortedSet(capabilityNames)
+		summary.Files.Count += fileSummary.Count
+		summary.Hooks.Count += hookSummary.Count
+		summary.Operations.Count += operationSummary.Count
+		summary.Capabilities.Count += capabilitySummary.Count
+		summary.Files.BySDK = append(summary.Files.BySDK, fileSummary)
+		summary.Hooks.BySDK = append(summary.Hooks.BySDK, hookSummary)
+		summary.Operations.BySDK = append(summary.Operations.BySDK, operationSummary)
+		summary.Capabilities.BySDK = append(summary.Capabilities.BySDK, capabilitySummary)
 	}
+	summary.SDKs.SDKNames.Resolved = sortedSet(resolvedSDKNames)
+	summary.SDKs.SDKNames.Unresolved = sortedSet(unresolvedSDKNames)
+	summary.Diagnostics.DiagnosticCodes = sortedSet(diagnosticCodes)
 	return summary
+}
+
+func collectOperationKinds(operations []analysis.Operation, kinds map[string]struct{}) {
+	for _, operation := range operations {
+		kinds[string(operation.Kind)] = struct{}{}
+		collectOperationKinds(operation.Children, kinds)
+	}
+}
+
+func sortedSet(values map[string]struct{}) []string {
+	items := make([]string, 0, len(values))
+	for value := range values {
+		items = append(items, value)
+	}
+	sort.Strings(items)
+	return items
 }
 
 func countOperations(operations []analysis.Operation) int {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -115,6 +116,44 @@ func TestDocumentEncodesFileContentWithoutDataLoss(t *testing.T) {
 	}
 	if files[2].Content == nil || *files[2].Content != "hello\n" || files[2].ContentEncoding != "utf-8" {
 		t.Errorf("text file = %#v", files[2])
+	}
+}
+
+func TestDocumentSummaryDeduplicatesDetectedItems(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	result.SDKs[0].Hooks[0].Parse.Diagnostics = []shell.Diagnostic{{Code: "syntax-warning"}}
+	other := result.SDKs[0]
+	other.Name = "other"
+	other.State = sdk.StateNotResolved
+	result.SDKs = append(result.SDKs, other)
+	summary := report.NewDocument(result).Summary
+	if summary.SDKs.Count != 2 ||
+		!slices.Equal(summary.SDKs.SDKNames.Resolved, []string{"example"}) ||
+		!slices.Equal(summary.SDKs.SDKNames.Unresolved, []string{"other"}) ||
+		summary.SDKs.Resolved != 1 || summary.SDKs.Unresolved != 1 {
+		t.Errorf("SDK summary = %#v", summary.SDKs)
+	}
+	if summary.Files.Count != 2 || len(summary.Files.BySDK) != 2 ||
+		!slices.Equal(summary.Files.BySDK[0].FilePaths, []string{"hooks/setup-project"}) ||
+		!slices.Equal(summary.Files.BySDK[1].FilePaths, []string{"hooks/setup-project"}) {
+		t.Errorf("file summary = %#v", summary.Files)
+	}
+	if summary.Hooks.Count != 2 || len(summary.Hooks.BySDK) != 2 ||
+		!slices.Equal(summary.Hooks.BySDK[0].HookNames, []string{"setup-project"}) {
+		t.Errorf("hook summary = %#v", summary.Hooks)
+	}
+	if summary.Operations.Count != 2 || len(summary.Operations.BySDK) != 2 ||
+		!slices.Equal(summary.Operations.BySDK[0].OperationKinds, []string{"command-invocation"}) {
+		t.Errorf("operation summary = %#v", summary.Operations)
+	}
+	if summary.Capabilities.Count != 2 || len(summary.Capabilities.BySDK) != 2 ||
+		!slices.Equal(summary.Capabilities.BySDK[0].CapabilityNames, []string{"network-download"}) {
+		t.Errorf("capability summary = %#v", summary.Capabilities)
+	}
+	if summary.Diagnostics.Count != 2 || !slices.Equal(summary.Diagnostics.DiagnosticCodes, []string{"syntax-warning"}) {
+		t.Errorf("diagnostic summary = %d %#v", summary.Diagnostics.Count, summary.Diagnostics.DiagnosticCodes)
 	}
 }
 
