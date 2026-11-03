@@ -1,0 +1,6 @@
+if [ -f /var/lib/project-sdk-fixture/setup-base ]; then
+  workshopctl set-health okay
+else
+  workshopctl set-health error "setup-base marker missing"
+fi
+

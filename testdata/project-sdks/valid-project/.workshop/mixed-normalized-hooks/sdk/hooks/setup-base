@@ -1,0 +1,4 @@
+apt-get update
+apt-get install curl ca-certificates
+curl --fail --location https://example.invalid/tool.tar.gz --output /tmp/tool.tar.gz
+

@@ -1,0 +1,46 @@
+name: fully-normalized
+type: regular
+title: Complete project SDK fixture
+version: "1.2.3"
+summary: Exercises every runtime metadata field accepted by Workshop v0.9.9
+description: |
+  This project SDK uses the normalized metadata and hooks layout. It declares
+  every runtime metadata field and representative supported interfaces.
+base: ubuntu@24.04
+architecture: all
+contact:
+  - fixture@example.invalid
+  - https://example.invalid/contact
+issues: https://example.invalid/issues
+source-code: https://example.invalid/source
+website: https://example.invalid
+license: MIT
+sdkcraft-started-at: "2026-01-02T03:04:05Z"
+plugs:
+  camera:
+  input-device:
+    interface: custom-device
+    subsystem: input
+  desktop:
+  gpu:
+  data-cache:
+    interface: mount
+    workshop-target: /home/workshop/.cache/complete-fixture
+    mode: 0770
+    uid: 1000
+    gid: 1000
+    read-only: false
+  api-client:
+    interface: tunnel
+    endpoint: localhost:8080/tcp
+  registry-token:
+    interface: secret
+  ssh-agent:
+slots:
+  exported-data:
+    interface: mount
+    workshop-source: /home/workshop/exported-data
+  api-server:
+    interface: tunnel
+    endpoint: localhost:9090/tcp
+

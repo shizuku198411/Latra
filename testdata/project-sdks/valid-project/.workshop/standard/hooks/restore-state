@@ -1,0 +1,5 @@
+if [ -f "$SDK_STATE_DIR/project-state" ]; then
+  cp "$SDK_STATE_DIR/project-state" /project/.project-sdk-fixture
+  chown 1000:1000 /project/.project-sdk-fixture
+fi
+

@@ -1,0 +1,4 @@
+install -D -m 0755 "$SDK/bin/fixture-tool" "$HOME/.local/bin/fixture-tool"
+mkdir -p /home/workshop/exported-data
+fixture-tool --project /project
+

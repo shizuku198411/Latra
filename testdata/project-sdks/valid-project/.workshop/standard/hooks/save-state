@@ -1,0 +1,4 @@
+if [ -f /project/.project-sdk-fixture ]; then
+  cp /project/.project-sdk-fixture "$SDK_STATE_DIR/project-state"
+fi
+

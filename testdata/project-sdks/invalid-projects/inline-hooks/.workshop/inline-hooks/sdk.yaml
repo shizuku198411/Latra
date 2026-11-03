@@ -1,0 +1,5 @@
+name: inline-hooks
+hooks:
+  setup-project: |
+    echo "inline hooks are only supported by the sketch SDK"
+

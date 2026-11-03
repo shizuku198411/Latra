@@ -1,0 +1,7 @@
+name: mixed-normalized-hooks
+summary: Root metadata with normalized hooks layout
+plugs:
+  shared-cache:
+    interface: mount
+    workshop-target: /home/workshop/.cache/shared
+

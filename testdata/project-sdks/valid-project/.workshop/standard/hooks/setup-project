@@ -1,0 +1,4 @@
+mkdir -p "$HOME/.config/project-sdk-fixture"
+printf '%s\n' "$SDK" > "$HOME/.config/project-sdk-fixture/sdk-root"
+printf '%s\n' "project=$(pwd)" > /project/.project-sdk-fixture
+

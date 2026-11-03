@@ -1,0 +1,4 @@
+install -D -m 0644 "$SDK/files/profile.sh" /etc/profile.d/project-sdk-fixture.sh
+mkdir -p /var/lib/project-sdk-fixture
+printf '%s\n' "setup-base:$SDK" > /var/lib/project-sdk-fixture/setup-base
+

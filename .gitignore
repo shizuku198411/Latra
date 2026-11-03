@@ -1,0 +1,35 @@
+workshop/
+internaldocs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build outputs
+build/
+dist/
+out/
+*.o
+*.a
+*.so
+*.elf
+*.bin
+*.map
+
+# Logs / temp files
+*.log
+*.tmp
+*.temp
+.cache/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example

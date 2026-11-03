@@ -1,0 +1,9 @@
+name: mixed-normalized-metadata
+title: Long metadata and short hooks
+description: |
+  Exercises a pre-normalized metadata path together with authoring-style hooks.
+plugs:
+  shared-cache:
+    interface: mount
+    workshop-target: /home/workshop/.cache/shared
+

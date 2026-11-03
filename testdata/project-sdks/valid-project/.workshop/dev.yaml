@@ -1,0 +1,21 @@
+name: dev
+base: ubuntu@24.04
+sdks:
+  - name: rust
+    channel: latest/stable
+  - name: project-standard
+    plugs:
+      source-cache:
+        interface: mount
+        workshop-target: /home/workshop/.cache/source
+    slots:
+      metrics:
+        interface: tunnel
+        endpoint: 127.0.0.1:9100/tcp
+  - name: project-mixed-normalized-hooks
+  - name: project-mixed-normalized-metadata
+    plugs:
+      shared-cache:
+        bind: standard:source-cache
+  - name: project-fully-normalized
+
