@@ -39,7 +39,10 @@ func WriteText(writer io.Writer, result *source.Result) error {
 			return err
 		}
 	}
-	return writeSummary(writer, document.Summary)
+	if err := writeSummary(writer, document.Summary); err != nil {
+		return err
+	}
+	return writeDocumentDiagnostics(writer, document.Diagnostics)
 }
 
 // WriteTextSummary renders input, Workshop definitions, and the summary only.
@@ -58,7 +61,10 @@ func WriteTextSummary(writer io.Writer, result *source.Result) error {
 			}
 		}
 	}
-	return writeSummary(writer, document.Summary)
+	if err := writeSummary(writer, document.Summary); err != nil {
+		return err
+	}
+	return writeDocumentDiagnostics(writer, document.Diagnostics)
 }
 
 func writeSummary(writer io.Writer, summary Summary) error {
@@ -144,7 +150,13 @@ func writeSDK(writer io.Writer, item SDK) error {
 			return err
 		}
 	}
-	if item.State == sdk.StateNotResolved {
+	for _, diagnostic := range item.Diagnostics {
+		if _, err := fmt.Fprintf(writer, "    Diagnostic: [%s] %s (%s): %s\n",
+			diagnostic.Severity, diagnostic.Code, diagnostic.Phase, diagnostic.Message); err != nil {
+			return err
+		}
+	}
+	if item.State != sdk.StateResolved {
 		return nil
 	}
 	if _, err := fmt.Fprintf(writer, "    Digest: %s\n    Metadata: %s\n", item.Digest, item.MetadataPath); err != nil {
@@ -188,6 +200,30 @@ func writeSDK(writer io.Writer, item SDK) error {
 	}
 	for _, hook := range item.Hooks {
 		if err := writeHook(writer, hook); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeDocumentDiagnostics(writer io.Writer, diagnostics []DocumentDiagnostic) error {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(writer, "\nDiagnostics"); err != nil {
+		return err
+	}
+	for _, diagnostic := range diagnostics {
+		context := diagnostic.SDK
+		if diagnostic.Hook != "" {
+			context += "/" + string(diagnostic.Hook)
+		}
+		phase := ""
+		if diagnostic.Phase != "" {
+			phase = " (" + diagnostic.Phase + ")"
+		}
+		if _, err := fmt.Fprintf(writer, "  %s: [%s] %s%s: %s\n",
+			context, diagnostic.Severity, diagnostic.Code, phase, diagnostic.Message); err != nil {
 			return err
 		}
 	}

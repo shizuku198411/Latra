@@ -19,17 +19,19 @@ func WriteJSON(writer io.Writer, result *source.Result) error {
 func WriteJSONSummary(writer io.Writer, result *source.Result) error {
 	document := NewDocument(result)
 	compact := struct {
-		SchemaVersion string            `json:"schemaVersion"`
-		Scanner       Scanner           `json:"scanner"`
-		Input         Input             `json:"input"`
-		Workshops     []source.Workshop `json:"workshops"`
-		Summary       Summary           `json:"summary"`
+		SchemaVersion string               `json:"schemaVersion"`
+		Scanner       Scanner              `json:"scanner"`
+		Input         Input                `json:"input"`
+		Workshops     []source.Workshop    `json:"workshops"`
+		Summary       Summary              `json:"summary"`
+		Diagnostics   []DocumentDiagnostic `json:"diagnostics"`
 	}{
 		SchemaVersion: document.SchemaVersion,
 		Scanner:       document.Scanner,
 		Input:         document.Input,
 		Workshops:     document.Workshops,
 		Summary:       document.Summary,
+		Diagnostics:   document.Diagnostics,
 	}
 	encoder := json.NewEncoder(writer)
 	encoder.SetEscapeHTML(false)

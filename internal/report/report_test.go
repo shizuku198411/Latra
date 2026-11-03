@@ -160,6 +160,46 @@ func TestDocumentSummaryDeduplicatesDetectedItems(t *testing.T) {
 	}
 }
 
+func TestDocumentIncludesSDKResolutionDiagnostic(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	result.SDKs[0].State = sdk.StateDownloadFailed
+	result.SDKs[0].Diagnostics = []sdk.Diagnostic{{
+		Code: "store-download-failed", Severity: sdk.SeverityError,
+		Phase: "download", Message: "service unavailable",
+	}}
+	document := report.NewDocument(result)
+	if document.Summary.SDKs.Resolved != 0 || document.Summary.SDKs.Unresolved != 1 {
+		t.Fatalf("SDK summary = %#v", document.Summary.SDKs)
+	}
+	if document.Summary.Diagnostics.Count != 1 || len(document.Diagnostics) != 1 {
+		t.Fatalf("diagnostics = %#v", document.Diagnostics)
+	}
+	diagnostic := document.Diagnostics[0]
+	if diagnostic.Code != "store-download-failed" || diagnostic.Phase != "download" || diagnostic.SDK != "example" {
+		t.Fatalf("diagnostic = %#v", diagnostic)
+	}
+	var output bytes.Buffer
+	if err := report.WriteTextSummary(&output, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"1 unresolved", "store-download-failed", "service unavailable"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("text does not contain %q:\n%s", want, output.String())
+		}
+	}
+	output.Reset()
+	if err := report.WriteJSONSummary(&output, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"diagnostics"`, `"store-download-failed"`, `"service unavailable"`} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("compact JSON does not contain %q:\n%s", want, output.String())
+		}
+	}
+}
+
 func TestDocumentSummaryGroupsUnknownCommandsBySDKAndFile(t *testing.T) {
 	t.Parallel()
 

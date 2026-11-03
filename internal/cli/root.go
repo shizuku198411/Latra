@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/shizuku198411/Latra/internal/knowledge"
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
+	"github.com/shizuku198411/Latra/internal/sdkstore"
 	"github.com/shizuku198411/Latra/internal/shell"
 	"github.com/shizuku198411/Latra/internal/source"
 )
@@ -23,6 +25,25 @@ const (
 // Run executes the command using the supplied streams and returns a process exit code.
 // User-facing command output is written to stdout. Diagnostics are written to stderr.
 func Run(args []string, stdout, stderr io.Writer) int {
+	dependencies := Dependencies{}
+	if len(args) > 0 && args[0] == "scan" {
+		store, err := sdkstore.NewClient(sdkstore.Config{})
+		if err != nil {
+			fmt.Fprintf(stderr, "latra: initialize SDK Store client: %v\n", err)
+			return exitError
+		}
+		dependencies.StoreResolver = store
+	}
+	return RunWithDependencies(args, stdout, stderr, dependencies)
+}
+
+// Dependencies contains replaceable external services used by the CLI.
+type Dependencies struct {
+	StoreResolver source.StoreResolver
+}
+
+// RunWithDependencies executes the CLI with explicitly supplied external services.
+func RunWithDependencies(args []string, stdout, stderr io.Writer, dependencies Dependencies) int {
 	if len(args) == 0 {
 		writeUsage(stdout)
 		return exitOK
@@ -42,7 +63,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, buildinfo.Current().String())
 		return exitOK
 	case "scan":
-		return runScan(args[1:], stdout, stderr)
+		return runScan(args[1:], stdout, stderr, dependencies)
 	case "db":
 		return runDB(args[1:], stdout, stderr)
 	default:
@@ -146,12 +167,12 @@ func parseDBOptions(args []string) (dbOptions, error) {
 	return options, nil
 }
 
-func runScan(args []string, stdout, stderr io.Writer) int {
+func runScan(args []string, stdout, stderr io.Writer, dependencies Dependencies) int {
 	options, err := parseScanOptions(args)
 	if err != nil {
 		return usageError(stderr, "%v", err)
 	}
-	result, err := source.Scan(options.path, sdk.DefaultLimits())
+	result, err := source.ScanWithResolver(context.Background(), options.path, sdk.DefaultLimits(), dependencies.StoreResolver)
 	if err != nil {
 		fmt.Fprintf(stderr, "latra: scan failed: %v\n", err)
 		return exitError

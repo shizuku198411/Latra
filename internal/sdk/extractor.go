@@ -29,7 +29,7 @@ func DefaultLimits() Limits {
 		MaxFiles:         10_000,
 		MaxFileSize:      16 << 20,
 		MaxTotalBytes:    128 << 20,
-		MaxRetainedBytes: 8 << 20,
+		MaxRetainedBytes: 128 << 20,
 		MaxDepth:         64,
 	}
 }

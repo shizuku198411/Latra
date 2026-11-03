@@ -12,6 +12,10 @@ import (
 	"github.com/shizuku198411/Latra/internal/cli"
 )
 
+func runCLI(args []string, stdout, stderr *bytes.Buffer) int {
+	return cli.RunWithDependencies(args, stdout, stderr, cli.Dependencies{})
+}
+
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -65,7 +69,7 @@ func TestRun(t *testing.T) {
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
-			code := cli.Run(tt.args, &stdout, &stderr)
+			code := runCLI(tt.args, &stdout, &stderr)
 
 			if code != tt.wantCode {
 				t.Errorf("Run() code = %d, want %d", code, tt.wantCode)
@@ -85,7 +89,7 @@ func TestRunScanProject(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"scan", "../../testdata/project-sdks/valid-project", "--verbose"}, &stdout, &stderr)
+	code := runCLI([]string{"scan", "../../testdata/project-sdks/valid-project", "--verbose"}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("Run() code = %d, want 0; stderr = %q", code, stderr.String())
@@ -132,7 +136,7 @@ func TestRunScanReportsMalformedHookAsIncomplete(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"scan", root, "--verbose"}, &stdout, &stderr)
+	code := runCLI([]string{"scan", root, "--verbose"}, &stdout, &stderr)
 
 	if code != 1 {
 		t.Errorf("Run() code = %d, want 1", code)
@@ -152,7 +156,7 @@ func TestRunScanJSONToStandardOutput(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{
+	code := runCLI([]string{
 		"scan", "--format", "json", "--no-color", "--quiet",
 		"../../testdata/project-sdks/valid-project",
 	}, &stdout, &stderr)
@@ -185,14 +189,14 @@ func TestRunScanJSONFileMatchesStandardOutput(t *testing.T) {
 	project := "../../testdata/project-sdks/valid-project"
 	var standardOutput bytes.Buffer
 	var standardError bytes.Buffer
-	if code := cli.Run([]string{"scan", project, "--format=json", "--verbose"}, &standardOutput, &standardError); code != 0 {
+	if code := runCLI([]string{"scan", project, "--format=json", "--verbose"}, &standardOutput, &standardError); code != 0 {
 		t.Fatalf("stdout scan code = %d; stderr = %q", code, standardError.String())
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "inventory.json")
 	var fileStdout bytes.Buffer
 	var fileStderr bytes.Buffer
-	if code := cli.Run([]string{"scan", project, "--format", "json", "-o", outputPath, "--verbose"}, &fileStdout, &fileStderr); code != 0 {
+	if code := runCLI([]string{"scan", project, "--format", "json", "-o", outputPath, "--verbose"}, &fileStdout, &fileStderr); code != 0 {
 		t.Fatalf("file scan code = %d; stderr = %q", code, fileStderr.String())
 	}
 	if fileStdout.Len() != 0 {
@@ -213,7 +217,7 @@ func TestRunScanJSONFileIsCompactByDefault(t *testing.T) {
 	outputPath := filepath.Join(t.TempDir(), "inventory.json")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{
+	code := runCLI([]string{
 		"scan", "../../testdata/project-sdks/valid-project",
 		"--format", "json", "--output", outputPath,
 	}, &stdout, &stderr)
@@ -244,7 +248,7 @@ func TestRunScanTextIsCompactByDefault(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"scan", "../../testdata/project-sdks/valid-project"}, &stdout, &stderr)
+	code := runCLI([]string{"scan", "../../testdata/project-sdks/valid-project"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
 	}
@@ -268,7 +272,7 @@ func TestRunScanRejectsInvalidOptions(t *testing.T) {
 	} {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
-		if code := cli.Run(args, &stdout, &stderr); code != 2 {
+		if code := runCLI(args, &stdout, &stderr); code != 2 {
 			t.Errorf("Run(%q) code = %d, want 2", args, code)
 		}
 		if stdout.Len() != 0 {
@@ -282,7 +286,7 @@ func TestRunDBOverviewAndCapabilityDetail(t *testing.T) {
 
 	var overview bytes.Buffer
 	var overviewError bytes.Buffer
-	if code := cli.Run([]string{"db"}, &overview, &overviewError); code != 0 {
+	if code := runCLI([]string{"db"}, &overview, &overviewError); code != 0 {
 		t.Fatalf("overview code = %d; stderr = %q", code, overviewError.String())
 	}
 	for _, want := range []string{"Latra Embedded DB", "Capabilities:", "Commands:", "Rules:"} {
@@ -293,7 +297,7 @@ func TestRunDBOverviewAndCapabilityDetail(t *testing.T) {
 
 	var detail bytes.Buffer
 	var detailError bytes.Buffer
-	if code := cli.Run([]string{"db", "capabilities", "network-access"}, &detail, &detailError); code != 0 {
+	if code := runCLI([]string{"db", "capabilities", "network-access"}, &detail, &detailError); code != 0 {
 		t.Fatalf("detail code = %d; stderr = %q", code, detailError.String())
 	}
 	for _, want := range []string{"network-access", "curl [direct]", "command.curl-network"} {
@@ -308,7 +312,7 @@ func TestRunDBJSONReverseLookup(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"db", "commands", "--capability", "identity-change", "--format", "json"}, &stdout, &stderr)
+	code := runCLI([]string{"db", "commands", "--capability", "identity-change", "--format", "json"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
 	}
@@ -336,13 +340,13 @@ func TestRunDBFileMatchesStandardOutput(t *testing.T) {
 	args := []string{"db", "commands", "curl", "--format=json"}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	if code := cli.Run(args, &stdout, &stderr); code != 0 {
+	if code := runCLI(args, &stdout, &stderr); code != 0 {
 		t.Fatalf("stdout code = %d; stderr = %q", code, stderr.String())
 	}
 	path := filepath.Join(t.TempDir(), "curl.json")
 	var fileStdout bytes.Buffer
 	var fileStderr bytes.Buffer
-	if code := cli.Run(append(args, "--output", path), &fileStdout, &fileStderr); code != 0 {
+	if code := runCLI(append(args, "--output", path), &fileStdout, &fileStderr); code != 0 {
 		t.Fatalf("file code = %d; stderr = %q", code, fileStderr.String())
 	}
 	content, err := os.ReadFile(path)
@@ -359,17 +363,17 @@ func TestRunDBRejectsInvalidQueries(t *testing.T) {
 
 	for _, args := range [][]string{{"db", "rules"}, {"db", "commands", "--command", "curl"}, {"db", "capabilities", "--capability", "network-access"}} {
 		var stdout, stderr bytes.Buffer
-		if code := cli.Run(args, &stdout, &stderr); code != 2 {
+		if code := runCLI(args, &stdout, &stderr); code != 2 {
 			t.Errorf("Run(%q) code = %d, want 2", args, code)
 		}
 	}
 	var stdout, stderr bytes.Buffer
-	if code := cli.Run([]string{"db", "commands", "not-in-latra-db"}, &stdout, &stderr); code != 1 {
+	if code := runCLI([]string{"db", "commands", "not-in-latra-db"}, &stdout, &stderr); code != 1 {
 		t.Errorf("missing command code = %d, want 1", code)
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := cli.Run([]string{"db", "commands", "--capability", "not-in-latra-db"}, &stdout, &stderr); code != 1 {
+	if code := runCLI([]string{"db", "commands", "--capability", "not-in-latra-db"}, &stdout, &stderr); code != 1 {
 		t.Errorf("missing capability filter code = %d, want 1", code)
 	}
 }
@@ -397,7 +401,7 @@ func TestRunScanDoesNotReplaceFileWhenHookParsingFails(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"scan", root, "--format", "json", "-o", outputPath}, &stdout, &stderr)
+	code := runCLI([]string{"scan", root, "--format", "json", "-o", outputPath}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("code = %d, want 1", code)
 	}
