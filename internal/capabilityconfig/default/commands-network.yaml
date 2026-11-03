@@ -1,0 +1,142 @@
+command-rules:
+  - id: command.rsync-network
+    commands:
+      - rsync
+    match:
+      options-consuming-next:
+        - -e
+        - --rsh
+        - --rsync-path
+      remote-operands: any
+    capabilities:
+      - network-access
+
+  - id: command.rsync-download
+    commands:
+      - rsync
+    match:
+      options-consuming-next:
+        - -e
+        - --rsh
+        - --rsync-path
+      source: remote
+    capabilities:
+      - network-download
+
+  - id: command.rsync-send
+    commands:
+      - rsync
+    match:
+      options-consuming-next:
+        - -e
+        - --rsh
+        - --rsync-path
+      destination: remote
+    capabilities:
+      - external-send
+
+  - id: command.rsync-delete
+    commands:
+      - rsync
+    match:
+      any-options:
+        - name: --delete
+          value-styles:
+            - none
+        - name: --delete-before
+          value-styles:
+            - none
+        - name: --delete-during
+          value-styles:
+            - none
+        - name: --delete-delay
+          value-styles:
+            - none
+        - name: --delete-after
+          value-styles:
+            - none
+        - name: --delete-excluded
+          value-styles:
+            - none
+    capabilities:
+      - destructive-operation
+
+  - id: command.rsync-remote-exec
+    commands:
+      - rsync
+    match:
+      any-options:
+        - name: --rsync-path
+          value-styles:
+            - next
+            - equals
+    capabilities:
+      - code-execution
+      - dynamic-execution
+
+  - id: command.sftp-network
+    commands:
+      - sftp
+    match:
+      options-consuming-next:
+        - -B
+        - -b
+        - -c
+        - -D
+        - -F
+        - -i
+        - -J
+        - -l
+        - -o
+        - -P
+        - -R
+        - -S
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - network-access
+
+  - id: command.socat-network
+    commands:
+      - socat
+    match:
+      argument-condition:
+        any-classes:
+          - network-address
+    capabilities:
+      - network-access
+
+  - id: command.socat-exec
+    commands:
+      - socat
+    match:
+      argument-condition:
+        any-classes:
+          - executable-address
+    capabilities:
+      - code-execution
+      - dynamic-execution
+
+  - id: command.socat-send
+    commands:
+      - socat
+    match:
+      source-classes:
+        - local-data-address
+      destination-classes:
+        - network-address
+    capabilities:
+      - external-send
+
+  - id: command.socat-download
+    commands:
+      - socat
+    match:
+      source-classes:
+        - network-address
+      destination-classes:
+        - local-data-address
+    capabilities:
+      - network-download
+

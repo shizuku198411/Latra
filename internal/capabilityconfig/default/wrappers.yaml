@@ -1,0 +1,28 @@
+wrapper-rules:
+  - id: wrapper.identity-change
+    wrappers:
+      - pkexec
+      - runuser
+      - sudo
+    capabilities:
+      - identity-change
+
+  - id: wrapper.execution-context
+    wrappers:
+      - chroot
+      - nice
+      - nohup
+      - setsid
+      - setpriv
+      - timeout
+    capabilities:
+      - execution-context-change
+
+  - id: wrapper.namespace
+    wrappers:
+      - nsenter
+      - unshare
+    capabilities:
+      - namespace-access
+      - execution-context-change
+

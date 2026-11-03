@@ -160,6 +160,8 @@
           "capabilities": [
             {
               "kind": "network-download",
+              "ruleId": "command.curl-download",
+              "ruleSource": "embedded-default",
               "operation": "command-invocation",
               "target": {
                 "parts": [

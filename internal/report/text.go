@@ -284,8 +284,9 @@ func writeHook(writer io.Writer, hook Hook) error {
 		return err
 	}
 	for _, capability := range hook.Capabilities {
-		if _, err := fmt.Fprintf(writer, "          %s [%s] at %s target=%s\n",
-			capability.Kind, capability.Resolution, locationString(capability.Location), formatValue(capability.Target)); err != nil {
+		if _, err := fmt.Fprintf(writer, "          %s [%s] rule=%s source=%s at %s target=%s\n",
+			capability.Kind, capability.Resolution, capability.RuleID, capability.RuleSource,
+			locationString(capability.Location), formatValue(capability.Target)); err != nil {
 			return err
 		}
 	}

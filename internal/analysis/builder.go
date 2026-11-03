@@ -328,16 +328,12 @@ func normalizeCommand(words []Value) (Value, []Value, []string) {
 	var wrappers []string
 	for command.Resolution == Resolved {
 		name := filepath.Base(command.Literal)
-		if name != "command" && name != "builtin" && name != "sudo" && name != "env" {
+		if !isCommandWrapper(name) {
 			command.Literal = name
 			break
 		}
 		wrappers = append(wrappers, name)
-		index := 0
-		for index < len(arguments) && (strings.HasPrefix(arguments[index].Literal, "-") ||
-			(name == "env" && strings.Contains(arguments[index].Literal, "="))) {
-			index++
-		}
+		index := wrappedCommandIndex(name, arguments)
 		if index >= len(arguments) {
 			return Value{Resolution: Unknown}, nil, wrappers
 		}
@@ -345,6 +341,72 @@ func normalizeCommand(words []Value) (Value, []Value, []string) {
 		arguments = arguments[index+1:]
 	}
 	return command, arguments, wrappers
+}
+
+func isCommandWrapper(name string) bool {
+	switch name {
+	case "command", "builtin", "sudo", "runuser", "pkexec", "env", "timeout", "nice", "nohup", "setsid", "chroot", "unshare", "nsenter", "setpriv":
+		return true
+	default:
+		return false
+	}
+}
+
+func wrappedCommandIndex(name string, arguments []Value) int {
+	index := 0
+	consumeOptions := func(optionsWithValue map[string]bool) {
+		for index < len(arguments) {
+			argument := arguments[index]
+			if argument.Resolution != Resolved || argument.Literal == "--" {
+				if argument.Literal == "--" {
+					index++
+				}
+				return
+			}
+			if !strings.HasPrefix(argument.Literal, "-") || argument.Literal == "-" {
+				return
+			}
+			option := argument.Literal
+			index++
+			if optionsWithValue[option] && index < len(arguments) {
+				index++
+			}
+		}
+	}
+	switch name {
+	case "command", "builtin", "nohup", "setsid":
+		consumeOptions(nil)
+	case "sudo":
+		consumeOptions(map[string]bool{"-u": true, "--user": true, "-g": true, "--group": true, "-h": true, "--host": true, "-C": true, "--close-from": true, "-R": true, "--chroot": true, "-D": true, "--chdir": true, "-T": true, "--command-timeout": true})
+	case "runuser":
+		consumeOptions(map[string]bool{"-u": true, "--user": true, "-g": true, "--group": true, "-G": true, "--supp-group": true})
+	case "pkexec":
+		consumeOptions(map[string]bool{"-u": true, "--user": true})
+	case "env":
+		consumeOptions(map[string]bool{"-u": true, "--unset": true, "-C": true, "--chdir": true, "-S": true, "--split-string": true})
+		for index < len(arguments) && arguments[index].Resolution == Resolved && strings.Contains(arguments[index].Literal, "=") {
+			index++
+		}
+	case "timeout":
+		consumeOptions(map[string]bool{"-k": true, "--kill-after": true, "-s": true, "--signal": true})
+		if index < len(arguments) {
+			index++
+		}
+	case "nice":
+		consumeOptions(map[string]bool{"-n": true, "--adjustment": true})
+	case "chroot":
+		consumeOptions(map[string]bool{"--userspec": true, "--groups": true})
+		if index < len(arguments) {
+			index++
+		}
+	case "unshare":
+		consumeOptions(map[string]bool{"--fork": false, "--map-user": true, "--map-group": true, "--map-users": true, "--map-groups": true, "--root": true, "--wd": true, "--mount-proc": false, "--propagation": true, "--kill-child": false, "--setgroups": true, "--keep-caps": false, "--monotonic": true, "--boottime": true})
+	case "nsenter":
+		consumeOptions(map[string]bool{"-t": true, "--target": true, "-m": false, "--mount": false, "-u": false, "--uts": false, "-i": false, "--ipc": false, "-n": false, "--net": false, "-p": false, "--pid": false, "-C": false, "--cgroup": false, "-U": false, "--user": false, "-T": false, "--time": false, "-r": false, "--root": false, "-w": false, "--wd": false, "-S": true, "--setuid": true, "-G": true, "--setgid": true})
+	case "setpriv":
+		consumeOptions(map[string]bool{"--reuid": true, "--regid": true, "--ruid": true, "--euid": true, "--rgid": true, "--egid": true, "--clear-groups": false, "--keep-groups": false, "--init-groups": false, "--groups": true, "--bounding-set": true, "--inh-caps": true, "--ambient-caps": true, "--securebits": true, "--pdeathsig": true, "--selinux-label": true, "--apparmor-profile": true, "--landlock-access": true})
+	}
+	return index
 }
 
 func (b *builder) child() *builder {

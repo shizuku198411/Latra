@@ -1,0 +1,316 @@
+command-rules:
+  - id: command.su-identity
+    commands:
+      - su
+    capabilities:
+      - identity-change
+      - dynamic-execution
+
+  - id: command.curl-network
+    commands:
+      - curl
+    capabilities:
+      - network-access
+
+  - id: command.curl-download
+    commands:
+      - curl
+    match:
+      short-flag-set:
+        - -f
+        - -g
+        - -I
+        - -k
+        - -L
+        - -s
+        - -S
+        - -v
+      excluded-short-flags:
+        - -I
+      excluded-options:
+        - name: -I
+          value-styles:
+            - none
+        - name: --head
+          value-styles:
+            - none
+    capabilities:
+      - network-download
+
+  - id: command.wget-network
+    commands:
+      - wget
+    capabilities:
+      - network-access
+
+  - id: command.wget-download
+    commands:
+      - wget
+    match:
+      excluded-options:
+        - name: --spider
+          value-styles:
+            - none
+    capabilities:
+      - network-download
+
+  - id: command.git-network
+    commands:
+      - git
+    match:
+      options-consuming-next:
+        - -C
+        - -c
+        - --git-dir
+        - --work-tree
+      subcommands:
+        - clone
+        - fetch
+        - pull
+        - push
+        - ls-remote
+    capabilities:
+      - network-access
+
+  - id: command.git-submodule-network
+    commands:
+      - git
+    match:
+      excluded-options:
+        - name: --no-fetch
+          value-styles:
+            - none
+      options-consuming-next:
+        - -C
+        - -c
+        - --git-dir
+        - --work-tree
+      subcommand-paths:
+        -
+          - submodule
+          - add
+        -
+          - submodule
+          - update
+    capabilities:
+      - network-access
+
+  - id: command.git-send
+    commands:
+      - git
+    match:
+      options-consuming-next:
+        - -C
+        - -c
+        - --git-dir
+        - --work-tree
+      subcommands:
+        - push
+    capabilities:
+      - external-send
+
+  - id: command.ssh-network
+    commands:
+      - ssh
+    capabilities:
+      - network-access
+
+  - id: command.scp-network
+    commands:
+      - scp
+    capabilities:
+      - network-access
+
+  - id: command.scp-send
+    commands:
+      - scp
+    match:
+      destination: remote
+    capabilities:
+      - external-send
+
+  - id: command.nc-network
+    commands:
+      - nc
+    capabilities:
+      - network-access
+
+  - id: command.interpreter
+    commands:
+      - bash
+      - sh
+      - python
+      - python3
+      - perl
+      - ruby
+      - node
+    capabilities:
+      - code-execution
+
+  - id: command.systemctl-modify
+    commands:
+      - systemctl
+    match:
+      options-consuming-next:
+        - -H
+        - --host
+        - -M
+        - --machine
+      subcommands:
+        - start
+        - stop
+        - restart
+        - reload
+        - try-restart
+        - kill
+        - enable
+        - disable
+        - mask
+        - unmask
+        - preset
+        - link
+        - revert
+    capabilities:
+      - system-modification
+
+  - id: command.systemctl-persistence
+    commands:
+      - systemctl
+    match:
+      options-consuming-next:
+        - -H
+        - --host
+        - -M
+        - --machine
+      subcommands:
+        - enable
+        - disable
+        - mask
+        - unmask
+        - preset
+        - link
+        - revert
+    capabilities:
+      - persistence
+
+  - id: command.crontab
+    commands:
+      - crontab
+    match:
+      excluded-options:
+        - name: -l
+          value-styles:
+            - none
+    capabilities:
+      - persistence
+
+  - id: command.privilege
+    commands:
+      - chmod
+      - chown
+      - setcap
+    capabilities:
+      - privilege-modification
+
+  - id: command.apt-network
+    commands:
+      - apt
+      - apt-get
+    match:
+      options-consuming-next:
+        - -c
+        - --config-file
+        - -o
+        - --option
+      subcommands:
+        - update
+        - download
+        - source
+    capabilities:
+      - network-access
+
+  - id: command.apt-network-install
+    commands:
+      - apt
+      - apt-get
+    match:
+      options-consuming-next:
+        - -c
+        - --config-file
+        - -o
+        - --option
+      subcommands:
+        - install
+      argument-condition:
+        after-subcommand: true
+        any-classes:
+          - non-local-artifact
+    capabilities:
+      - network-access
+
+  - id: command.apt-network-upgrade
+    commands:
+      - apt
+      - apt-get
+    match:
+      options-consuming-next:
+        - -c
+        - --config-file
+        - -o
+        - --option
+      subcommands:
+        - upgrade
+        - full-upgrade
+        - dist-upgrade
+    capabilities:
+      - network-access
+
+  - id: command.apt-modify
+    commands:
+      - apt
+      - apt-get
+    match:
+      options-consuming-next:
+        - -c
+        - --config-file
+        - -o
+        - --option
+      subcommands:
+        - install
+        - remove
+        - purge
+        - upgrade
+        - full-upgrade
+        - dist-upgrade
+        - autoremove
+    capabilities:
+      - system-modification
+
+  - id: command.snap-network
+    commands:
+      - snap
+    match:
+      subcommands:
+        - find
+        - install
+        - refresh
+        - download
+    capabilities:
+      - network-access
+
+  - id: command.snap-modify
+    commands:
+      - snap
+    match:
+      subcommands:
+        - install
+        - remove
+        - refresh
+        - revert
+        - enable
+        - disable
+        - connect
+        - disconnect
+    capabilities:
+      - system-modification
+

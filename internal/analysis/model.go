@@ -92,6 +92,8 @@ type HookContext struct {
 // Capability is an observable behavior inferred from an Operation.
 type Capability struct {
 	Kind       string         `json:"kind"`
+	RuleID     string         `json:"ruleId"`
+	RuleSource string         `json:"ruleSource"`
 	Operation  OperationKind  `json:"operation"`
 	Target     Value          `json:"target,omitzero"`
 	Resolution Resolution     `json:"resolution"`

@@ -1,0 +1,423 @@
+command-rules:
+  - id: command.awk-exec
+    commands:
+      - awk
+      - gawk
+      - mawk
+    match:
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - code-execution
+
+  - id: command.awk-dynamic
+    commands:
+      - awk
+      - gawk
+      - mawk
+    match:
+      argument-condition:
+        any-classes:
+          - unresolved
+    capabilities:
+      - code-execution
+      - dynamic-execution
+
+  - id: command.script-interpreter
+    commands:
+      - php
+      - lua
+      - luajit
+    match:
+      argument-condition:
+        any-classes:
+          - any-resolved
+          - unresolved
+    capabilities:
+      - code-execution
+
+  - id: command.pip-network
+    commands:
+      - pip
+      - pip3
+    match:
+      options-consuming-next:
+        - -r
+        - --requirement
+      subcommands:
+        - download
+        - install
+        - wheel
+      argument-condition:
+        after-subcommand: true
+        any-classes:
+          - non-local-package-source
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.pip-requirements-network
+    commands:
+      - pip
+      - pip3
+    match:
+      subcommands:
+        - download
+        - install
+        - wheel
+      any-options:
+        - name: -r
+          value-styles:
+            - next
+            - attached
+        - name: --requirement
+          value-styles:
+            - next
+            - equals
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.pip-modify
+    commands:
+      - pip
+      - pip3
+    match:
+      subcommands:
+        - install
+        - uninstall
+    capabilities:
+      - environment-modification
+
+  - id: command.pip-build
+    commands:
+      - pip
+      - pip3
+    match:
+      excluded-options:
+        - name: -r
+          value-styles:
+            - next
+            - attached
+        - name: --requirement
+          value-styles:
+            - next
+            - equals
+      subcommands:
+        - install
+        - wheel
+      argument-condition:
+        after-subcommand: true
+        any-classes:
+          - build-source
+    capabilities:
+      - code-execution
+
+  - id: command.python-pip-network
+    commands:
+      - python
+      - python3
+    match:
+      subcommand-paths:
+        -
+          - pip
+          - install
+        -
+          - pip
+          - download
+        -
+          - pip
+          - wheel
+      argument-condition:
+        start-position: 2
+        any-classes:
+          - non-local-package-source
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.python-pip-requirements-network
+    commands:
+      - python
+      - python3
+    match:
+      subcommand-paths:
+        -
+          - pip
+          - install
+        -
+          - pip
+          - download
+        -
+          - pip
+          - wheel
+      any-options:
+        - name: -r
+          value-styles:
+            - next
+            - attached
+        - name: --requirement
+          value-styles:
+            - next
+            - equals
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.python-pip-modify
+    commands:
+      - python
+      - python3
+    match:
+      subcommand-paths:
+        -
+          - pip
+          - install
+        -
+          - pip
+          - uninstall
+    capabilities:
+      - environment-modification
+
+  - id: command.python-pip-build
+    commands:
+      - python
+      - python3
+    match:
+      excluded-options:
+        - name: -r
+          value-styles:
+            - next
+            - attached
+        - name: --requirement
+          value-styles:
+            - next
+            - equals
+      subcommand-paths:
+        -
+          - pip
+          - install
+        -
+          - pip
+          - wheel
+      argument-condition:
+        start-position: 2
+        any-classes:
+          - build-source
+    capabilities:
+      - code-execution
+
+  - id: command.npm-install-network
+    commands:
+      - npm
+      - yarn
+      - pnpm
+    match:
+      subcommands:
+        - add
+        - install
+      argument-condition:
+        after-subcommand: true
+        any-classes:
+          - non-local-package-source
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.npm-lock-network
+    commands:
+      - npm
+      - yarn
+      - pnpm
+    match:
+      subcommands:
+        - install
+      argument-condition:
+        after-subcommand: true
+        any-classes:
+          - none
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.npm-update-network
+    commands:
+      - npm
+      - yarn
+      - pnpm
+    match:
+      subcommands:
+        - ci
+        - update
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.npm-modify
+    commands:
+      - npm
+      - yarn
+      - pnpm
+    match:
+      subcommands:
+        - add
+        - ci
+        - install
+        - remove
+        - uninstall
+        - update
+    capabilities:
+      - environment-modification
+
+  - id: command.npm-exec
+    commands:
+      - npm
+      - yarn
+      - pnpm
+    match:
+      subcommands:
+        - exec
+        - run
+        - run-script
+    capabilities:
+      - dynamic-execution
+
+  - id: command.npm-lifecycle
+    commands:
+      - npm
+      - yarn
+      - pnpm
+    match:
+      excluded-options:
+        - name: --ignore-scripts
+          value-styles:
+            - none
+      subcommands:
+        - add
+        - ci
+        - install
+        - update
+    capabilities:
+      - dynamic-execution
+
+  - id: command.npx-exec
+    commands:
+      - npx
+    match:
+      argument-condition:
+        any-classes:
+          - any-resolved
+          - unresolved
+    capabilities:
+      - network-access
+      - network-download
+      - dynamic-execution
+
+  - id: command.cargo-network
+    commands:
+      - cargo
+    match:
+      subcommands:
+        - add
+        - install
+      argument-condition:
+        after-subcommand: true
+        any-classes:
+          - non-local-package-source
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.cargo-build
+    commands:
+      - cargo
+    match:
+      subcommands:
+        - install
+    capabilities:
+      - code-execution
+
+  - id: command.cargo-fetch-network
+    commands:
+      - cargo
+    match:
+      subcommands:
+        - fetch
+        - update
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.gem-network
+    commands:
+      - gem
+    match:
+      subcommands:
+        - install
+      argument-condition:
+        after-subcommand: true
+        any-classes:
+          - non-local-package-source
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.gem-update-network
+    commands:
+      - gem
+    match:
+      subcommands:
+        - update
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.go-package-network
+    commands:
+      - go
+    match:
+      subcommands:
+        - get
+        - install
+      argument-condition:
+        after-subcommand: true
+        any-classes:
+          - non-local-package-source
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.package-manager-modify
+    commands:
+      - cargo
+      - gem
+    match:
+      subcommands:
+        - install
+        - uninstall
+        - update
+    capabilities:
+      - environment-modification
+
+  - id: command.go-mod-download
+    commands:
+      - go
+    match:
+      subcommand-paths:
+        -
+          - mod
+          - download
+    capabilities:
+      - network-access
+      - network-download
+
+  - id: command.go-generate
+    commands:
+      - go
+    match:
+      subcommands:
+        - generate
+    capabilities:
+      - dynamic-execution
+

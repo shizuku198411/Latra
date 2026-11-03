@@ -172,9 +172,12 @@ func fixtureResult() *source.Result {
 				Name: sdk.HookSetupProject, Path: "hooks/setup-project", Digest: "sha3-384:hook", Size: 34,
 				Parse: &shell.Result{Path: location.Path, Status: shell.StatusParsed, NodeTypes: map[string]int{"CallExpr": 1, "File": 1}},
 				Analysis: &analysis.Result{
-					Context:      analysis.ContextFor("setup-project"),
-					Operations:   []analysis.Operation{{Kind: analysis.OperationCommand, Command: command, Arguments: []analysis.Value{target}, Resolution: analysis.Resolved, Location: location}},
-					Capabilities: []analysis.Capability{{Kind: "network-download", Operation: analysis.OperationCommand, Target: command, Resolution: analysis.Resolved, Location: location}},
+					Context:    analysis.ContextFor("setup-project"),
+					Operations: []analysis.Operation{{Kind: analysis.OperationCommand, Command: command, Arguments: []analysis.Value{target}, Resolution: analysis.Resolved, Location: location}},
+					Capabilities: []analysis.Capability{{
+						Kind: "network-download", RuleID: "command.curl-download", RuleSource: "embedded-default",
+						Operation: analysis.OperationCommand, Target: command, Resolution: analysis.Resolved, Location: location,
+					}},
 				},
 			}},
 		}},

@@ -1,0 +1,12 @@
+target-rules:
+  - id: command.dd-device-overwrite
+    commands:
+      - dd
+    prefixes:
+      - of=
+    path-classes:
+      - device
+      - system
+    capabilities:
+      - destructive-operation
+

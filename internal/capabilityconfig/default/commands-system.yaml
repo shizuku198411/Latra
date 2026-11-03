@@ -1,0 +1,367 @@
+command-rules:
+  - id: command.dpkg-modify
+    commands:
+      - dpkg
+    match:
+      any-options:
+        - name: -i
+          value-styles:
+            - next
+            - attached
+        - name: --install
+          value-styles:
+            - next
+            - equals
+        - name: --unpack
+          value-styles:
+            - next
+            - equals
+        - name: --configure
+          value-styles:
+            - next
+            - equals
+        - name: -r
+          value-styles:
+            - next
+            - attached
+        - name: --remove
+          value-styles:
+            - next
+            - equals
+        - name: -P
+          value-styles:
+            - next
+            - attached
+        - name: --purge
+          value-styles:
+            - next
+            - equals
+    capabilities:
+      - system-modification
+      - code-execution
+
+  - id: command.indirect-exec
+    commands:
+      - xargs
+    match:
+      argument-condition:
+        any-classes:
+          - any-resolved
+          - unresolved
+    capabilities:
+      - dynamic-execution
+
+  - id: command.find-exec
+    commands:
+      - find
+    match:
+      any-options:
+        - name: -exec
+          value-styles:
+            - next
+        - name: -execdir
+          value-styles:
+            - next
+        - name: -ok
+          value-styles:
+            - next
+        - name: -okdir
+          value-styles:
+            - next
+    capabilities:
+      - dynamic-execution
+
+  - id: command.find-delete
+    commands:
+      - find
+    match:
+      any-options:
+        - name: -delete
+          value-styles:
+            - none
+    capabilities:
+      - destructive-operation
+
+  - id: command.mount-modify
+    commands:
+      - mount
+      - umount
+    match:
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - system-modification
+      - execution-context-change
+
+  - id: command.mount-all
+    commands:
+      - mount
+    match:
+      any-options:
+        - name: -a
+          value-styles:
+            - none
+        - name: --all
+          value-styles:
+            - none
+    capabilities:
+      - system-modification
+      - execution-context-change
+
+  - id: command.service-modify
+    commands:
+      - service
+    match:
+      argument-at:
+        position: 1
+        values:
+          - start
+          - stop
+          - restart
+          - reload
+    capabilities:
+      - system-modification
+
+  - id: command.at-persistence
+    commands:
+      - at
+    match:
+      excluded-options:
+        - name: -c
+          value-styles:
+            - next
+            - attached
+        - name: -l
+          value-styles:
+            - none
+        - name: --list
+          value-styles:
+            - none
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - persistence
+
+  - id: command.batch-persistence
+    commands:
+      - batch
+    match:
+      excluded-options:
+        - name: --help
+          value-styles:
+            - none
+        - name: --version
+          value-styles:
+            - none
+    capabilities:
+      - persistence
+
+  - id: command.update-rc-persistence
+    commands:
+      - update-rc.d
+    match:
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - persistence
+
+  - id: command.systemd-run-timer
+    commands:
+      - systemd-run
+    match:
+      any-options:
+        - name: --on-active
+          value-styles:
+            - next
+            - equals
+        - name: --on-boot
+          value-styles:
+            - next
+            - equals
+        - name: --on-calendar
+          value-styles:
+            - next
+            - equals
+        - name: --on-startup
+          value-styles:
+            - next
+            - equals
+        - name: --on-unit-active
+          value-styles:
+            - next
+            - equals
+        - name: --on-unit-inactive
+          value-styles:
+            - next
+            - equals
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - persistence
+
+  - id: command.persistence-remove
+    commands:
+      - atrm
+    capabilities:
+      - persistence
+
+  - id: command.storage-destructive
+    commands:
+      - mkfs
+      - shred
+    match:
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - destructive-operation
+
+  - id: command.blkdiscard-destructive
+    commands:
+      - blkdiscard
+    match:
+      excluded-options:
+        - name: --dry-run
+          value-styles:
+            - none
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - destructive-operation
+
+  - id: command.sfdisk-destructive
+    commands:
+      - sfdisk
+    match:
+      excluded-options:
+        - name: -l
+          value-styles:
+            - none
+        - name: --list
+          value-styles:
+            - none
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - destructive-operation
+
+  - id: command.parted-destructive
+    commands:
+      - parted
+    match:
+      argument-at:
+        position: 1
+        values:
+          - disk_set
+          - mklabel
+          - mkpart
+          - name
+          - resizepart
+          - rm
+          - set
+          - toggle
+    capabilities:
+      - destructive-operation
+
+  - id: command.wipefs-destructive
+    commands:
+      - wipefs
+    match:
+      any-options:
+        - name: -a
+          value-styles:
+            - none
+        - name: --all
+          value-styles:
+            - none
+    capabilities:
+      - destructive-operation
+
+  - id: command.truncate-destructive
+    commands:
+      - truncate
+    match:
+      any-options:
+        - name: -s
+          value-styles:
+            - next
+            - attached
+          values:
+            - "0"
+        - name: --size
+          value-styles:
+            - next
+            - equals
+          values:
+            - "0"
+    capabilities:
+      - destructive-operation
+
+  - id: command.access-control-modify
+    commands:
+      - chattr
+      - setfacl
+    match:
+      excluded-options:
+        - name: --test
+          value-styles:
+            - none
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - privilege-modification
+
+  - id: command.account-modify
+    commands:
+      - groupadd
+      - groupdel
+      - groupmod
+      - useradd
+      - userdel
+      - usermod
+    match:
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - system-modification
+
+  - id: command.passwd-modify
+    commands:
+      - passwd
+    match:
+      excluded-options:
+        - name: -S
+          value-styles:
+            - none
+        - name: --status
+          value-styles:
+            - none
+    capabilities:
+      - system-modification
+
+  - id: command.legacy-network
+    commands:
+      - ftp
+      - lftp
+      - telnet
+    match:
+      argument-condition:
+        any-classes:
+          - any-resolved
+    capabilities:
+      - network-access
+
+  - id: command.destructive
+    commands:
+      - rm
+    capabilities:
+      - destructive-operation
+
