@@ -22,7 +22,7 @@ func TestWriteJSONGolden(t *testing.T) {
 	if err := report.WriteJSON(&output, fixtureResult()); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.ReadFile(filepath.Join("testdata", "inventory.json"))
+	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "report", "inventory.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
