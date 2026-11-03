@@ -1,3 +1,7 @@
+<p>
+  <img src="./assets/latra_logo.png" alt="Pluvora Logo" width="250">
+</p>
+
 # Latra
 
 Latra is an open-source static analysis tool for [Canonical Workshop](https://ubuntu.com/workshop) SDKs. It is designed to reveal SDK contents and behavior that are otherwise difficult to inspect before a Workshop environment is created.
