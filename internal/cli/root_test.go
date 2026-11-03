@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -273,6 +274,103 @@ func TestRunScanRejectsInvalidOptions(t *testing.T) {
 		if stdout.Len() != 0 {
 			t.Errorf("Run(%q) stdout = %q", args, stdout.String())
 		}
+	}
+}
+
+func TestRunDBOverviewAndCapabilityDetail(t *testing.T) {
+	t.Parallel()
+
+	var overview bytes.Buffer
+	var overviewError bytes.Buffer
+	if code := cli.Run([]string{"db"}, &overview, &overviewError); code != 0 {
+		t.Fatalf("overview code = %d; stderr = %q", code, overviewError.String())
+	}
+	for _, want := range []string{"Latra Embedded DB", "Capabilities:", "Commands:", "Rules:"} {
+		if !strings.Contains(overview.String(), want) {
+			t.Errorf("overview does not contain %q:\n%s", want, overview.String())
+		}
+	}
+
+	var detail bytes.Buffer
+	var detailError bytes.Buffer
+	if code := cli.Run([]string{"db", "capabilities", "network-access"}, &detail, &detailError); code != 0 {
+		t.Fatalf("detail code = %d; stderr = %q", code, detailError.String())
+	}
+	for _, want := range []string{"network-access", "curl [direct]", "command.curl-network"} {
+		if !strings.Contains(detail.String(), want) {
+			t.Errorf("detail does not contain %q:\n%s", want, detail.String())
+		}
+	}
+}
+
+func TestRunDBJSONReverseLookup(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := cli.Run([]string{"db", "commands", "--capability", "identity-change", "--format", "json"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
+	}
+	var document struct {
+		Kind     string `json:"kind"`
+		Commands []struct {
+			Name string `json:"name"`
+		} `json:"commands"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	if document.Kind != "capability-catalog" || !slices.ContainsFunc(document.Commands, func(item struct {
+		Name string `json:"name"`
+	}) bool {
+		return item.Name == "sudo"
+	}) {
+		t.Errorf("document = %#v", document)
+	}
+}
+
+func TestRunDBFileMatchesStandardOutput(t *testing.T) {
+	t.Parallel()
+
+	args := []string{"db", "commands", "curl", "--format=json"}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := cli.Run(args, &stdout, &stderr); code != 0 {
+		t.Fatalf("stdout code = %d; stderr = %q", code, stderr.String())
+	}
+	path := filepath.Join(t.TempDir(), "curl.json")
+	var fileStdout bytes.Buffer
+	var fileStderr bytes.Buffer
+	if code := cli.Run(append(args, "--output", path), &fileStdout, &fileStderr); code != 0 {
+		t.Fatalf("file code = %d; stderr = %q", code, fileStderr.String())
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(content, stdout.Bytes()) || fileStdout.Len() != 0 {
+		t.Error("db file output differs from stdout")
+	}
+}
+
+func TestRunDBRejectsInvalidQueries(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{{"db", "rules"}, {"db", "commands", "--command", "curl"}, {"db", "capabilities", "--capability", "network-access"}} {
+		var stdout, stderr bytes.Buffer
+		if code := cli.Run(args, &stdout, &stderr); code != 2 {
+			t.Errorf("Run(%q) code = %d, want 2", args, code)
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	if code := cli.Run([]string{"db", "commands", "not-in-latra-db"}, &stdout, &stderr); code != 1 {
+		t.Errorf("missing command code = %d, want 1", code)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := cli.Run([]string{"db", "commands", "--capability", "not-in-latra-db"}, &stdout, &stderr); code != 1 {
+		t.Errorf("missing capability filter code = %d, want 1", code)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/shizuku198411/Latra/internal/buildinfo"
+	"github.com/shizuku198411/Latra/internal/knowledge"
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
@@ -42,9 +43,107 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	case "scan":
 		return runScan(args[1:], stdout, stderr)
+	case "db":
+		return runDB(args[1:], stdout, stderr)
 	default:
 		return usageError(stderr, "unknown command %q", args[0])
 	}
+}
+
+type dbOptions struct {
+	query  knowledge.Query
+	format knowledge.Format
+	output string
+}
+
+func runDB(args []string, stdout, stderr io.Writer) int {
+	options, err := parseDBOptions(args)
+	if err != nil {
+		return usageError(stderr, "%v", err)
+	}
+	catalog := knowledge.Default()
+	if options.output == "-" {
+		if err := knowledge.Write(stdout, options.format, catalog, options.query); err != nil {
+			fmt.Fprintf(stderr, "latra: query database: %v\n", err)
+			return exitError
+		}
+		return exitOK
+	}
+	if err := knowledge.WriteFile(options.output, options.format, catalog, options.query); err != nil {
+		fmt.Fprintf(stderr, "latra: write database output: %v\n", err)
+		return exitError
+	}
+	return exitOK
+}
+
+func parseDBOptions(args []string) (dbOptions, error) {
+	options := dbOptions{format: knowledge.FormatText, output: "-"}
+	for index := 0; index < len(args); index++ {
+		argument := args[index]
+		switch {
+		case argument == "--format":
+			index++
+			if index >= len(args) {
+				return options, fmt.Errorf("--format requires a value")
+			}
+			options.format = knowledge.Format(args[index])
+		case strings.HasPrefix(argument, "--format="):
+			options.format = knowledge.Format(strings.TrimPrefix(argument, "--format="))
+		case argument == "--output" || argument == "-o":
+			index++
+			if index >= len(args) {
+				return options, fmt.Errorf("%s requires a value", argument)
+			}
+			options.output = args[index]
+		case strings.HasPrefix(argument, "--output="):
+			options.output = strings.TrimPrefix(argument, "--output=")
+		case argument == "--capability":
+			index++
+			if index >= len(args) {
+				return options, fmt.Errorf("--capability requires a value")
+			}
+			options.query.Capability = args[index]
+		case strings.HasPrefix(argument, "--capability="):
+			options.query.Capability = strings.TrimPrefix(argument, "--capability=")
+		case argument == "--command":
+			index++
+			if index >= len(args) {
+				return options, fmt.Errorf("--command requires a value")
+			}
+			options.query.Command = args[index]
+		case strings.HasPrefix(argument, "--command="):
+			options.query.Command = strings.TrimPrefix(argument, "--command=")
+		case argument == "--verbose":
+			options.query.Verbose = true
+		case strings.HasPrefix(argument, "-"):
+			return options, fmt.Errorf("unknown db option %q", argument)
+		case options.query.Entity == "":
+			options.query.Entity = argument
+		case options.query.Name == "":
+			options.query.Name = argument
+		default:
+			return options, fmt.Errorf("db accepts at most an entity and a name")
+		}
+	}
+	if options.query.Entity != "" && options.query.Entity != "capabilities" && options.query.Entity != "commands" {
+		return options, fmt.Errorf("invalid db entity %q; use capabilities or commands", options.query.Entity)
+	}
+	if options.query.Entity == "" && (options.query.Name != "" || options.query.Capability != "" || options.query.Command != "") {
+		return options, fmt.Errorf("db filters require capabilities or commands")
+	}
+	if options.query.Entity == "capabilities" && options.query.Capability != "" {
+		return options, fmt.Errorf("--capability is only valid with db commands")
+	}
+	if options.query.Entity == "commands" && options.query.Command != "" {
+		return options, fmt.Errorf("--command is only valid with db capabilities")
+	}
+	if options.format != knowledge.FormatText && options.format != knowledge.FormatJSON {
+		return options, fmt.Errorf("invalid format %q; use text or json", options.format)
+	}
+	if options.output == "" {
+		return options, fmt.Errorf("output path must not be empty")
+	}
+	return options, nil
 }
 
 func runScan(args []string, stdout, stderr io.Writer) int {
@@ -157,6 +256,11 @@ Usage:
 Scan:
   latra scan <PROJECT_OR_PROJECT_SDK> [--format text|json] [--output PATH|-]
 
+Database:
+  latra db
+  latra db capabilities [CAPABILITY] [--command COMMAND]
+  latra db commands [COMMAND] [--capability CAPABILITY]
+
 Options:
   --format text|json  Report format (default: text)
   --output, -o PATH   Write report to PATH or stdout with - (default: -)
@@ -166,6 +270,7 @@ Options:
 
 Commands:
   scan       Inspect a Workshop project or project SDK
+  db         Inspect embedded capabilities, commands, and rules
   version    Print build version information
   help       Show this help`)
 }
