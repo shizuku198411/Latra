@@ -1,0 +1,134 @@
+{
+  "schemaVersion": "1",
+  "scanner": {
+    "name": "latra",
+    "version": "dev",
+    "commit": "unknown",
+    "buildDate": "unknown"
+  },
+  "input": {
+    "kind": "project-sdk",
+    "root": "/fixture/example"
+  },
+  "summary": {
+    "sdks": 1,
+    "resolvedSdks": 1,
+    "unresolvedSdks": 0,
+    "files": 1,
+    "hooks": 1,
+    "operations": 1,
+    "capabilities": 1,
+    "diagnostics": 0
+  },
+  "workshops": [],
+  "sdks": [
+    {
+      "name": "example",
+      "source": "project",
+      "state": "Resolved",
+      "root": "/fixture/example",
+      "digest": "sha3-384:sdk",
+      "metadataPath": "sdk.yaml",
+      "metadata": {
+        "name": "example",
+        "version": "1.0.0"
+      },
+      "declarations": [],
+      "files": [
+        {
+          "path": "hooks/setup-project",
+          "type": "regular",
+          "mode": 420,
+          "size": 34,
+          "digest": "sha3-384:hook",
+          "content": "",
+          "contentEncoding": "utf-8"
+        }
+      ],
+      "hooks": [
+        {
+          "name": "setup-project",
+          "path": "hooks/setup-project",
+          "digest": "sha3-384:hook",
+          "size": 34,
+          "parse": {
+            "status": "Parsed",
+            "recovered": false,
+            "nodeTypes": {
+              "CallExpr": 1,
+              "File": 1
+            },
+            "diagnostics": []
+          },
+          "context": {
+            "name": "setup-project",
+            "runAsRoot": false,
+            "projectMounted": true,
+            "interfacesActive": true,
+            "stateMounted": false
+          },
+          "operations": [
+            {
+              "kind": "command-invocation",
+              "command": {
+                "parts": [
+                  {
+                    "kind": "literal",
+                    "text": "curl"
+                  }
+                ],
+                "resolution": "Resolved",
+                "literal": "curl"
+              },
+              "arguments": [
+                {
+                  "parts": [
+                    {
+                      "kind": "quoted-literal",
+                      "text": "https://example.invalid/tool"
+                    }
+                  ],
+                  "resolution": "Resolved",
+                  "literal": "https://example.invalid/tool"
+                }
+              ],
+              "resolution": "Resolved",
+              "location": {
+                "path": "example/hooks/setup-project",
+                "startLine": 1,
+                "startColumn": 1,
+                "endLine": 1,
+                "endColumn": 34
+              }
+            }
+          ],
+          "capabilities": [
+            {
+              "kind": "network-download",
+              "operation": "command-invocation",
+              "target": {
+                "parts": [
+                  {
+                    "kind": "literal",
+                    "text": "curl"
+                  }
+                ],
+                "resolution": "Resolved",
+                "literal": "curl"
+              },
+              "resolution": "Resolved",
+              "location": {
+                "path": "example/hooks/setup-project",
+                "startLine": 1,
+                "startColumn": 1,
+                "endLine": 1,
+                "endColumn": 34
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "diagnostics": []
+}
