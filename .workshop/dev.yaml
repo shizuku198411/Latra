@@ -1,0 +1,38 @@
+name: dev
+base: ubuntu@26.04
+sdks:
+  - name: go
+    channel: 1.27/stable
+
+actions:
+  format: |
+    files="$(find cmd internal -type f -name '*.go')"
+    gofmt -w $files
+
+  format-check: |
+    files="$(find cmd internal -type f -name '*.go')"
+    unformatted="$(gofmt -l $files)"
+    if [ -n "$unformatted" ]; then
+      printf 'The following Go files need formatting:\n%s\n' "$unformatted" >&2
+      exit 1
+    fi
+
+  vet: go vet ./...
+
+  test: go test ./...
+
+  check: |
+    files="$(find cmd internal -type f -name '*.go')"
+    unformatted="$(gofmt -l $files)"
+    if [ -n "$unformatted" ]; then
+      printf 'The following Go files need formatting:\n%s\n' "$unformatted" >&2
+      exit 1
+    fi
+    go vet ./...
+    go test ./...
+
+  build: |
+    mkdir -p build
+    go build -trimpath -o build/latra ./cmd/latra
+
+  latra: go run ./cmd/latra "$@"

@@ -1,5 +1,6 @@
 workshop/
 internaldocs/
+.workshop.lock
 
 # OS
 .DS_Store
