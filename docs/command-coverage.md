@@ -24,3 +24,11 @@ Latra's embedded rules cover the following command families. Rules use subcomman
 - Wrapper commands retain the inner command as the normalized Operation. Wrapper-specific behavior is emitted as a separate capability with its own rule provenance.
 
 These rules inventory observable behavior; they do not guarantee that a command succeeds or that a conditional behavior is exercised at runtime.
+
+## Unknown command summary
+
+The report summary groups resolved `command-invocation` operations that do not appear in any embedded command, file, target, interpreter, or upload rule. Counts are reported by SDK and hook file, with deduplicated command names for each file.
+
+“Unknown” means that Latra has no behavioral knowledge for the command. It does not mean that the executable is missing from the container, invalid, or dangerous. Common shell utilities and project-specific tools can therefore appear in this inventory until explicit knowledge is added. Commands whose names cannot be resolved statically are handled as dynamic execution and are not included in the unknown-command count.
+
+Verbose output continues to include the original Operation, arguments, resolution, wrapper information, and source location. The summary does not replace or modify those details.

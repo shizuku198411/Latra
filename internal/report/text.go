@@ -88,7 +88,7 @@ func writeSummary(writer io.Writer, summary Summary) error {
 		return err
 	}
 	for _, item := range summary.Operations.BySDK {
-		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatSummaryItems(item.OperationKinds)); err != nil {
+		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatCountedItems(item.OperationKinds)); err != nil {
 			return err
 		}
 	}
@@ -96,12 +96,36 @@ func writeSummary(writer io.Writer, summary Summary) error {
 		return err
 	}
 	for _, item := range summary.Capabilities.BySDK {
-		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatSummaryItems(item.CapabilityNames)); err != nil {
+		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatCountedItems(item.CapabilityNames)); err != nil {
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(writer, "  Diagnostics: %d\n", summary.Diagnostics.Count)
+	if _, err := fmt.Fprintf(writer, "  Unknown Commands: %d\n", summary.UnknownCommands.Count); err != nil {
+		return err
+	}
+	for _, item := range summary.UnknownCommands.BySDK {
+		if _, err := fmt.Fprintf(writer, "    %s (%d)\n", item.SDKName, item.Count); err != nil {
+			return err
+		}
+		for _, file := range item.Files {
+			if _, err := fmt.Fprintf(writer, "      %s (%d): %s\n", file.FilePath, file.Count, formatCountedItems(file.CommandNames)); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := fmt.Fprintf(writer, "  Diagnostics: %d: %s\n", summary.Diagnostics.Count, formatCountedItems(summary.Diagnostics.DiagnosticCodes))
 	return err
+}
+
+func formatCountedItems(items []CountedName) string {
+	if len(items) == 0 {
+		return "-"
+	}
+	formatted := make([]string, 0, len(items))
+	for _, item := range items {
+		formatted = append(formatted, fmt.Sprintf("%s (%d)", item.Name, item.Count))
+	}
+	return strings.Join(formatted, ", ")
 }
 
 func formatSummaryItems(items []string) string {

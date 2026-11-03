@@ -96,6 +96,42 @@ func ExtractCapabilities(operations []Operation, context HookContext) []Capabili
 	return extractCapabilities(operations, context, capabilityconfig.MustDefault())
 }
 
+// IsKnownCommand reports whether a resolved command is covered by embedded
+// command, file, target, interpreter, or upload knowledge.
+func IsKnownCommand(command Value) bool {
+	if command.Resolution != Resolved {
+		return false
+	}
+	name := filepath.Base(command.Literal)
+	config := capabilityconfig.MustDefault()
+	for _, rule := range config.CommandRules {
+		if contains(rule.Commands, name) {
+			return true
+		}
+	}
+	for _, rule := range config.FileCommandRules {
+		if contains(rule.Commands, name) {
+			return true
+		}
+	}
+	for _, rule := range config.TargetRules {
+		if contains(rule.Commands, name) {
+			return true
+		}
+	}
+	for _, rule := range config.Interpreters {
+		if contains(rule.Commands, name) {
+			return true
+		}
+	}
+	for _, rule := range config.UploadRules {
+		if contains(rule.Commands, name) {
+			return true
+		}
+	}
+	return false
+}
+
 func extractCapabilities(operations []Operation, context HookContext, config *capabilityconfig.Config) []Capability {
 	var capabilities []Capability
 	for i := range operations {

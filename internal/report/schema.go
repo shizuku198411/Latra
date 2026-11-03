@@ -39,12 +39,13 @@ type Input struct {
 }
 
 type Summary struct {
-	SDKs         SDKSummary        `json:"sdks"`
-	Files        FileSummary       `json:"files"`
-	Hooks        HookSummary       `json:"hooks"`
-	Operations   OperationSummary  `json:"operations"`
-	Capabilities CapabilitySummary `json:"capabilities"`
-	Diagnostics  DiagnosticSummary `json:"diagnostics"`
+	SDKs            SDKSummary            `json:"sdks"`
+	Files           FileSummary           `json:"files"`
+	Hooks           HookSummary           `json:"hooks"`
+	Operations      OperationSummary      `json:"operations"`
+	Capabilities    CapabilitySummary     `json:"capabilities"`
+	UnknownCommands UnknownCommandSummary `json:"unknownCommands"`
+	Diagnostics     DiagnosticSummary     `json:"diagnostics"`
 }
 
 type SDKSummary struct {
@@ -79,6 +80,28 @@ type CapabilitySummary struct {
 	BySDK []SDKCapabilitySummary `json:"bySdk"`
 }
 
+type UnknownCommandSummary struct {
+	Count int                        `json:"count"`
+	BySDK []SDKUnknownCommandSummary `json:"bySdk"`
+}
+
+type SDKUnknownCommandSummary struct {
+	SDKName string                      `json:"sdkName"`
+	Count   int                         `json:"count"`
+	Files   []FileUnknownCommandSummary `json:"files"`
+}
+
+type FileUnknownCommandSummary struct {
+	FilePath     string        `json:"filePath"`
+	Count        int           `json:"count"`
+	CommandNames []CountedName `json:"commandNames"`
+}
+
+type CountedName struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
 type SDKFileSummary struct {
 	SDKName   string   `json:"sdkName"`
 	Count     int      `json:"count"`
@@ -92,20 +115,20 @@ type SDKHookSummary struct {
 }
 
 type SDKOperationSummary struct {
-	SDKName        string   `json:"sdkName"`
-	Count          int      `json:"count"`
-	OperationKinds []string `json:"operationKinds"`
+	SDKName        string        `json:"sdkName"`
+	Count          int           `json:"count"`
+	OperationKinds []CountedName `json:"operationKinds"`
 }
 
 type SDKCapabilitySummary struct {
-	SDKName         string   `json:"sdkName"`
-	Count           int      `json:"count"`
-	CapabilityNames []string `json:"capabilityNames"`
+	SDKName         string        `json:"sdkName"`
+	Count           int           `json:"count"`
+	CapabilityNames []CountedName `json:"capabilityNames"`
 }
 
 type DiagnosticSummary struct {
-	Count           int      `json:"count"`
-	DiagnosticCodes []string `json:"diagnosticCodes"`
+	Count           int           `json:"count"`
+	DiagnosticCodes []CountedName `json:"diagnosticCodes"`
 }
 
 type SDK struct {
@@ -244,17 +267,18 @@ func summarize(document Document) Summary {
 			Count:    len(document.SDKs),
 			SDKNames: SDKNameSummary{Resolved: []string{}, Unresolved: []string{}},
 		},
-		Files:        FileSummary{BySDK: []SDKFileSummary{}},
-		Hooks:        HookSummary{BySDK: []SDKHookSummary{}},
-		Operations:   OperationSummary{BySDK: []SDKOperationSummary{}},
-		Capabilities: CapabilitySummary{BySDK: []SDKCapabilitySummary{}},
-		Diagnostics:  DiagnosticSummary{Count: len(document.Diagnostics), DiagnosticCodes: []string{}},
+		Files:           FileSummary{BySDK: []SDKFileSummary{}},
+		Hooks:           HookSummary{BySDK: []SDKHookSummary{}},
+		Operations:      OperationSummary{BySDK: []SDKOperationSummary{}},
+		Capabilities:    CapabilitySummary{BySDK: []SDKCapabilitySummary{}},
+		UnknownCommands: UnknownCommandSummary{BySDK: []SDKUnknownCommandSummary{}},
+		Diagnostics:     DiagnosticSummary{Count: len(document.Diagnostics), DiagnosticCodes: []CountedName{}},
 	}
 	resolvedSDKNames := make(map[string]struct{})
 	unresolvedSDKNames := make(map[string]struct{})
-	diagnosticCodes := make(map[string]struct{})
+	diagnosticCodes := make(map[string]int)
 	for _, diagnostic := range document.Diagnostics {
-		diagnosticCodes[diagnostic.Diagnostic.Code] = struct{}{}
+		diagnosticCodes[diagnostic.Diagnostic.Code]++
 	}
 	for _, item := range document.SDKs {
 		if item.State == sdk.StateResolved {
@@ -269,43 +293,79 @@ func summarize(document Document) Summary {
 			fileSummary.FilePaths = append(fileSummary.FilePaths, file.Path)
 		}
 		hookSummary := SDKHookSummary{SDKName: item.Name, Count: len(item.Hooks), HookNames: []string{}}
-		operationSummary := SDKOperationSummary{SDKName: item.Name, OperationKinds: []string{}}
-		capabilitySummary := SDKCapabilitySummary{SDKName: item.Name, CapabilityNames: []string{}}
+		operationSummary := SDKOperationSummary{SDKName: item.Name, OperationKinds: []CountedName{}}
+		capabilitySummary := SDKCapabilitySummary{SDKName: item.Name, CapabilityNames: []CountedName{}}
+		unknownCommandSummary := SDKUnknownCommandSummary{SDKName: item.Name, Files: []FileUnknownCommandSummary{}}
 		hookNames := make(map[string]struct{})
-		operationKinds := make(map[string]struct{})
-		capabilityNames := make(map[string]struct{})
+		operationKinds := make(map[string]int)
+		capabilityNames := make(map[string]int)
 		for _, hook := range item.Hooks {
 			hookNames[string(hook.Name)] = struct{}{}
 			operationSummary.Count += countOperations(hook.Operations)
 			collectOperationKinds(hook.Operations, operationKinds)
 			capabilitySummary.Count += len(hook.Capabilities)
 			for _, capability := range hook.Capabilities {
-				capabilityNames[capability.Kind] = struct{}{}
+				capabilityNames[capability.Kind]++
+			}
+			unknownNames := make(map[string]int)
+			unknownCount := collectUnknownCommands(hook.Operations, unknownNames)
+			if unknownCount > 0 {
+				unknownCommandSummary.Count += unknownCount
+				unknownCommandSummary.Files = append(unknownCommandSummary.Files, FileUnknownCommandSummary{
+					FilePath: hook.Path, Count: unknownCount, CommandNames: sortedCounts(unknownNames),
+				})
 			}
 		}
 		hookSummary.HookNames = sortedSet(hookNames)
-		operationSummary.OperationKinds = sortedSet(operationKinds)
-		capabilitySummary.CapabilityNames = sortedSet(capabilityNames)
+		operationSummary.OperationKinds = sortedCounts(operationKinds)
+		capabilitySummary.CapabilityNames = sortedCounts(capabilityNames)
 		summary.Files.Count += fileSummary.Count
 		summary.Hooks.Count += hookSummary.Count
 		summary.Operations.Count += operationSummary.Count
 		summary.Capabilities.Count += capabilitySummary.Count
+		summary.UnknownCommands.Count += unknownCommandSummary.Count
 		summary.Files.BySDK = append(summary.Files.BySDK, fileSummary)
 		summary.Hooks.BySDK = append(summary.Hooks.BySDK, hookSummary)
 		summary.Operations.BySDK = append(summary.Operations.BySDK, operationSummary)
 		summary.Capabilities.BySDK = append(summary.Capabilities.BySDK, capabilitySummary)
+		summary.UnknownCommands.BySDK = append(summary.UnknownCommands.BySDK, unknownCommandSummary)
 	}
 	summary.SDKs.SDKNames.Resolved = sortedSet(resolvedSDKNames)
 	summary.SDKs.SDKNames.Unresolved = sortedSet(unresolvedSDKNames)
-	summary.Diagnostics.DiagnosticCodes = sortedSet(diagnosticCodes)
+	summary.Diagnostics.DiagnosticCodes = sortedCounts(diagnosticCodes)
 	return summary
 }
 
-func collectOperationKinds(operations []analysis.Operation, kinds map[string]struct{}) {
+func collectUnknownCommands(operations []analysis.Operation, names map[string]int) int {
+	count := 0
 	for _, operation := range operations {
-		kinds[string(operation.Kind)] = struct{}{}
+		if operation.Kind == analysis.OperationCommand && operation.Command.Resolution == analysis.Resolved && !analysis.IsKnownCommand(operation.Command) {
+			count++
+			names[operation.Command.Literal]++
+		}
+		count += collectUnknownCommands(operation.Children, names)
+	}
+	return count
+}
+
+func collectOperationKinds(operations []analysis.Operation, kinds map[string]int) {
+	for _, operation := range operations {
+		kinds[string(operation.Kind)]++
 		collectOperationKinds(operation.Children, kinds)
 	}
+}
+
+func sortedCounts(values map[string]int) []CountedName {
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	items := make([]CountedName, 0, len(names))
+	for _, name := range names {
+		items = append(items, CountedName{Name: name, Count: values[name]})
+	}
+	return items
 }
 
 func sortedSet(values map[string]struct{}) []string {

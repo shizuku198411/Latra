@@ -90,7 +90,7 @@ func TestWriteTextIncludesInventoryDetailsAndEscapesControls(t *testing.T) {
 	for _, want := range []string{
 		"Context: root=false project=true interfaces=true state=false",
 		`command="curl"`, `args=["line1\nline2\x1b"]`,
-		"network-download [Resolved]", "Summary", "Operations: 1",
+		"network-download [Resolved]", "Summary", "Operations: 1", "Unknown Commands: 0",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text does not contain %q:\n%s", want, text)
@@ -145,15 +145,71 @@ func TestDocumentSummaryDeduplicatesDetectedItems(t *testing.T) {
 		t.Errorf("hook summary = %#v", summary.Hooks)
 	}
 	if summary.Operations.Count != 2 || len(summary.Operations.BySDK) != 2 ||
-		!slices.Equal(summary.Operations.BySDK[0].OperationKinds, []string{"command-invocation"}) {
+		!slices.Equal(summary.Operations.BySDK[0].OperationKinds, []report.CountedName{{Name: "command-invocation", Count: 1}}) {
 		t.Errorf("operation summary = %#v", summary.Operations)
 	}
 	if summary.Capabilities.Count != 2 || len(summary.Capabilities.BySDK) != 2 ||
-		!slices.Equal(summary.Capabilities.BySDK[0].CapabilityNames, []string{"network-download"}) {
+		!slices.Equal(summary.Capabilities.BySDK[0].CapabilityNames, []report.CountedName{{Name: "network-download", Count: 1}}) {
 		t.Errorf("capability summary = %#v", summary.Capabilities)
 	}
-	if summary.Diagnostics.Count != 2 || !slices.Equal(summary.Diagnostics.DiagnosticCodes, []string{"syntax-warning"}) {
+	if summary.UnknownCommands.Count != 0 || len(summary.UnknownCommands.BySDK) != 2 {
+		t.Errorf("unknown command summary = %#v", summary.UnknownCommands)
+	}
+	if summary.Diagnostics.Count != 2 || !slices.Equal(summary.Diagnostics.DiagnosticCodes, []report.CountedName{{Name: "syntax-warning", Count: 2}}) {
 		t.Errorf("diagnostic summary = %d %#v", summary.Diagnostics.Count, summary.Diagnostics.DiagnosticCodes)
+	}
+}
+
+func TestDocumentSummaryGroupsUnknownCommandsBySDKAndFile(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	location := result.SDKs[0].Hooks[0].Analysis.Operations[0].Location
+	unknown := func(name string) analysis.Operation {
+		return analysis.Operation{
+			Kind:       analysis.OperationCommand,
+			Command:    analysis.Value{Resolution: analysis.Resolved, Literal: name},
+			Resolution: analysis.Resolved,
+			Location:   location,
+		}
+	}
+	result.SDKs[0].Hooks[0].Analysis.Operations = append(
+		result.SDKs[0].Hooks[0].Analysis.Operations,
+		unknown("latra-unknown-fixture"),
+		analysis.Operation{Kind: analysis.OperationPipeline, Resolution: analysis.Resolved, Location: location, Children: []analysis.Operation{
+			unknown("latra-unknown-fixture"), unknown("another-unknown-fixture"),
+		}},
+	)
+
+	summary := report.NewDocument(result).Summary.UnknownCommands
+	if summary.Count != 3 || len(summary.BySDK) != 1 {
+		t.Fatalf("unknown command summary = %#v", summary)
+	}
+	sdkSummary := summary.BySDK[0]
+	if sdkSummary.SDKName != "example" || sdkSummary.Count != 3 || len(sdkSummary.Files) != 1 {
+		t.Fatalf("SDK unknown command summary = %#v", sdkSummary)
+	}
+	fileSummary := sdkSummary.Files[0]
+	if fileSummary.FilePath != "hooks/setup-project" || fileSummary.Count != 3 ||
+		!slices.Equal(fileSummary.CommandNames, []report.CountedName{{Name: "another-unknown-fixture", Count: 1}, {Name: "latra-unknown-fixture", Count: 2}}) {
+		t.Errorf("file unknown command summary = %#v", fileSummary)
+	}
+}
+
+func TestDocumentSummaryCountsRepeatedOperationsAndCapabilities(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	hook := &result.SDKs[0].Hooks[0]
+	hook.Analysis.Operations = append(hook.Analysis.Operations, hook.Analysis.Operations[0])
+	hook.Analysis.Capabilities = append(hook.Analysis.Capabilities, hook.Analysis.Capabilities[0])
+
+	summary := report.NewDocument(result).Summary
+	if !slices.Equal(summary.Operations.BySDK[0].OperationKinds, []report.CountedName{{Name: "command-invocation", Count: 2}}) {
+		t.Errorf("operation counts = %#v", summary.Operations.BySDK[0].OperationKinds)
+	}
+	if !slices.Equal(summary.Capabilities.BySDK[0].CapabilityNames, []report.CountedName{{Name: "network-download", Count: 2}}) {
+		t.Errorf("capability counts = %#v", summary.Capabilities.BySDK[0].CapabilityNames)
 	}
 }
 

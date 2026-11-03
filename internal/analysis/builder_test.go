@@ -157,6 +157,20 @@ func TestClassifyPath(t *testing.T) {
 	}
 }
 
+func TestKnownCommandCoverage(t *testing.T) {
+	t.Parallel()
+
+	if !analysis.IsKnownCommand(analysis.Value{Resolution: analysis.Resolved, Literal: "/usr/bin/curl"}) {
+		t.Error("curl should be covered by embedded command knowledge")
+	}
+	if analysis.IsKnownCommand(analysis.Value{Resolution: analysis.Resolved, Literal: "latra-unknown-fixture"}) {
+		t.Error("fixture command unexpectedly covered by embedded command knowledge")
+	}
+	if analysis.IsKnownCommand(analysis.Value{Resolution: analysis.Unknown}) {
+		t.Error("unresolved command should not be classified as a known command")
+	}
+}
+
 func TestEmbeddedCapabilityRulesRegression(t *testing.T) {
 	t.Parallel()
 
