@@ -101,21 +101,26 @@ func TestWriteTextIncludesInventoryDetailsAndEscapesControls(t *testing.T) {
 	}
 }
 
-func TestDocumentEncodesFileContentWithoutDataLoss(t *testing.T) {
+func TestDocumentRepresentsBinaryFileContentByDigest(t *testing.T) {
 	t.Parallel()
 
 	result := fixtureResult()
 	result.SDKs[0].Files = append(result.SDKs[0].Files,
 		sdk.File{Path: "text.txt", Type: sdk.FileRegular, Content: []byte("hello\n")},
 		sdk.File{Path: "binary", Type: sdk.FileRegular, Content: []byte{0xff, 0x00}},
+		sdk.File{Path: "z-nul-binary", Type: sdk.FileRegular, Content: []byte{'a', 0x00, 'b'}},
 	)
 	document := report.NewDocument(result)
 	files := document.SDKs[0].Files
-	if files[0].Content == nil || *files[0].Content != "/wA=" || files[0].ContentEncoding != "base64" {
+	const binaryDigest = "sha3-384:c100c311dfd4de0ca49c25625b170bfdc221fe73ac05033f80b94d7369e03bdab47a810f48f34e1137a349c18c351716"
+	if files[0].Content == nil || *files[0].Content != binaryDigest || files[0].ContentEncoding != "sha3-384" || files[0].Digest != binaryDigest {
 		t.Errorf("binary file = %#v", files[0])
 	}
 	if files[2].Content == nil || *files[2].Content != "hello\n" || files[2].ContentEncoding != "utf-8" {
 		t.Errorf("text file = %#v", files[2])
+	}
+	if files[3].Content == nil || files[3].ContentEncoding != "sha3-384" || *files[3].Content != files[3].Digest {
+		t.Errorf("NUL-containing file = %#v", files[3])
 	}
 }
 

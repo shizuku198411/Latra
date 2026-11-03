@@ -1,9 +1,11 @@
 package report
 
 import (
-	"encoding/base64"
+	"crypto/sha3"
+	"encoding/hex"
 	"io/fs"
 	"sort"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/shizuku198411/Latra/internal/analysis"
@@ -458,7 +460,10 @@ func reportFiles(files []sdk.File) []File {
 			Digest: file.Digest, LinkTarget: file.LinkTarget,
 		}
 		if file.Type == sdk.FileRegular {
-			content, encoding := encodeContent(file.Content)
+			content, encoding := encodeContent(file.Content, file.Digest)
+			if item.Digest == "" && encoding == "sha3-384" {
+				item.Digest = content
+			}
 			item.Content = &content
 			item.ContentEncoding = encoding
 		}
@@ -467,9 +472,25 @@ func reportFiles(files []sdk.File) []File {
 	return reported
 }
 
-func encodeContent(content []byte) (string, string) {
-	if utf8.Valid(content) {
+func encodeContent(content []byte, digest string) (string, string) {
+	if isTextContent(content) {
 		return string(content), "utf-8"
 	}
-	return base64.StdEncoding.EncodeToString(content), "base64"
+	if digest == "" {
+		sum := sha3.Sum384(content)
+		digest = "sha3-384:" + hex.EncodeToString(sum[:])
+	}
+	return digest, "sha3-384"
+}
+
+func isTextContent(content []byte) bool {
+	if !utf8.Valid(content) {
+		return false
+	}
+	for _, character := range string(content) {
+		if unicode.IsControl(character) && character != '\n' && character != '\r' && character != '\t' {
+			return false
+		}
+	}
+	return true
 }
