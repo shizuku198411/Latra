@@ -29,6 +29,8 @@ Use `latra db commands` to list the currently registered commands and `latra db 
 | `project-read` | Reads data from the mounted Workshop project. |
 | `project-write` | Writes data to the mounted Workshop project. |
 | `credential-read` | Reads a path likely to contain credentials or other sensitive data. |
+| `sensitive-file-read` | Reads a file classified as potentially containing secrets or other sensitive data. |
+| `project-sensitive-file-read` | Reads a sensitive file from the mounted Workshop project. |
 | `state-read` | Reads persisted Workshop SDK state. |
 | `state-write` | Writes persisted Workshop SDK state. |
 | `device-access` | Reads from or writes to a device or kernel interface path. |

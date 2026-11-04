@@ -11,26 +11,30 @@ import (
 type PathClass string
 
 const (
-	PathSDK         PathClass = "sdk"
-	PathProject     PathClass = "project"
-	PathUserHome    PathClass = "user-home"
-	PathRootHome    PathClass = "root-home"
-	PathState       PathClass = "state"
-	PathRuntime     PathClass = "runtime"
-	PathSystem      PathClass = "system"
-	PathPersistence PathClass = "persistence"
-	PathSensitive   PathClass = "sensitive"
-	PathDevice      PathClass = "device"
-	PathTemporary   PathClass = "temporary"
-	PathUnknown     PathClass = "unknown"
+	PathSDK                       PathClass = "sdk"
+	PathProject                   PathClass = "project"
+	PathUserHome                  PathClass = "user-home"
+	PathRootHome                  PathClass = "root-home"
+	PathState                     PathClass = "state"
+	PathRuntime                   PathClass = "runtime"
+	PathSystem                    PathClass = "system"
+	PathPersistence               PathClass = "persistence"
+	PathSensitive                 PathClass = "sensitive"
+	PathProjectSensitive          PathClass = "project-sensitive"
+	PathUserSensitive             PathClass = "user-sensitive"
+	PathSystemSensitive           PathClass = "system-sensitive"
+	PathUnknownSensitiveCandidate PathClass = "unknown-sensitive-candidate"
+	PathDevice                    PathClass = "device"
+	PathTemporary                 PathClass = "temporary"
+	PathUnknown                   PathClass = "unknown"
 )
 
 // ClassifyPath maps a resolved or partially resolved path to a security area.
 func ClassifyPath(value Value) PathClass {
-	return classifyPath(value, capabilityconfig.MustDefault())
+	return classifyPath(value, HookContext{}, capabilityconfig.MustDefault())
 }
 
-func classifyPath(value Value, config *capabilityconfig.Config) PathClass {
+func classifyPath(value Value, context HookContext, config *capabilityconfig.Config) PathClass {
 	for _, part := range value.Parts {
 		if part.Kind != PartVariableReference {
 			continue
@@ -41,11 +45,39 @@ func classifyPath(value Value, config *capabilityconfig.Config) PathClass {
 			}
 		}
 	}
-	path := value.Literal
-	if path == "" && len(value.Candidates) > 0 {
-		path = value.Candidates[0]
+	if value.Literal == "" && len(value.Candidates) > 0 {
+		fallback := PathUnknown
+		for _, candidate := range value.Candidates {
+			class := classifyPath(literalValue(candidate), context, config)
+			if isSensitivePathClass(class) {
+				return class
+			}
+			if fallback == PathUnknown {
+				fallback = class
+			}
+		}
+		return fallback
 	}
+	path := value.Literal
 	path = filepath.Clean(path)
+	if isProjectPath(path) && matchesPath(strings.TrimPrefix(path, "/project/"), config.PathClasses[string(PathProjectSensitive)]) {
+		return PathProjectSensitive
+	}
+	if !filepath.IsAbs(path) && matchesPath(path, config.PathClasses[string(PathProjectSensitive)]) {
+		if context.Name == "setup-project" {
+			return PathProjectSensitive
+		}
+		return PathUnknownSensitiveCandidate
+	}
+	if matchesPath(path, config.PathClasses[string(PathUserSensitive)]) {
+		return PathUserSensitive
+	}
+	if matchesPath(path, config.PathClasses[string(PathSystemSensitive)]) {
+		return PathSystemSensitive
+	}
+	if value.Resolution != Resolved && matchesKnownFragment(value, config.PathClasses[string(PathUnknownSensitiveCandidate)]) {
+		return PathUnknownSensitiveCandidate
+	}
 	if matchesExactOrPrefix(path, config.PathClasses[string(PathProject)]) {
 		return PathProject
 	}
@@ -89,6 +121,15 @@ func classifyPath(value Value, config *capabilityconfig.Config) PathClass {
 		return PathSDK
 	}
 	return PathUnknown
+}
+
+func isSensitivePathClass(class PathClass) bool {
+	switch class {
+	case PathProjectSensitive, PathUserSensitive, PathSystemSensitive, PathUnknownSensitiveCandidate, PathSensitive:
+		return true
+	default:
+		return false
+	}
 }
 
 // ExtractCapabilities derives factual behaviors without assigning risk scores.
@@ -145,7 +186,7 @@ func extractCapabilities(operations []Operation, context HookContext, config *ca
 	return capabilities
 }
 
-func capabilitiesForOperation(operation Operation, _ HookContext, config *capabilityconfig.Config) []Capability {
+func capabilitiesForOperation(operation Operation, context HookContext, config *capabilityconfig.Config) []Capability {
 	var capabilities []Capability
 	add := func(kind, ruleID string, target Value, resolution Resolution) {
 		capabilities = append(capabilities, Capability{
@@ -194,12 +235,19 @@ func capabilitiesForOperation(operation Operation, _ HookContext, config *capabi
 			operands := positionalArgumentsWithOptions(operation.Arguments, rule.Options)
 			for _, operandRule := range rule.Operands {
 				for _, operand := range selectOperands(operands, operandRule.Selector) {
-					addPathAccessCapabilities(&capabilities, operation, operand, operandRule.Access, config)
+					addPathAccessCapabilities(&capabilities, operation, operand, operandRule.Access, context, config)
 				}
 			}
 			for _, optionRule := range rule.OptionOperands {
 				for _, operand := range matchAllOptions(operation.Arguments, optionRule.Options) {
-					addPathAccessCapabilities(&capabilities, operation, operand, optionRule.Access, config)
+					if optionRule.PathMarker != "" {
+						var matched bool
+						operand, matched = pathAfterMarker(operand, optionRule.PathMarker)
+						if !matched {
+							continue
+						}
+					}
+					addPathAccessCapabilities(&capabilities, operation, operand, optionRule.Access, context, config)
 				}
 			}
 		}
@@ -216,7 +264,7 @@ func capabilitiesForOperation(operation Operation, _ HookContext, config *capabi
 						continue
 					}
 					target := literalValue(strings.TrimPrefix(argument.Literal, prefix))
-					if contains(rule.PathClasses, string(classifyPath(target, config))) {
+					if contains(rule.PathClasses, string(classifyPath(target, context, config))) {
 						for _, capability := range rule.Capabilities {
 							add(capability, rule.ID, target, target.Resolution)
 						}
@@ -242,12 +290,23 @@ func capabilitiesForOperation(operation Operation, _ HookContext, config *capabi
 		}
 	}
 	for _, input := range operation.Inputs {
-		addPathCapability(&capabilities, operation, input.Value, false, config)
+		addPathCapability(&capabilities, operation, input.Value, false, context, config)
 	}
 	for _, output := range operation.Outputs {
-		addPathCapability(&capabilities, operation, output.Value, true, config)
+		addPathCapability(&capabilities, operation, output.Value, true, context, config)
 	}
 	return capabilities
+}
+
+func pathAfterMarker(value Value, marker string) (Value, bool) {
+	if value.Resolution != Resolved {
+		return value, false
+	}
+	index := strings.Index(value.Literal, marker)
+	if index < 0 || index+len(marker) == len(value.Literal) {
+		return Value{}, false
+	}
+	return literalValue(value.Literal[index+len(marker):]), true
 }
 
 func matchCommand(arguments []Value, match capabilityconfig.CommandMatch) (bool, Resolution) {
@@ -651,12 +710,12 @@ func selectOperands(operands []Value, selector string) []Value {
 	return nil
 }
 
-func addPathAccessCapabilities(capabilities *[]Capability, operation Operation, target Value, access string, config *capabilityconfig.Config) {
+func addPathAccessCapabilities(capabilities *[]Capability, operation Operation, target Value, access string, context HookContext, config *capabilityconfig.Config) {
 	if access == "read" || access == "read-write" {
-		addPathCapability(capabilities, operation, target, false, config)
+		addPathCapability(capabilities, operation, target, false, context, config)
 	}
 	if access == "write" || access == "read-write" {
-		addPathCapability(capabilities, operation, target, true, config)
+		addPathCapability(capabilities, operation, target, true, context, config)
 	}
 }
 
@@ -723,8 +782,8 @@ func matchAllOptions(arguments []Value, options []capabilityconfig.OptionSpec) [
 	return matches
 }
 
-func addPathCapability(capabilities *[]Capability, operation Operation, target Value, write bool, config *capabilityconfig.Config) {
-	class := classifyPath(target, config)
+func addPathCapability(capabilities *[]Capability, operation Operation, target Value, write bool, context HookContext, config *capabilityconfig.Config) {
+	class := classifyPath(target, context, config)
 	mapping, ok := config.PathCapabilities[string(class)]
 	if !ok {
 		return
@@ -736,11 +795,13 @@ func addPathCapability(capabilities *[]Capability, operation Operation, target V
 	if rule == nil {
 		return
 	}
-	*capabilities = append(*capabilities, Capability{
-		Kind: rule.Capability, RuleID: rule.ID,
-		RuleSource: capabilityconfig.SourceEmbeddedDefault, Operation: operation.Kind,
-		Target: target, Resolution: target.Resolution, Location: operation.Location,
-	})
+	for _, capability := range append([]string{rule.Capability}, rule.AdditionalCapabilities...) {
+		*capabilities = append(*capabilities, Capability{
+			Kind: capability, RuleID: rule.ID,
+			RuleSource: capabilityconfig.SourceEmbeddedDefault, Operation: operation.Kind,
+			OperationID: operation.ID, Target: target, Resolution: target.Resolution, Location: operation.Location,
+		})
+	}
 }
 
 func matchesExactOrPrefix(path string, class capabilityconfig.PathClass) bool {
@@ -748,7 +809,14 @@ func matchesExactOrPrefix(path string, class capabilityconfig.PathClass) bool {
 }
 
 func matchesPath(path string, class capabilityconfig.PathClass) bool {
+	if contains(class.ExcludedExact, path) || contains(class.ExcludedBasenames, filepath.Base(path)) {
+		return false
+	}
 	if matchesExactOrPrefix(path, class) || matchesContains(path, class.Contains) || matchesPrefix(path, class.Prefixes) {
+		return true
+	}
+	base := filepath.Base(path)
+	if contains(class.Basenames, base) || matchesPrefix(base, class.BasenamePrefixes) {
 		return true
 	}
 	for _, marker := range class.CaseInsensitiveContains {
@@ -762,6 +830,20 @@ func matchesPath(path string, class capabilityconfig.PathClass) bool {
 		}
 	}
 	return false
+}
+
+func isProjectPath(path string) bool {
+	return path == "/project" || strings.HasPrefix(path, "/project/")
+}
+
+func matchesKnownFragment(value Value, class capabilityconfig.PathClass) bool {
+	var fragment strings.Builder
+	for _, part := range value.Parts {
+		if part.Kind == PartLiteral || part.Kind == PartQuotedLiteral || part.Kind == PartGlob {
+			fragment.WriteString(part.Text)
+		}
+	}
+	return fragment.Len() > 0 && matchesPath(fragment.String(), class)
 }
 
 func matchesPrefix(path string, prefixes []string) bool {

@@ -145,6 +145,9 @@ func (b *builder) call(call *syntax.CallExpr) []Operation {
 		Kind: kind, Command: command, Arguments: arguments, Wrappers: wrappers,
 		Resolution: command.Resolution, Location: shell.LocationOf(b.sourceName, call),
 	}
+	if kind == OperationSource && len(arguments) > 0 {
+		operation.Inputs = append(operation.Inputs, DataReference{Kind: "file-read", Value: arguments[0]})
+	}
 	for _, word := range call.Args {
 		operation.Children = append(operation.Children, b.substitutions(word)...)
 	}

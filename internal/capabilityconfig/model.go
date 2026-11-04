@@ -86,8 +86,9 @@ type OperandRule struct {
 }
 
 type OptionOperandRule struct {
-	Options []OptionSpec `yaml:"options"`
-	Access  string       `yaml:"access"`
+	Options    []OptionSpec `yaml:"options"`
+	Access     string       `yaml:"access"`
+	PathMarker string       `yaml:"path-marker,omitempty"`
 }
 
 type TargetRule struct {
@@ -132,6 +133,10 @@ type PathClass struct {
 	Contains                []string `yaml:"contains,omitempty"`
 	CaseInsensitiveContains []string `yaml:"case-insensitive-contains,omitempty"`
 	Suffixes                []string `yaml:"suffixes,omitempty"`
+	Basenames               []string `yaml:"basenames,omitempty"`
+	BasenamePrefixes        []string `yaml:"basename-prefixes,omitempty"`
+	ExcludedExact           []string `yaml:"excluded-exact,omitempty"`
+	ExcludedBasenames       []string `yaml:"excluded-basenames,omitempty"`
 }
 
 type PathCapability struct {
@@ -140,6 +145,7 @@ type PathCapability struct {
 }
 
 type CapabilityRule struct {
-	ID         string `yaml:"id"`
-	Capability string `yaml:"capability"`
+	ID                     string   `yaml:"id"`
+	Capability             string   `yaml:"capability"`
+	AdditionalCapabilities []string `yaml:"additional-capabilities,omitempty"`
 }

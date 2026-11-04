@@ -143,6 +143,10 @@ Capability definitions are embedded from `capabilityconfig/default/*.yaml` at bu
 
 A capability is **not** a finding, severity, or maliciousness judgment. Contextual finding rules decide whether the observed fact contributes risk or assurance. This separation allows the command database to describe behavior without baking policy into command recognition.
 
+Sensitive file reads are classified using the embedded path database. Workshop runs `setup-project` with `/project` as its working directory, so its relative sensitive paths are project-sensitive. Other hooks start in the SDK hook directory even when the project is mounted; they require an absolute `/project` path, or a later resolved working-directory model, before Latra classifies the read as project-sensitive. User and system sensitive paths remain separate classes, while unresolved values with a recognizable sensitive suffix are retained as lower-confidence candidates. Template names such as `.env.example`, `.env.sample`, and `.env.template` are excluded before positive matching.
+
+File inputs are extracted from known command operands, input redirections, `source`/`.` operations, and command-specific option values such as curl's `@file` syntax. The emitted capability preserves the operation ID, target value, resolution, and source location. Hook context remains available through the enclosing analysis result.
+
 ## 5. Finding generation
 
 Finding definitions are embedded from `internal/findingconfig/default/*.yaml`. The database has an independent schema version and content version so that rule changes can be identified in reports.
