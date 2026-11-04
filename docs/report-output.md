@@ -92,13 +92,13 @@ This section reports the SDK resolution state:
 - `Resolved` SDKs were available for inventory and hook analysis.
 - `Unresolved` SDKs could not be fully analyzed. Check `Diagnostics` for the reason.
 
-Use the displayed SDK names as the `<sdk>` argument to `latra hook` and `latra cat`.
+Use the displayed SDK names as the `<sdk>` argument to `latra hook` and `latra file`.
 
 For example:
 
 ```bash
 latra hook project-base setup-base
-latra cat rust meta/sdk.yaml
+latra file rust meta/sdk.yaml
 ```
 
 When these commands are run from the project root, Latra uses the SDK channel declared in the current project's `.workshop/*.yaml` definitions.
@@ -120,20 +120,20 @@ Each SDK line contains:
 3. its metadata file and standard Workshop hook files;
 4. the number of additional entries hidden from the compact output.
 
-The paths shown here can be passed directly to `latra cat` together with the SDK name:
+The paths shown here can be passed directly to `latra file` together with the SDK name:
 
 ```bash
-latra cat project-base sdk.yaml
-latra cat rust meta/sdk.yaml
+latra file project-base sdk.yaml
+latra file rust meta/sdk.yaml
 ```
 
 Text files are printed as-is. For binary files, Latra prints the detected file type, MIME type, size, and SHA3-384 digest instead of raw binary data.
 
-The compact report intentionally hides non-hook files behind `... and more files`. Use the verbose report to discover every inventoried path, then pass the selected path to `latra cat`:
+The compact report intentionally hides non-hook files behind `... and more files`. Use the verbose report to discover every inventoried path, then pass the selected path to `latra file`:
 
 ```bash
 latra scan . --verbose
-latra cat rust share/example-file
+latra file rust share/example-file
 ```
 
 ## Hooks
@@ -179,6 +179,8 @@ Common operation kinds include:
 
 Use `latra hook` when an operation count needs to be understood in its original source context.
 
+In a verbose report, each operation has a hook-local ID such as `op-0001`. The hook's `relations` connect those IDs to show containment, execution order, pipelines, substitutions, and conservatively inferred variable flow. Capabilities refer back to their source operation with `operationId`. This graph is primarily intended for machine-readable JSON consumers and contextual finding analysis.
+
 ## Capabilities
 
 ```text
@@ -195,6 +197,69 @@ To inspect the embedded knowledge associated with a capability, use:
 ```bash
 latra db capabilities network-access
 ```
+
+## Findings
+
+```text
+Findings: 8 (3 risk, 5 assurance)
+  High-priority risks:
+    project-base (critical): risk.remote-content-execution (1)
+```
+
+Findings combine operations, capabilities, hook context, and operation-graph relations into reviewable security observations.
+
+The compact Summary lists only risk IDs for SDKs whose aggregated risk level is `high` or `critical`. Assurance findings and lower-priority SDK details remain counted in the header and available in JSON or verbose output. This keeps the terminal summary focused on findings that drive immediate review.
+
+- A `risk` finding describes behavior and impact that may require review. It does not claim that the SDK is malicious.
+- An `assurance` finding describes an observed control, scope limit, or analysis-quality property. It does not claim that the SDK is safe.
+- Risk and assurance are independent. Assurance does not remove or lower a risk finding.
+- Confidence describes how directly the available static evidence supports the finding.
+
+Use `--verbose` to see each finding's rule ID, level, confidence, source hook, and evidence. In JSON output, evidence can reference `operationId`, `fromOperationId`, and `toOperationId`; these values join back to the selected hook's `operations` and `relations`.
+
+```bash
+latra scan . --verbose
+latra scan . --format json --verbose --output inventory.json
+```
+
+## Assessment
+
+Assessment is displayed separately from Summary because Summary contains occurrence counts, while Assessment answers how urgently the result should be reviewed.
+
+```text
+Assessment
+  Classification: high-priority-review
+  Review Priority: 82/100 (critical)
+  Risk: 82/100 (critical)
+  Assurance: 66/100 (high)
+  Coverage: 88/100 (sufficient)
+  Key Risks:
+    risk.unknown-command-root: Unknown command runs in a root hook [medium, score=82, occurrences=6]
+      sdk=project-base file=hooks/check-health:4:1 hook=check-health value="example-command"
+  By SDK:
+    project-base: high-priority-review
+      Review Priority: 82/100 (critical)
+      Risk: 82/100 (critical), Assurance: 66/100 (high), Coverage: 88/100 (sufficient)
+      Key Risks:
+        risk.unknown-command-root: Unknown command runs in a root hook [medium, score=82, occurrences=6]
+          sdk=project-base file=hooks/check-health:4:1 hook=check-health value="example-command"
+```
+
+`Review Priority` is the headline indicator: a higher number means the SDK should be reviewed sooner. It is not a probability that an SDK is malicious and it is not a safety score.
+
+`Key Risks` explains which rules contribute to the assessment. Each entry includes its aggregated rule score, occurrence count, and every source location. The `sdk`, `file`, and `hook` values can be copied directly into `latra file <sdk> <file>` and `latra hook <sdk> <hook>`. The line and column suffix on `file` identify the precise evidence location and are not part of the path passed to `latra file`.
+
+Assurance is never subtracted from risk. For example, a verified artifact can still perform a high-impact root operation. In that case both the high risk and strong control remain visible. Incomplete analysis raises Review Priority through the coverage penalty and produces `insufficient-evidence`.
+
+The possible classifications are:
+
+| Classification | Meaning |
+| --- | --- |
+| `expected-and-controlled` | Risk is limited and strong controls or analysis quality are visible. |
+| `powerful-but-controlled` | High-impact behavior and strong controls are both present. |
+| `weakly-controlled` | Available controls are weak relative to the observed behavior. |
+| `high-priority-review` | High or critical risk requires prompt review. |
+| `insufficient-evidence` | Static analysis coverage is not sufficient for a conclusive evaluation. |
 
 ## Unknown Commands
 
@@ -248,7 +313,7 @@ For a typical investigation:
 1. Run `latra scan .` from the Workshop project root.
 2. Check whether every expected SDK is listed under `Resolved`.
 3. Review `Diagnostics` and resolve incomplete scans first.
-4. Use `Files` paths with `latra cat <sdk> <file>`.
+4. Use `Files` paths with `latra file <sdk> <file>`.
 5. Use `Hooks` names with `latra hook <sdk> <hook>`.
 6. Follow hook paths under `Unknown Commands` and inspect those hooks first.
 7. Use Operations and Capabilities to identify behavior that needs closer source review.

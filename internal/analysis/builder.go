@@ -29,6 +29,7 @@ func Analyze(hook string, parsed *shell.Result) Result {
 		functions:  make(map[string]bool),
 	}
 	result.Operations = b.statements(parsed.Program.Stmts)
+	result.Relations = BuildRelations(result.Operations)
 	result.Capabilities = ExtractCapabilities(result.Operations, result.Context)
 	return result
 }
@@ -64,6 +65,7 @@ func (b *builder) statement(statement *syntax.Stmt) []Operation {
 			operation.Kind = OperationPipeline
 		}
 		operation.Children = append(operation.Children, b.statement(command.X)...)
+		operation.pipelineBoundary = len(operation.Children)
 		operation.Children = append(operation.Children, b.statement(command.Y)...)
 		if operation.Kind == OperationPipeline && len(operation.Children) > 1 {
 			stream := literalValue("stdout")

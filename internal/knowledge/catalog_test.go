@@ -70,6 +70,7 @@ func TestDefaultCatalogContainsCanonicalSDKCommandCategories(t *testing.T) {
 		"tar":                 "system-utility",
 		"update-alternatives": "system-utility",
 		"docker":              "sdk-tool",
+		"dotnet":              "sdk-tool",
 		"corepack":            "sdk-tool",
 		"github-runner":       "sdk-tool",
 		"nvcc":                "sdk-tool",

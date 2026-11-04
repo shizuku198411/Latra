@@ -1,0 +1,78 @@
+finding-rules:
+  - id: assurance.all-hooks-parsed
+    kind: assurance
+    family: analysis-quality
+    title: All hooks parsed without recovery
+    strength: medium
+    confidence: high
+    weight: 30
+    match:
+      type: all-hooks-parsed
+    message: Every detected hook was parsed without syntax recovery.
+
+  - id: assurance.all-commands-known
+    kind: assurance
+    family: analysis-quality
+    title: All resolved commands are known
+    strength: low
+    confidence: high
+    weight: 10
+    match:
+      type: all-commands-known
+    message: Every resolved command invocation is covered by the embedded command database.
+    limitations:
+      - Database coverage does not establish that command arguments are safe.
+
+  - id: assurance.no-dynamic-execution
+    kind: assurance
+    family: analysis-quality
+    title: No dynamic execution was detected
+    strength: medium
+    confidence: high
+    weight: 30
+    match:
+      type: absence-capability
+      capabilities:
+        - dynamic-execution
+    message: No analyzed hook contains a dynamic execution capability.
+    limitations:
+      - This finding depends on complete parsing and command coverage.
+
+  - id: assurance.complete-file-inventory
+    kind: assurance
+    family: analysis-quality
+    title: File inventory completed within limits
+    strength: medium
+    confidence: high
+    weight: 30
+    match:
+      type: complete-file-inventory
+    message: No resource-limit diagnostic interrupted the SDK file inventory.
+
+  - id: assurance.archive-digest-recorded
+    kind: assurance
+    family: reproducibility
+    title: SDK archive digest is recorded
+    strength: low
+    confidence: high
+    weight: 10
+    match:
+      type: archive-digest
+    message: The resolved SDK report records an archive digest for later comparison.
+    limitations:
+      - A recorded digest is not the same as verification against an independent trusted digest.
+
+  - id: assurance.read-only-health-check
+    kind: assurance
+    family: lifecycle-conformance
+    title: Health check is read-only
+    strength: medium
+    confidence: high
+    weight: 30
+    match:
+      type: read-only-health-check
+      hook-names:
+        - check-health
+    message: The health check contains no detected write, destructive, persistence, or system-changing capability.
+    limitations:
+      - This finding depends on complete parsing and command coverage.

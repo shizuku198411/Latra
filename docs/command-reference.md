@@ -12,8 +12,9 @@ latra <command> [arguments] [options]
 | --- | --- |
 | `scan` | Inventory and analyze the SDKs used by a Workshop project. |
 | `db` | Inspect Latra's embedded command and capability database. |
-| `cat` | Print an SDK file or describe a binary SDK file. |
+| `file` | Print an SDK file or describe a binary SDK file. |
 | `hook` | Print a standard Workshop hook from an SDK. |
+| `cache` | Remove SDK Store artifacts from Latra's local cache. |
 | `version` | Print Latra build information. |
 | `help` | Print command-line help. |
 
@@ -164,12 +165,12 @@ A named capability or command query includes its associations without requiring 
 
 The database reflects the configuration embedded when the binary was built. See [Categories and capabilities](capabilities.md) for the public definitions and [Command database development](development/command-database.md) for maintenance instructions.
 
-## `latra cat`
+## `latra file`
 
 Print a file from a project SDK or a Store SDK already materialized in Latra's cache.
 
 ```text
-latra cat <SDK> <FILE> [options]
+latra file <SDK> <FILE> [options]
 ```
 
 ### Arguments
@@ -206,7 +207,7 @@ Latra returns an error when the SDK is not declared, declarations conflict, the 
 
 An explicit `--channel` overrides Workshop channel resolution and selects directly from the cache. `--revision` cannot be used with a project SDK.
 
-`cat` does not download a missing Store SDK. Run `latra scan` first to resolve and cache the SDK used by the project.
+`file` does not download a missing Store SDK. Run `latra scan` first to resolve and cache the SDK used by the project.
 
 ### Output
 
@@ -220,26 +221,26 @@ Size: 123456 bytes
 SHA3-384: <digest>
 ```
 
-Files larger than 128 MiB are not displayed by `cat`.
+Files larger than 128 MiB are not displayed by `file`.
 
 ### Examples
 
 Print the metadata file for an SDK declared by the current project:
 
 ```bash
-latra cat go meta/sdk.yaml
+latra file go meta/sdk.yaml
 ```
 
 Read from another Workshop project:
 
 ```bash
-latra cat go meta/sdk.yaml --project ../another-project
+latra file go meta/sdk.yaml --project ../another-project
 ```
 
 Explicitly inspect a cached channel and revision:
 
 ```bash
-latra cat go sdk/hooks/setup-base --channel 1.26/stable --revision 42
+latra file go sdk/hooks/setup-base --channel 1.26/stable --revision 42
 ```
 
 ## `latra hook`
@@ -265,7 +266,7 @@ Supported hook names are:
 - `save-state`
 - `restore-state`
 
-The command supports the same `--project`, `--channel`, `--revision`, and `--` options and the same SDK selection rules as `latra cat`.
+The command supports the same `--project`, `--channel`, `--revision`, and `--` options and the same SDK selection rules as `latra file`.
 
 Latra accepts both SDK hook layouts internally:
 
@@ -293,6 +294,48 @@ Inspect a specific cached Store revision:
 ```bash
 latra hook rust setup-base --channel latest/stable --revision 54
 ```
+
+## `latra cache`
+
+Inspect or remove SDK Store artifacts cached by Latra.
+
+```text
+latra cache list
+latra cache clean [--project PATH]
+latra cache clean --all
+```
+
+List every complete SDK Store cache entry, independently of the current
+project:
+
+```bash
+latra cache list
+```
+
+The output contains the SDK name, effective Store channel, and revision. A
+cache entry is listed only when both its extracted revision directory and
+corresponding `.sdk` archive are present.
+
+Without `--all`, Latra reads the Workshop definitions in the current directory
+and removes every cached channel and revision for the Store SDKs declared by
+that project. Project SDKs, system SDKs, try SDKs, and Store SDKs unrelated to
+the project are not removed.
+
+Use `--project` to select another Workshop project:
+
+```bash
+latra cache clean --project ../another-project
+```
+
+Use `--all` to remove every entry beneath Latra's cache root:
+
+```bash
+latra cache clean --all
+```
+
+`--all` cannot be combined with `--project`. The cache root directory itself is
+preserved and will be reused by later scans. Missing matching entries are not
+treated as an error.
 
 ## `latra version`
 
@@ -329,7 +372,7 @@ Running `latra` without arguments also prints help and exits successfully.
 | stdout | Reports, database output, file contents, hook contents, version, and help. |
 | stderr | Interactive scan status, diagnostics, usage errors, and runtime errors. |
 
-Use `--output` when a scan or database report should be written directly to a file. The `cat` and `hook` commands always write successful content to stdout.
+Use `--output` when a scan or database report should be written directly to a file. The `file` and `hook` commands always write successful content to stdout.
 
 ## Exit codes
 

@@ -18,7 +18,7 @@ Run the complete black-box test through the Workshop action:
 workshop run dev -- e2e
 ```
 
-The action builds `build/latra`, starts the mock Store, validates a verbose JSON report, exercises `hook` and `cat`, and confirms that a second scan resolves twice but downloads the archive only once.
+The action builds `build/latra`, starts the mock Store, validates a verbose JSON report, exercises `hook` and `file`, and confirms that a second scan resolves twice but downloads the archive only once.
 
 Available endpoints:
 

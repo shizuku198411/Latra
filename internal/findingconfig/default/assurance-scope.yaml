@@ -1,0 +1,44 @@
+finding-rules:
+  - id: assurance.sdk-path-scoped-write
+    kind: assurance
+    family: scope-limitation
+    title: Write is scoped to the SDK path
+    strength: medium
+    confidence: high
+    weight: 30
+    match:
+      type: path-write
+      path-classes:
+        - sdk
+    message: A write target is classified within the SDK-managed environment.
+    limitations:
+      - Path scoping does not establish that the written content is trustworthy.
+
+  - id: assurance.state-path-scoped-write
+    kind: assurance
+    family: scope-limitation
+    title: Write is scoped to persisted SDK state
+    strength: medium
+    confidence: high
+    weight: 30
+    match:
+      type: capability
+      capabilities:
+        - state-write
+    message: A write target is limited to the persisted SDK state path.
+    limitations:
+      - Persisted content may still affect later restore behavior.
+
+  - id: assurance.non-root-hook
+    kind: assurance
+    family: least-privilege
+    title: Hook runs without root privileges
+    strength: medium
+    confidence: high
+    weight: 30
+    match:
+      type: absence-capability
+      run-as-root: false
+    message: The Workshop lifecycle runs this hook as the workshop user.
+    limitations:
+      - The user context can still modify mounted project and user data.

@@ -150,7 +150,8 @@ func capabilitiesForOperation(operation Operation, _ HookContext, config *capabi
 	add := func(kind, ruleID string, target Value, resolution Resolution) {
 		capabilities = append(capabilities, Capability{
 			Kind: kind, RuleID: ruleID, RuleSource: capabilityconfig.SourceEmbeddedDefault,
-			Operation: operation.Kind, Target: target, Resolution: resolution, Location: operation.Location,
+			Operation: operation.Kind, OperationID: operation.ID,
+			Target: target, Resolution: resolution, Location: operation.Location,
 		})
 	}
 	for _, rule := range config.OperationRules {

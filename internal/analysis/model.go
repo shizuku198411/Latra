@@ -65,8 +65,31 @@ type DataReference struct {
 	Value Value  `json:"value"`
 }
 
+// RelationKind identifies a structural or data-flow edge between operations.
+type RelationKind string
+
+const (
+	RelationContains         RelationKind = "contains"
+	RelationSequence         RelationKind = "sequence"
+	RelationPipeline         RelationKind = "pipeline"
+	RelationSubstitutionFlow RelationKind = "substitution-flow"
+	RelationVariableFlow     RelationKind = "variable-flow"
+)
+
+// Relation connects two operations in the per-hook analysis graph.
+type Relation struct {
+	Kind            RelationKind `json:"kind"`
+	FromOperationID string       `json:"fromOperationId"`
+	ToOperationID   string       `json:"toOperationId"`
+	Name            string       `json:"name,omitempty"`
+	Resolution      Resolution   `json:"resolution"`
+}
+
 // Operation is Latra's parser-independent representation of shell behavior.
 type Operation struct {
+	ID         string          `json:"id,omitempty"`
+	ParentID   string          `json:"parentId,omitempty"`
+	Sequence   int             `json:"sequence"`
 	Kind       OperationKind   `json:"kind"`
 	Command    Value           `json:"command,omitzero"`
 	Name       string          `json:"name,omitempty"`
@@ -77,6 +100,8 @@ type Operation struct {
 	Resolution Resolution      `json:"resolution"`
 	Location   shell.Location  `json:"location"`
 	Children   []Operation     `json:"children,omitempty"`
+
+	pipelineBoundary int
 }
 
 // HookContext describes Workshop's execution environment for a lifecycle hook.
@@ -91,18 +116,20 @@ type HookContext struct {
 
 // Capability is an observable behavior inferred from an Operation.
 type Capability struct {
-	Kind       string         `json:"kind"`
-	RuleID     string         `json:"ruleId"`
-	RuleSource string         `json:"ruleSource"`
-	Operation  OperationKind  `json:"operation"`
-	Target     Value          `json:"target,omitzero"`
-	Resolution Resolution     `json:"resolution"`
-	Location   shell.Location `json:"location"`
+	Kind        string         `json:"kind"`
+	RuleID      string         `json:"ruleId"`
+	RuleSource  string         `json:"ruleSource"`
+	Operation   OperationKind  `json:"operation"`
+	OperationID string         `json:"operationId,omitempty"`
+	Target      Value          `json:"target,omitzero"`
+	Resolution  Resolution     `json:"resolution"`
+	Location    shell.Location `json:"location"`
 }
 
 // Result contains the normalized inventory for one hook.
 type Result struct {
 	Context      HookContext  `json:"context"`
 	Operations   []Operation  `json:"operations,omitempty"`
+	Relations    []Relation   `json:"relations,omitempty"`
 	Capabilities []Capability `json:"capabilities,omitempty"`
 }

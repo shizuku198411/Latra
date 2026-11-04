@@ -8,19 +8,22 @@ import (
 
 	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/buildinfo"
+	"github.com/shizuku198411/Latra/internal/finding"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
-const SchemaVersion = "1"
+const SchemaVersion = "2"
 
 // Document is the stable, versioned JSON inventory representation.
 type Document struct {
 	SchemaVersion string               `json:"schemaVersion"`
 	Scanner       Scanner              `json:"scanner"`
+	FindingDB     finding.Database     `json:"findingDatabase"`
 	Input         Input                `json:"input"`
 	Summary       Summary              `json:"summary"`
+	Assessment    finding.Assessment   `json:"assessment"`
 	Workshops     []source.Workshop    `json:"workshops"`
 	SDKs          []SDK                `json:"sdks"`
 	Diagnostics   []DocumentDiagnostic `json:"diagnostics"`
@@ -46,6 +49,7 @@ type Summary struct {
 	Capabilities    CapabilitySummary     `json:"capabilities"`
 	UnknownCommands UnknownCommandSummary `json:"unknownCommands"`
 	Diagnostics     DiagnosticSummary     `json:"diagnostics"`
+	Findings        FindingSummary        `json:"findings"`
 }
 
 type SDKSummary struct {
@@ -131,6 +135,21 @@ type DiagnosticSummary struct {
 	DiagnosticCodes []CountedName `json:"diagnosticCodes"`
 }
 
+type FindingSummary struct {
+	Count     int                 `json:"count"`
+	Risk      int                 `json:"risk"`
+	Assurance int                 `json:"assurance"`
+	BySDK     []SDKFindingSummary `json:"bySdk"`
+}
+
+type SDKFindingSummary struct {
+	SDKName    string        `json:"sdkName"`
+	Count      int           `json:"count"`
+	Risk       int           `json:"risk"`
+	Assurance  int           `json:"assurance"`
+	FindingIDs []CountedName `json:"findingIds"`
+}
+
 type SDK struct {
 	Name         string              `json:"name"`
 	Source       sdk.Source          `json:"source"`
@@ -144,6 +163,7 @@ type SDK struct {
 	Files        []File              `json:"files"`
 	Hooks        []Hook              `json:"hooks"`
 	Diagnostics  []sdk.Diagnostic    `json:"diagnostics,omitempty"`
+	Findings     []finding.Finding   `json:"findings"`
 }
 
 type File struct {
@@ -165,6 +185,7 @@ type Hook struct {
 	Parse        *Parse                `json:"parse,omitempty"`
 	Context      *analysis.HookContext `json:"context,omitempty"`
 	Operations   []analysis.Operation  `json:"operations"`
+	Relations    []analysis.Relation   `json:"relations"`
 	Capabilities []analysis.Capability `json:"capabilities"`
 }
 
@@ -192,6 +213,7 @@ func NewDocument(result *source.Result) Document {
 	document := Document{
 		SchemaVersion: SchemaVersion,
 		Scanner:       Scanner{Name: "latra", Version: info.Version, Commit: info.Commit, BuildDate: info.BuildDate},
+		FindingDB:     finding.DatabaseInfo(),
 		Input:         Input{Kind: result.Kind, Root: result.Root},
 		Workshops:     append([]source.Workshop{}, result.Workshops...),
 		SDKs:          []SDK{},
@@ -205,6 +227,7 @@ func NewDocument(result *source.Result) Document {
 	})
 
 	items := append([]sdk.SDK(nil), result.SDKs...)
+	assessmentInputs := make([]finding.AssessmentInput, 0, len(items))
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	for _, item := range items {
 		reported := SDK{
@@ -214,7 +237,9 @@ func NewDocument(result *source.Result) Document {
 			Files:        reportFiles(item.Files),
 			Hooks:        []Hook{},
 			Diagnostics:  append([]sdk.Diagnostic{}, item.Diagnostics...),
+			Findings:     finding.AnalyzeSDK(item),
 		}
+		assessmentInputs = append(assessmentInputs, finding.AssessmentInput{SDK: item, Findings: reported.Findings})
 		for _, diagnostic := range item.Diagnostics {
 			document.Diagnostics = append(document.Diagnostics, DocumentDiagnostic{
 				SDK: item.Name, Code: diagnostic.Code, Severity: string(diagnostic.Severity),
@@ -231,7 +256,8 @@ func NewDocument(result *source.Result) Document {
 		for _, hook := range item.Hooks {
 			reportedHook := Hook{
 				Name: hook.Name, Path: hook.Path, Digest: hook.Digest, Size: hook.Size,
-				Operations: []analysis.Operation{}, Capabilities: []analysis.Capability{},
+				Operations: []analysis.Operation{}, Relations: []analysis.Relation{},
+				Capabilities: []analysis.Capability{},
 			}
 			if hook.Parse != nil {
 				reportedHook.Parse = &Parse{
@@ -252,6 +278,7 @@ func NewDocument(result *source.Result) Document {
 				context := hook.Analysis.Context
 				reportedHook.Context = &context
 				reportedHook.Operations = cloneAndSortOperations(hook.Analysis.Operations)
+				reportedHook.Relations = append([]analysis.Relation{}, hook.Analysis.Relations...)
 				reportedHook.Capabilities = append([]analysis.Capability{}, hook.Analysis.Capabilities...)
 				sortCapabilities(reportedHook.Capabilities)
 			}
@@ -284,6 +311,7 @@ func NewDocument(result *source.Result) Document {
 		return leftLine < rightLine
 	})
 	document.Summary = summarize(document)
+	document.Assessment = finding.AssessProject(assessmentInputs)
 	return document
 }
 
@@ -299,6 +327,7 @@ func summarize(document Document) Summary {
 		Capabilities:    CapabilitySummary{BySDK: []SDKCapabilitySummary{}},
 		UnknownCommands: UnknownCommandSummary{BySDK: []SDKUnknownCommandSummary{}},
 		Diagnostics:     DiagnosticSummary{Count: len(document.Diagnostics), DiagnosticCodes: []CountedName{}},
+		Findings:        FindingSummary{BySDK: []SDKFindingSummary{}},
 	}
 	resolvedSDKNames := make(map[string]struct{})
 	unresolvedSDKNames := make(map[string]struct{})
@@ -322,6 +351,18 @@ func summarize(document Document) Summary {
 		operationSummary := SDKOperationSummary{SDKName: item.Name, OperationKinds: []CountedName{}}
 		capabilitySummary := SDKCapabilitySummary{SDKName: item.Name, CapabilityNames: []CountedName{}}
 		unknownCommandSummary := SDKUnknownCommandSummary{SDKName: item.Name, Files: []FileUnknownCommandSummary{}}
+		findingSummary := SDKFindingSummary{SDKName: item.Name, FindingIDs: []CountedName{}}
+		findingIDs := make(map[string]int)
+		for _, itemFinding := range item.Findings {
+			findingIDs[itemFinding.ID]++
+			if itemFinding.Kind == finding.KindRisk {
+				findingSummary.Risk++
+			} else {
+				findingSummary.Assurance++
+			}
+		}
+		findingSummary.Count = len(item.Findings)
+		findingSummary.FindingIDs = sortedCounts(findingIDs)
 		hookNames := make(map[string]struct{})
 		operationKinds := make(map[string]int)
 		capabilityNames := make(map[string]int)
@@ -350,11 +391,15 @@ func summarize(document Document) Summary {
 		summary.Operations.Count += operationSummary.Count
 		summary.Capabilities.Count += capabilitySummary.Count
 		summary.UnknownCommands.Count += unknownCommandSummary.Count
+		summary.Findings.Count += findingSummary.Count
+		summary.Findings.Risk += findingSummary.Risk
+		summary.Findings.Assurance += findingSummary.Assurance
 		summary.Files.BySDK = append(summary.Files.BySDK, fileSummary)
 		summary.Hooks.BySDK = append(summary.Hooks.BySDK, hookSummary)
 		summary.Operations.BySDK = append(summary.Operations.BySDK, operationSummary)
 		summary.Capabilities.BySDK = append(summary.Capabilities.BySDK, capabilitySummary)
 		summary.UnknownCommands.BySDK = append(summary.UnknownCommands.BySDK, unknownCommandSummary)
+		summary.Findings.BySDK = append(summary.Findings.BySDK, findingSummary)
 	}
 	summary.SDKs.SDKNames.Resolved = sortedSet(resolvedSDKNames)
 	summary.SDKs.SDKNames.Unresolved = sortedSet(unresolvedSDKNames)

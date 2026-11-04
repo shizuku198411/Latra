@@ -35,6 +35,70 @@ type Entry struct {
 	ProjectRelative string
 }
 
+// List returns every complete Store SDK cache entry. An entry is complete when
+// both its extracted revision directory and corresponding .sdk archive exist.
+func List(cacheRoot string) ([]Entry, error) {
+	root, err := validateCleanRoot(cacheRoot)
+	if err != nil {
+		return nil, err
+	}
+	sdkEntries, err := os.ReadDir(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return []Entry{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read SDK cache: %w", err)
+	}
+	entries := make([]Entry, 0)
+	for _, sdkEntry := range sdkEntries {
+		if !sdkEntry.IsDir() || sdk.ValidateName(sdkEntry.Name()) != nil {
+			continue
+		}
+		sdkRoot := filepath.Join(root, sdkEntry.Name())
+		err := filepath.WalkDir(sdkRoot, func(candidatePath string, candidate fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if candidatePath == sdkRoot || !candidate.IsDir() {
+				return nil
+			}
+			revision, err := strconv.Atoi(candidate.Name())
+			if err != nil || revision <= 0 {
+				return nil
+			}
+			archiveInfo, err := os.Stat(candidatePath + ".sdk")
+			if err != nil || !archiveInfo.Mode().IsRegular() {
+				return filepath.SkipDir
+			}
+			relativeParent, err := filepath.Rel(sdkRoot, filepath.Dir(candidatePath))
+			if err != nil {
+				return err
+			}
+			channel := filepath.ToSlash(relativeParent)
+			if sdk.ValidateChannel(channel) != nil {
+				return filepath.SkipDir
+			}
+			entries = append(entries, Entry{
+				SDK: sdkEntry.Name(), Channel: channel, Revision: revision, Root: candidatePath,
+			})
+			return filepath.SkipDir
+		})
+		if err != nil {
+			return nil, fmt.Errorf("inspect SDK cache %q: %w", sdkEntry.Name(), err)
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].SDK != entries[j].SDK {
+			return entries[i].SDK < entries[j].SDK
+		}
+		if entries[i].Channel != entries[j].Channel {
+			return entries[i].Channel < entries[j].Channel
+		}
+		return entries[i].Revision > entries[j].Revision
+	})
+	return entries, nil
+}
+
 // ResolveProject locates an in-project SDK beneath .workshop without following an escaping path.
 func ResolveProject(projectRoot, name string) (Entry, error) {
 	if err := sdk.ValidateName(name); err != nil {

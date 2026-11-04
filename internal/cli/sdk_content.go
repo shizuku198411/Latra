@@ -26,24 +26,24 @@ type contentOptions struct {
 	project  string
 }
 
-func runCat(args []string, stdout, stderr io.Writer, dependencies Dependencies) int {
-	options, err := parseContentOptions("cat", "FILE", args)
+func runFile(args []string, stdout, stderr io.Writer, dependencies Dependencies) int {
+	options, err := parseContentOptions("file", "FILE", args)
 	if err != nil {
 		return usageError(stderr, "%v", err)
 	}
 	entry, err := resolveContentSDK(dependencies, options)
 	if err != nil {
-		fmt.Fprintf(stderr, "latra: cat: %v\n", err)
+		fmt.Fprintf(stderr, "latra: file: %v\n", err)
 		return exitError
 	}
 	file, info, err := sdkcache.OpenFile(entry, options.target)
 	if err != nil {
-		fmt.Fprintf(stderr, "latra: cat: SDK %q file %q: %v\n", options.sdk, options.target, err)
+		fmt.Fprintf(stderr, "latra: file: SDK %q file %q: %v\n", options.sdk, options.target, err)
 		return exitError
 	}
 	defer file.Close()
 	if err := writeCachedFile(stdout, file, info); err != nil {
-		fmt.Fprintf(stderr, "latra: cat: %v\n", err)
+		fmt.Fprintf(stderr, "latra: file: %v\n", err)
 		return exitError
 	}
 	return exitOK

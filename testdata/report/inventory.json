@@ -1,10 +1,15 @@
 {
-  "schemaVersion": "1",
+  "schemaVersion": "2",
   "scanner": {
     "name": "latra",
     "version": "dev",
     "commit": "unknown",
     "buildDate": "unknown"
+  },
+  "findingDatabase": {
+    "schemaVersion": "1",
+    "contentVersion": "2026.11.1",
+    "source": "embedded-default"
   },
   "input": {
     "kind": "project-sdk",
@@ -89,7 +94,153 @@
     "diagnostics": {
       "count": 0,
       "diagnosticCodes": []
+    },
+    "findings": {
+      "count": 5,
+      "risk": 0,
+      "assurance": 5,
+      "bySdk": [
+        {
+          "sdkName": "example",
+          "count": 5,
+          "risk": 0,
+          "assurance": 5,
+          "findingIds": [
+            {
+              "name": "assurance.all-commands-known",
+              "count": 1
+            },
+            {
+              "name": "assurance.all-hooks-parsed",
+              "count": 1
+            },
+            {
+              "name": "assurance.complete-file-inventory",
+              "count": 1
+            },
+            {
+              "name": "assurance.no-dynamic-execution",
+              "count": 1
+            },
+            {
+              "name": "assurance.non-root-hook",
+              "count": 1
+            }
+          ]
+        }
+      ]
     }
+  },
+  "assessment": {
+    "classification": "expected-and-controlled",
+    "reviewPriority": {
+      "score": 0,
+      "level": "info"
+    },
+    "risk": {
+      "score": 0,
+      "level": "info",
+      "findings": 0,
+      "families": []
+    },
+    "assurance": {
+      "score": 72,
+      "level": "high",
+      "findings": 5,
+      "families": [
+        {
+          "family": "analysis-quality",
+          "score": 60,
+          "findings": 4,
+          "cap": 60
+        },
+        {
+          "family": "least-privilege",
+          "score": 30,
+          "findings": 1,
+          "cap": 50
+        }
+      ]
+    },
+    "coverage": {
+      "score": 100,
+      "level": "sufficient",
+      "hooks": {
+        "total": 1,
+        "parsed": 1,
+        "recovered": 0,
+        "failed": 0
+      },
+      "commands": {
+        "total": 1,
+        "known": 1,
+        "unknown": 0,
+        "unresolved": 0
+      },
+      "files": {
+        "inventoried": 1,
+        "contentAnalyzed": 0,
+        "binaryOnly": 0
+      }
+    },
+    "keyRisks": [],
+    "bySdk": [
+      {
+        "sdk": "example",
+        "classification": "expected-and-controlled",
+        "reviewPriority": {
+          "score": 0,
+          "level": "info"
+        },
+        "risk": {
+          "score": 0,
+          "level": "info",
+          "findings": 0,
+          "families": []
+        },
+        "assurance": {
+          "score": 72,
+          "level": "high",
+          "findings": 5,
+          "families": [
+            {
+              "family": "analysis-quality",
+              "score": 60,
+              "findings": 4,
+              "cap": 60
+            },
+            {
+              "family": "least-privilege",
+              "score": 30,
+              "findings": 1,
+              "cap": 50
+            }
+          ]
+        },
+        "coverage": {
+          "score": 100,
+          "level": "sufficient",
+          "hooks": {
+            "total": 1,
+            "parsed": 1,
+            "recovered": 0,
+            "failed": 0
+          },
+          "commands": {
+            "total": 1,
+            "known": 1,
+            "unknown": 0,
+            "unresolved": 0
+          },
+          "files": {
+            "inventoried": 1,
+            "contentAnalyzed": 0,
+            "binaryOnly": 0
+          }
+        },
+        "keyRisks": []
+      }
+    ]
   },
   "workshops": [],
   "sdks": [
@@ -140,6 +291,8 @@
           },
           "operations": [
             {
+              "id": "op-0001",
+              "sequence": 0,
               "kind": "command-invocation",
               "command": {
                 "parts": [
@@ -173,12 +326,14 @@
               }
             }
           ],
+          "relations": [],
           "capabilities": [
             {
               "kind": "network-download",
               "ruleId": "command.curl-download",
               "ruleSource": "embedded-default",
               "operation": "command-invocation",
+              "operationId": "op-0001",
               "target": {
                 "parts": [
                   {
@@ -198,6 +353,129 @@
                 "endColumn": 34
               }
             }
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "id": "assurance.all-commands-known",
+          "kind": "assurance",
+          "family": "analysis-quality",
+          "title": "All resolved commands are known",
+          "strength": "low",
+          "confidence": "high",
+          "weight": 10,
+          "scope": {
+            "sdk": "example"
+          },
+          "evidence": [
+            {
+              "type": "metadata",
+              "id": "known-commands",
+              "value": "1",
+              "resolution": "Resolved"
+            }
+          ],
+          "message": "Every resolved command invocation is covered by the embedded command database.",
+          "limitations": [
+            "Database coverage does not establish that command arguments are safe."
+          ]
+        },
+        {
+          "id": "assurance.all-hooks-parsed",
+          "kind": "assurance",
+          "family": "analysis-quality",
+          "title": "All hooks parsed without recovery",
+          "strength": "medium",
+          "confidence": "high",
+          "weight": 30,
+          "scope": {
+            "sdk": "example"
+          },
+          "evidence": [
+            {
+              "type": "metadata",
+              "id": "parsed-hooks",
+              "value": "1",
+              "resolution": "Resolved"
+            }
+          ],
+          "message": "Every detected hook was parsed without syntax recovery."
+        },
+        {
+          "id": "assurance.complete-file-inventory",
+          "kind": "assurance",
+          "family": "analysis-quality",
+          "title": "File inventory completed within limits",
+          "strength": "medium",
+          "confidence": "high",
+          "weight": 30,
+          "scope": {
+            "sdk": "example"
+          },
+          "evidence": [
+            {
+              "type": "metadata",
+              "id": "inventoried-files",
+              "value": "1",
+              "resolution": "Resolved"
+            }
+          ],
+          "message": "No resource-limit diagnostic interrupted the SDK file inventory."
+        },
+        {
+          "id": "assurance.no-dynamic-execution",
+          "kind": "assurance",
+          "family": "analysis-quality",
+          "title": "No dynamic execution was detected",
+          "strength": "medium",
+          "confidence": "high",
+          "weight": 30,
+          "scope": {
+            "sdk": "example"
+          },
+          "evidence": [
+            {
+              "type": "metadata",
+              "id": "analyzed-hooks",
+              "value": "1",
+              "resolution": "Resolved"
+            }
+          ],
+          "message": "No analyzed hook contains a dynamic execution capability.",
+          "limitations": [
+            "This finding depends on complete parsing and command coverage."
+          ]
+        },
+        {
+          "id": "assurance.non-root-hook",
+          "kind": "assurance",
+          "family": "least-privilege",
+          "title": "Hook runs without root privileges",
+          "strength": "medium",
+          "confidence": "high",
+          "weight": 30,
+          "scope": {
+            "sdk": "example",
+            "hook": "setup-project"
+          },
+          "context": {
+            "runAsRoot": false,
+            "projectMounted": true,
+            "interfacesActive": true,
+            "stateMounted": false
+          },
+          "evidence": [
+            {
+              "type": "context",
+              "id": "run-as-root",
+              "value": "false",
+              "resolution": "Resolved"
+            }
+          ],
+          "message": "The Workshop lifecycle runs this hook as the workshop user.",
+          "limitations": [
+            "The user context can still modify mounted project and user data."
           ]
         }
       ]

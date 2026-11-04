@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/shizuku198411/Latra/blob/main/docs/development/report.schema.json",
   "title": "Latra scan report",
-  "description": "Schema for compact and verbose Latra scan reports with schemaVersion 1.",
+  "description": "Schema for compact and verbose Latra scan reports with schemaVersion 2.",
   "oneOf": [
     { "$ref": "#/$defs/compactReport" },
     { "$ref": "#/$defs/fullReport" }
@@ -11,16 +11,18 @@
     "compactReport": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "scanner", "input", "workshops", "summary", "diagnostics"],
+      "required": ["schemaVersion", "scanner", "findingDatabase", "input", "workshops", "summary", "assessment", "diagnostics"],
       "properties": {
-        "schemaVersion": { "const": "1" },
+        "schemaVersion": { "const": "2" },
         "scanner": { "$ref": "#/$defs/scanner" },
+        "findingDatabase": { "$ref": "#/$defs/findingDatabase" },
         "input": { "$ref": "#/$defs/input" },
         "workshops": {
           "type": "array",
           "items": { "$ref": "#/$defs/workshop" }
         },
         "summary": { "$ref": "#/$defs/summary" },
+        "assessment": { "$ref": "#/$defs/assessment" },
         "diagnostics": {
           "type": "array",
           "items": { "$ref": "#/$defs/documentDiagnostic" }
@@ -30,12 +32,14 @@
     "fullReport": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "scanner", "input", "summary", "workshops", "sdks", "diagnostics"],
+      "required": ["schemaVersion", "scanner", "findingDatabase", "input", "summary", "assessment", "workshops", "sdks", "diagnostics"],
       "properties": {
-        "schemaVersion": { "const": "1" },
+        "schemaVersion": { "const": "2" },
         "scanner": { "$ref": "#/$defs/scanner" },
+        "findingDatabase": { "$ref": "#/$defs/findingDatabase" },
         "input": { "$ref": "#/$defs/input" },
         "summary": { "$ref": "#/$defs/summary" },
+        "assessment": { "$ref": "#/$defs/assessment" },
         "workshops": {
           "type": "array",
           "items": { "$ref": "#/$defs/workshop" }
@@ -59,6 +63,16 @@
         "version": { "type": "string" },
         "commit": { "type": "string" },
         "buildDate": { "type": "string" }
+      }
+    },
+    "findingDatabase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "contentVersion", "source"],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "contentVersion": { "type": "string" },
+        "source": { "const": "embedded-default" }
       }
     },
     "input": {
@@ -87,7 +101,7 @@
     "summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sdks", "files", "hooks", "operations", "capabilities", "unknownCommands", "diagnostics"],
+      "required": ["sdks", "files", "hooks", "operations", "capabilities", "unknownCommands", "diagnostics", "findings"],
       "properties": {
         "sdks": { "$ref": "#/$defs/sdkSummary" },
         "files": { "$ref": "#/$defs/fileSummary" },
@@ -95,7 +109,154 @@
         "operations": { "$ref": "#/$defs/operationSummary" },
         "capabilities": { "$ref": "#/$defs/capabilitySummary" },
         "unknownCommands": { "$ref": "#/$defs/unknownCommandSummary" },
-        "diagnostics": { "$ref": "#/$defs/diagnosticSummary" }
+        "diagnostics": { "$ref": "#/$defs/diagnosticSummary" },
+        "findings": { "$ref": "#/$defs/findingSummary" }
+      }
+    },
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "reviewPriority", "risk", "assurance", "coverage", "keyRisks", "bySdk"],
+      "properties": {
+        "classification": { "$ref": "#/$defs/classification" },
+        "reviewPriority": { "$ref": "#/$defs/score" },
+        "risk": { "$ref": "#/$defs/scoredAxis" },
+        "assurance": { "$ref": "#/$defs/scoredAxis" },
+        "coverage": { "$ref": "#/$defs/coverage" },
+        "keyRisks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/riskHighlight" }
+        },
+        "bySdk": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sdkAssessment" }
+        }
+      }
+    },
+    "sdkAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdk", "classification", "reviewPriority", "risk", "assurance", "coverage", "keyRisks"],
+      "properties": {
+        "sdk": { "type": "string" },
+        "classification": { "$ref": "#/$defs/classification" },
+        "reviewPriority": { "$ref": "#/$defs/score" },
+        "risk": { "$ref": "#/$defs/scoredAxis" },
+        "assurance": { "$ref": "#/$defs/scoredAxis" },
+        "coverage": { "$ref": "#/$defs/coverage" },
+        "keyRisks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/riskHighlight" }
+        }
+      }
+    },
+    "classification": {
+      "type": "string",
+      "enum": ["expected-and-controlled", "powerful-but-controlled", "weakly-controlled", "high-priority-review", "insufficient-evidence"]
+    },
+    "riskHighlight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "severity", "score", "occurrences", "scopes"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^risk\\.[a-z0-9.-]+$" },
+        "title": { "type": "string" },
+        "severity": { "type": "string", "enum": ["info", "low", "medium", "high", "critical"] },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "occurrences": { "$ref": "#/$defs/nonNegativeInteger" },
+        "scopes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/riskScope" }
+        }
+      }
+    },
+    "riskScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdk"],
+      "properties": {
+        "sdk": { "type": "string" },
+        "hook": { "$ref": "#/$defs/hookName" },
+        "location": { "$ref": "#/$defs/location" },
+        "value": { "type": "string" }
+      }
+    },
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "level"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "level": { "type": "string", "enum": ["info", "low", "medium", "high", "critical"] }
+      }
+    },
+    "scoredAxis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "level", "findings", "families"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "level": { "type": "string", "enum": ["info", "low", "medium", "high", "critical"] },
+        "findings": { "$ref": "#/$defs/nonNegativeInteger" },
+        "families": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/familyScore" }
+        }
+      }
+    },
+    "familyScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "score", "findings", "cap"],
+      "properties": {
+        "family": { "type": "string" },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "findings": { "$ref": "#/$defs/nonNegativeInteger" },
+        "cap": { "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "level", "hooks", "commands", "files"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "level": { "type": "string", "enum": ["sufficient", "insufficient"] },
+        "hooks": { "$ref": "#/$defs/hookCoverage" },
+        "commands": { "$ref": "#/$defs/commandCoverage" },
+        "files": { "$ref": "#/$defs/fileCoverage" }
+      }
+    },
+    "hookCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "parsed", "recovered", "failed"],
+      "properties": {
+        "total": { "$ref": "#/$defs/nonNegativeInteger" },
+        "parsed": { "$ref": "#/$defs/nonNegativeInteger" },
+        "recovered": { "$ref": "#/$defs/nonNegativeInteger" },
+        "failed": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "commandCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "known", "unknown", "unresolved"],
+      "properties": {
+        "total": { "$ref": "#/$defs/nonNegativeInteger" },
+        "known": { "$ref": "#/$defs/nonNegativeInteger" },
+        "unknown": { "$ref": "#/$defs/nonNegativeInteger" },
+        "unresolved": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "fileCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventoried", "contentAnalyzed", "binaryOnly"],
+      "properties": {
+        "inventoried": { "$ref": "#/$defs/nonNegativeInteger" },
+        "contentAnalyzed": { "$ref": "#/$defs/nonNegativeInteger" },
+        "binaryOnly": { "$ref": "#/$defs/nonNegativeInteger" }
       }
     },
     "sdkSummary": {
@@ -264,6 +425,35 @@
         }
       }
     },
+    "findingSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "risk", "assurance", "bySdk"],
+      "properties": {
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "risk": { "$ref": "#/$defs/nonNegativeInteger" },
+        "assurance": { "$ref": "#/$defs/nonNegativeInteger" },
+        "bySdk": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sdkFindingSummary" }
+        }
+      }
+    },
+    "sdkFindingSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdkName", "count", "risk", "assurance", "findingIds"],
+      "properties": {
+        "sdkName": { "type": "string" },
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "risk": { "$ref": "#/$defs/nonNegativeInteger" },
+        "assurance": { "$ref": "#/$defs/nonNegativeInteger" },
+        "findingIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/countedName" }
+        }
+      }
+    },
     "countedName": {
       "type": "object",
       "additionalProperties": false,
@@ -276,7 +466,7 @@
     "sdk": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "source", "state", "declarations", "files", "hooks"],
+      "required": ["name", "source", "state", "declarations", "files", "hooks", "findings"],
       "properties": {
         "name": { "type": "string" },
         "source": {
@@ -304,6 +494,10 @@
         "diagnostics": {
           "type": "array",
           "items": { "$ref": "#/$defs/sdkDiagnostic" }
+        },
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/finding" }
         }
       }
     },
@@ -376,7 +570,7 @@
     "hook": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "path", "digest", "size", "operations", "capabilities"],
+      "required": ["name", "path", "digest", "size", "operations", "relations", "capabilities"],
       "properties": {
         "name": { "$ref": "#/$defs/hookName" },
         "path": { "type": "string" },
@@ -387,6 +581,10 @@
         "operations": {
           "type": "array",
           "items": { "$ref": "#/$defs/operation" }
+        },
+        "relations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operationRelation" }
         },
         "capabilities": {
           "type": "array",
@@ -442,8 +640,11 @@
     "operation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "resolution", "location"],
+      "required": ["id", "sequence", "kind", "resolution", "location"],
       "properties": {
+        "id": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "parentId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "sequence": { "$ref": "#/$defs/nonNegativeInteger" },
         "kind": { "$ref": "#/$defs/operationKind" },
         "command": { "$ref": "#/$defs/value" },
         "name": { "type": "string" },
@@ -466,6 +667,21 @@
           "type": "array",
           "items": { "$ref": "#/$defs/operation" }
         }
+      }
+    },
+    "operationRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "fromOperationId", "toOperationId", "resolution"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["contains", "sequence", "pipeline", "substitution-flow", "variable-flow"]
+        },
+        "fromOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "toOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "name": { "type": "string" },
+        "resolution": { "$ref": "#/$defs/resolution" }
       }
     },
     "dataReference": {
@@ -515,12 +731,13 @@
     "capability": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "ruleId", "ruleSource", "operation", "resolution", "location"],
+      "required": ["kind", "ruleId", "ruleSource", "operation", "operationId", "resolution", "location"],
       "properties": {
         "kind": { "type": "string" },
         "ruleId": { "type": "string" },
         "ruleSource": { "type": "string" },
         "operation": { "$ref": "#/$defs/operationKind" },
+        "operationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
         "target": { "$ref": "#/$defs/value" },
         "resolution": { "$ref": "#/$defs/resolution" },
         "location": { "$ref": "#/$defs/location" }
@@ -536,6 +753,71 @@
         "startColumn": { "$ref": "#/$defs/nonNegativeInteger" },
         "endLine": { "$ref": "#/$defs/nonNegativeInteger" },
         "endColumn": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "family", "title", "confidence", "weight", "scope", "evidence", "message"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(risk|assurance)\\.[a-z0-9.-]+$" },
+        "kind": { "type": "string", "enum": ["risk", "assurance"] },
+        "family": { "type": "string" },
+        "title": { "type": "string" },
+        "severity": { "type": "string", "enum": ["info", "low", "medium", "high", "critical"] },
+        "strength": { "type": "string", "enum": ["info", "low", "medium", "high"] },
+        "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+        "weight": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "scope": { "$ref": "#/$defs/findingScope" },
+        "context": { "$ref": "#/$defs/findingContext" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/findingEvidence" }
+        },
+        "message": { "type": "string" },
+        "remediation": { "type": "string" },
+        "protectsAgainst": { "$ref": "#/$defs/stringArray" },
+        "limitations": { "$ref": "#/$defs/stringArray" }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "risk" } } }, "then": { "required": ["severity"] } },
+        { "if": { "properties": { "kind": { "const": "assurance" } } }, "then": { "required": ["strength"] } }
+      ]
+    },
+    "findingScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdk"],
+      "properties": {
+        "sdk": { "type": "string" },
+        "hook": { "$ref": "#/$defs/hookName" }
+      }
+    },
+    "findingContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runAsRoot", "projectMounted", "interfacesActive", "stateMounted"],
+      "properties": {
+        "runAsRoot": { "type": "boolean" },
+        "projectMounted": { "type": "boolean" },
+        "interfacesActive": { "type": "boolean" },
+        "stateMounted": { "type": "boolean" }
+      }
+    },
+    "findingEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["operation", "capability", "context", "data-flow", "control-flow", "file", "metadata", "diagnostic"] },
+        "id": { "type": "string" },
+        "operationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "fromOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "toOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "value": { "type": "string" },
+        "resolution": { "$ref": "#/$defs/resolution" },
+        "location": { "$ref": "#/$defs/location" }
       }
     },
     "documentDiagnostic": {

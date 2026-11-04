@@ -1,0 +1,48 @@
+finding-rules:
+  - id: risk.project-write-in-health-check
+    kind: risk
+    family: lifecycle-misuse
+    title: Health check writes to the project
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: capability
+      capabilities:
+        - project-write
+      hook-names:
+        - check-health
+    message: A health check modifies the mounted project instead of observing health only.
+    remediation: Move the mutation to a setup hook and keep health checks read-only.
+
+  - id: risk.system-change-in-health-check
+    kind: risk
+    family: lifecycle-misuse
+    title: Health check modifies the system
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: capability
+      capabilities:
+        - system-modification
+      hook-names:
+        - check-health
+    message: A health check changes protected system state.
+    remediation: Move the change to setup-base and keep health checks read-only.
+
+  - id: risk.destructive-health-check
+    kind: risk
+    family: lifecycle-misuse
+    title: Health check performs a destructive operation
+    severity: critical
+    confidence: high
+    weight: 80
+    match:
+      type: capability
+      capabilities:
+        - destructive-operation
+      hook-names:
+        - check-health
+    message: A health check deletes or overwrites data.
+    remediation: Remove destructive behavior from the health-check lifecycle.

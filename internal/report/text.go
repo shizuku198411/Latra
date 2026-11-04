@@ -10,13 +10,33 @@ import (
 	"unicode"
 
 	"github.com/shizuku198411/Latra/internal/analysis"
+	"github.com/shizuku198411/Latra/internal/finding"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
+const (
+	ansiReset     = "\x1b[0m"
+	ansiRed       = "\x1b[31m"
+	ansiGreen     = "\x1b[32m"
+	ansiYellow    = "\x1b[33m"
+	ansiCyan      = "\x1b[36m"
+	ansiBrightRed = "\x1b[91m"
+)
+
+// TextOptions controls terminal-specific text rendering.
+type TextOptions struct {
+	Color bool
+}
+
 // WriteText renders the complete SDK inventory in a deterministic format.
 func WriteText(writer io.Writer, result *source.Result) error {
+	return WriteTextWithOptions(writer, result, TextOptions{})
+}
+
+// WriteTextWithOptions renders the complete SDK inventory with explicit text options.
+func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextOptions) error {
 	document := NewDocument(result)
 	if _, err := fmt.Fprintf(writer, "Input\n  Kind: %s\n  Root: %s\n", document.Input.Kind, document.Input.Root); err != nil {
 		return err
@@ -39,7 +59,10 @@ func WriteText(writer io.Writer, result *source.Result) error {
 			return err
 		}
 	}
-	if err := writeSummary(writer, document.Summary, false); err != nil {
+	if err := writeSummary(writer, document.Summary, document.Assessment, false); err != nil {
+		return err
+	}
+	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
 		return err
 	}
 	return writeDocumentDiagnostics(writer, document.Diagnostics)
@@ -47,6 +70,11 @@ func WriteText(writer io.Writer, result *source.Result) error {
 
 // WriteTextSummary renders input, Workshop definitions, and the summary only.
 func WriteTextSummary(writer io.Writer, result *source.Result) error {
+	return WriteTextSummaryWithOptions(writer, result, TextOptions{})
+}
+
+// WriteTextSummaryWithOptions renders the compact representation with explicit text options.
+func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, options TextOptions) error {
 	document := NewDocument(result)
 	if _, err := fmt.Fprintf(writer, "Input\n  Kind: %s\n  Root: %s\n", document.Input.Kind, document.Input.Root); err != nil {
 		return err
@@ -61,13 +89,131 @@ func WriteTextSummary(writer io.Writer, result *source.Result) error {
 			}
 		}
 	}
-	if err := writeSummary(writer, document.Summary, true); err != nil {
+	if err := writeSummary(writer, document.Summary, document.Assessment, true); err != nil {
+		return err
+	}
+	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
 		return err
 	}
 	return writeDocumentDiagnostics(writer, document.Diagnostics)
 }
 
-func writeSummary(writer io.Writer, summary Summary, compactFiles bool) error {
+func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool) error {
+	if _, err := fmt.Fprintf(writer, "\nAssessment\n  Classification: %s\n  Review Priority: %s\n  Risk: %s\n  Assurance: %s\n  Coverage: %s\n",
+		assessment.Classification,
+		formatAssessmentScore(assessment.ReviewPriority.Score, assessment.ReviewPriority.Level, false, color),
+		formatAssessmentScore(assessment.Risk.Score, assessment.Risk.Level, false, color),
+		formatAssessmentScore(assessment.Assurance.Score, assessment.Assurance.Level, true, color),
+		formatAssessmentScore(assessment.Coverage.Score, assessment.Coverage.Level, true, color)); err != nil {
+		return err
+	}
+	if err := writeKeyRisks(writer, assessment.KeyRisks, "  "); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(writer, "  By SDK:"); err != nil {
+		return err
+	}
+	if len(assessment.BySDK) == 0 {
+		_, err := fmt.Fprintln(writer, "    -")
+		return err
+	}
+	for _, item := range assessment.BySDK {
+		if _, err := fmt.Fprintf(writer, "    %s: %s\n      Review Priority: %s\n      Risk: %s, Assurance: %s, Coverage: %s\n",
+			item.SDK, item.Classification,
+			formatAssessmentScore(item.ReviewPriority.Score, item.ReviewPriority.Level, false, color),
+			formatAssessmentScore(item.Risk.Score, item.Risk.Level, false, color),
+			formatAssessmentScore(item.Assurance.Score, item.Assurance.Level, true, color),
+			formatAssessmentScore(item.Coverage.Score, item.Coverage.Level, true, color)); err != nil {
+			return err
+		}
+		if err := writeKeyRisks(writer, item.KeyRisks, "      "); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func formatAssessmentScore(score int, level string, positive bool, color bool) string {
+	value := fmt.Sprintf("%d/100 (%s)", score, level)
+	if !color {
+		return value
+	}
+	code := negativeScoreColor(level)
+	if positive {
+		code = positiveScoreColor(level)
+	}
+	return code + value + ansiReset
+}
+
+func negativeScoreColor(level string) string {
+	switch level {
+	case "critical":
+		return ansiBrightRed
+	case "high":
+		return ansiRed
+	case "medium":
+		return ansiYellow
+	case "low":
+		return ansiCyan
+	default:
+		return ansiGreen
+	}
+}
+
+func positiveScoreColor(level string) string {
+	switch level {
+	case "high", "sufficient":
+		return ansiGreen
+	case "medium":
+		return ansiYellow
+	case "low":
+		return ansiRed
+	default:
+		return ansiBrightRed
+	}
+}
+
+func writeKeyRisks(writer io.Writer, highlights []finding.RiskHighlight, indent string) error {
+	if _, err := fmt.Fprintln(writer, indent+"Key Risks:"); err != nil {
+		return err
+	}
+	if len(highlights) == 0 {
+		_, err := fmt.Fprintln(writer, indent+"  -")
+		return err
+	}
+	for _, highlight := range highlights {
+		if _, err := fmt.Fprintf(writer, "%s  %s: %s [%s, score=%d, occurrences=%d]\n", indent, highlight.ID, highlight.Title, highlight.Severity, highlight.Score, highlight.Occurrences); err != nil {
+			return err
+		}
+		for _, scope := range highlight.Scopes {
+			if _, err := fmt.Fprintf(writer, "%s    sdk=%s", indent, scope.SDK); err != nil {
+				return err
+			}
+			if scope.Location != nil {
+				filePath := strings.TrimPrefix(scope.Location.Path, scope.SDK+"/")
+				if _, err := fmt.Fprintf(writer, " file=%s:%d:%d", filePath, scope.Location.StartLine, scope.Location.StartColumn); err != nil {
+					return err
+				}
+			}
+			if scope.Hook != "" {
+				if _, err := fmt.Fprintf(writer, " hook=%s", scope.Hook); err != nil {
+					return err
+				}
+			}
+			if scope.Value != "" {
+				if _, err := fmt.Fprintf(writer, " value=%q", scope.Value); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintln(writer); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessment, compactFiles bool) error {
 	if _, err := fmt.Fprintf(writer, "\nSummary\n  SDKs: %d (%d resolved, %d unresolved)\n    Resolved: %s\n    Unresolved: %s\n",
 		summary.SDKs.Count, summary.SDKs.Resolved, summary.SDKs.Unresolved,
 		formatSummaryItems(summary.SDKs.SDKNames.Resolved),
@@ -126,6 +272,38 @@ func writeSummary(writer io.Writer, summary Summary, compactFiles bool) error {
 			if _, err := fmt.Fprintf(writer, "      %s (%d): %s\n", file.FilePath, file.Count, formatCountedItems(file.CommandNames)); err != nil {
 				return err
 			}
+		}
+	}
+	if _, err := fmt.Fprintf(writer, "  Findings: %d (%d risk, %d assurance)\n", summary.Findings.Count, summary.Findings.Risk, summary.Findings.Assurance); err != nil {
+		return err
+	}
+	assessments := make(map[string]finding.SDKAssessment, len(assessment.BySDK))
+	for _, item := range assessment.BySDK {
+		assessments[item.SDK] = item
+	}
+	if _, err := fmt.Fprintln(writer, "    High-priority risks:"); err != nil {
+		return err
+	}
+	highPriorityCount := 0
+	for _, item := range summary.Findings.BySDK {
+		sdkAssessment, ok := assessments[item.SDKName]
+		if !ok || (sdkAssessment.Risk.Level != "high" && sdkAssessment.Risk.Level != "critical") {
+			continue
+		}
+		riskIDs := make([]CountedName, 0, len(item.FindingIDs))
+		for _, findingID := range item.FindingIDs {
+			if strings.HasPrefix(findingID.Name, "risk.") {
+				riskIDs = append(riskIDs, findingID)
+			}
+		}
+		highPriorityCount++
+		if _, err := fmt.Fprintf(writer, "      %s (%s): %s\n", item.SDKName, sdkAssessment.Risk.Level, formatCountedItems(riskIDs)); err != nil {
+			return err
+		}
+	}
+	if highPriorityCount == 0 {
+		if _, err := fmt.Fprintln(writer, "      -"); err != nil {
+			return err
 		}
 	}
 	_, err := fmt.Fprintf(writer, "  Diagnostics: %d: %s\n", summary.Diagnostics.Count, formatCountedItems(summary.Diagnostics.DiagnosticCodes))
@@ -195,6 +373,9 @@ func writeSDK(writer io.Writer, item SDK) error {
 			return err
 		}
 	}
+	if err := writeFindings(writer, item.Findings); err != nil {
+		return err
+	}
 	if item.State != sdk.StateResolved {
 		return nil
 	}
@@ -240,6 +421,53 @@ func writeSDK(writer io.Writer, item SDK) error {
 	for _, hook := range item.Hooks {
 		if err := writeHook(writer, hook); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func writeFindings(writer io.Writer, findings []finding.Finding) error {
+	if _, err := fmt.Fprintf(writer, "    Findings: %d\n", len(findings)); err != nil {
+		return err
+	}
+	for _, itemFinding := range findings {
+		level := itemFinding.Severity
+		if itemFinding.Kind == "assurance" {
+			level = itemFinding.Strength
+		}
+		if _, err := fmt.Fprintf(writer, "      %s [%s/%s, confidence=%s] %s", itemFinding.ID, itemFinding.Kind, level, itemFinding.Confidence, itemFinding.Title); err != nil {
+			return err
+		}
+		if itemFinding.Scope.Hook != "" {
+			if _, err := fmt.Fprintf(writer, " (hook=%s)", itemFinding.Scope.Hook); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(writer); err != nil {
+			return err
+		}
+		for _, evidence := range itemFinding.Evidence {
+			if _, err := fmt.Fprintf(writer, "        Evidence: %s %s", evidence.Type, evidence.ID); err != nil {
+				return err
+			}
+			if evidence.OperationID != "" {
+				if _, err := fmt.Fprintf(writer, " operation=%s", evidence.OperationID); err != nil {
+					return err
+				}
+			}
+			if evidence.FromOperationID != "" || evidence.ToOperationID != "" {
+				if _, err := fmt.Fprintf(writer, " flow=%s->%s", evidence.FromOperationID, evidence.ToOperationID); err != nil {
+					return err
+				}
+			}
+			if evidence.Location != nil {
+				if _, err := fmt.Fprintf(writer, " at %s", locationString(*evidence.Location)); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintln(writer); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -379,12 +607,29 @@ func writeHook(writer io.Writer, hook Hook) error {
 			return err
 		}
 	}
+	if _, err := fmt.Fprintf(writer, "        Relations: %d\n", len(hook.Relations)); err != nil {
+		return err
+	}
+	for _, relation := range hook.Relations {
+		if _, err := fmt.Fprintf(writer, "          %s [%s] %s -> %s", relation.Kind, relation.Resolution,
+			relation.FromOperationID, relation.ToOperationID); err != nil {
+			return err
+		}
+		if relation.Name != "" {
+			if _, err := fmt.Fprintf(writer, " name=%q", relation.Name); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(writer); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintf(writer, "        Capabilities: %d\n", len(hook.Capabilities)); err != nil {
 		return err
 	}
 	for _, capability := range hook.Capabilities {
-		if _, err := fmt.Fprintf(writer, "          %s [%s] rule=%s source=%s at %s target=%s\n",
-			capability.Kind, capability.Resolution, capability.RuleID, capability.RuleSource,
+		if _, err := fmt.Fprintf(writer, "          %s [%s] operation=%s rule=%s source=%s at %s target=%s\n",
+			capability.Kind, capability.Resolution, capability.OperationID, capability.RuleID, capability.RuleSource,
 			locationString(capability.Location), formatValue(capability.Target)); err != nil {
 			return err
 		}
@@ -404,7 +649,7 @@ func writeHook(writer io.Writer, hook Hook) error {
 }
 
 func writeOperation(writer io.Writer, operation analysis.Operation, indent string) error {
-	if _, err := fmt.Fprintf(writer, "%s%s [%s] at %s", indent, operation.Kind, operation.Resolution, locationString(operation.Location)); err != nil {
+	if _, err := fmt.Fprintf(writer, "%s%s %s [%s] at %s", indent, operation.ID, operation.Kind, operation.Resolution, locationString(operation.Location)); err != nil {
 		return err
 	}
 	if operation.Name != "" {

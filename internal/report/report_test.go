@@ -91,6 +91,7 @@ func TestWriteTextIncludesInventoryDetailsAndEscapesControls(t *testing.T) {
 		"Context: root=false project=true interfaces=true state=false",
 		`command="curl"`, `args=["line1\nline2\x1b"]`,
 		"network-download [Resolved]", "Summary", "Operations: 1", "Unknown Commands: 0",
+		"Assessment", "Classification: expected-and-controlled", "Review Priority: 0/100 (info)",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text does not contain %q:\n%s", want, text)
@@ -98,6 +99,51 @@ func TestWriteTextIncludesInventoryDetailsAndEscapesControls(t *testing.T) {
 	}
 	if strings.Contains(text, "line1\nline2") {
 		t.Error("text contains an unescaped argument newline")
+	}
+}
+
+func TestWriteTextSummaryColorsAssessmentScores(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	var output bytes.Buffer
+	if err := report.WriteTextSummaryWithOptions(&output, result, report.TextOptions{Color: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"Review Priority: \x1b[32m0/100 (info)\x1b[0m",
+		"Risk: \x1b[32m0/100 (info)\x1b[0m",
+		"Assurance: \x1b[32m72/100 (high)\x1b[0m",
+		"Coverage: \x1b[32m100/100 (sufficient)\x1b[0m",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text does not contain %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestWriteTextKeyRiskLocationUsesCLIArguments(t *testing.T) {
+	t.Parallel()
+	result := fixtureResult()
+	hook := &result.SDKs[0].Hooks[0]
+	hook.Name = sdk.HookSetupBase
+	hook.Path = "hooks/setup-base"
+	hook.Parse.Path = "example/hooks/setup-base"
+	hook.Analysis.Context = analysis.ContextFor("setup-base")
+	operation := &hook.Analysis.Operations[0]
+	operation.Command = analysis.Value{Parts: []analysis.ValuePart{{Kind: analysis.PartLiteral, Text: "unknown-tool"}}, Resolution: analysis.Resolved, Literal: "unknown-tool"}
+	operation.Location.Path = "example/hooks/setup-base"
+	hook.Analysis.Capabilities = nil
+
+	var output bytes.Buffer
+	if err := report.WriteTextSummary(&output, result); err != nil {
+		t.Fatal(err)
+	}
+	want := `sdk=example file=hooks/setup-base:1:1 hook=setup-base value="unknown-tool"`
+	if !strings.Contains(output.String(), want) {
+		t.Errorf("text does not contain %q:\n%s", want, output.String())
 	}
 }
 
@@ -312,10 +358,12 @@ func fixtureResult() *source.Result {
 				Parse: &shell.Result{Path: location.Path, Status: shell.StatusParsed, NodeTypes: map[string]int{"CallExpr": 1, "File": 1}},
 				Analysis: &analysis.Result{
 					Context:    analysis.ContextFor("setup-project"),
-					Operations: []analysis.Operation{{Kind: analysis.OperationCommand, Command: command, Arguments: []analysis.Value{target}, Resolution: analysis.Resolved, Location: location}},
+					Operations: []analysis.Operation{{ID: "op-0001", Kind: analysis.OperationCommand, Command: command, Arguments: []analysis.Value{target}, Resolution: analysis.Resolved, Location: location}},
+					Relations:  []analysis.Relation{},
 					Capabilities: []analysis.Capability{{
 						Kind: "network-download", RuleID: "command.curl-download", RuleSource: "embedded-default",
-						Operation: analysis.OperationCommand, Target: command, Resolution: analysis.Resolved, Location: location,
+						Operation: analysis.OperationCommand, OperationID: "op-0001",
+						Target: command, Resolution: analysis.Resolved, Location: location,
 					}},
 				},
 			}},

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/shizuku198411/Latra/internal/buildinfo"
@@ -69,10 +70,12 @@ func RunWithDependencies(args []string, stdout, stderr io.Writer, dependencies D
 		return runScan(args[1:], stdout, stderr, dependencies)
 	case "db":
 		return runDB(args[1:], stdout, stderr)
-	case "cat":
-		return runCat(args[1:], stdout, stderr, dependencies)
+	case "file":
+		return runFile(args[1:], stdout, stderr, dependencies)
 	case "hook":
 		return runHook(args[1:], stdout, stderr, dependencies)
+	case "cache":
+		return runCache(args[1:], stdout, stderr, dependencies)
 	default:
 		return usageError(stderr, "unknown command %q", args[0])
 	}
@@ -262,6 +265,13 @@ func parseScanOptions(args []string) (scanOptions, error) {
 
 func writeReport(options scanOptions, stdout io.Writer, result *source.Result) error {
 	if options.output == "-" {
+		if options.format == report.FormatText {
+			textOptions := report.TextOptions{Color: !options.noColor && os.Getenv("NO_COLOR") == "" && isTerminalWriter(stdout)}
+			if !options.verbose {
+				return report.WriteTextSummaryWithOptions(stdout, result, textOptions)
+			}
+			return report.WriteTextWithOptions(stdout, result, textOptions)
+		}
 		if !options.verbose {
 			return report.WriteSummary(stdout, options.format, result)
 		}
@@ -294,8 +304,13 @@ Database:
   latra db commands [COMMAND] [--capability CAPABILITY]
 
 SDK content:
-  latra cat <SDK> <FILE> [--project PATH|--channel CHANNEL] [--revision REVISION]
+  latra file <SDK> <FILE> [--project PATH|--channel CHANNEL] [--revision REVISION]
   latra hook <SDK> <HOOK> [--project PATH|--channel CHANNEL] [--revision REVISION]
+
+Cache:
+  latra cache list
+  latra cache clean [--project PATH]
+  latra cache clean --all
 
 Options:
   --format text|json  Report format (default: text)
@@ -312,8 +327,9 @@ Content selection:
 Commands:
   scan       Inspect a Workshop project or project SDK
   db         Inspect embedded capabilities, commands, and rules
-  cat        Print a cached SDK file or describe its binary format
+  file       Print an SDK file or describe its binary format
   hook       Print a cached SDK Workshop hook
+  cache      Remove cached SDK Store artifacts
   version    Print build version information
   help       Show this help`)
 }

@@ -103,7 +103,9 @@ import sys
 with open(sys.argv[1]) as report_file:
     report = json.load(report_file)
 
-assert report["schemaVersion"] == "1"
+assert report["schemaVersion"] == "2"
+assert report["findingDatabase"]["schemaVersion"] == "1"
+assert report["findingDatabase"]["source"] == "embedded-default"
 assert report["input"]["kind"] == "project"
 assert report["summary"]["sdks"] == {
     "count": 1,
@@ -113,6 +115,28 @@ assert report["summary"]["sdks"] == {
 }
 assert report["summary"]["unknownCommands"]["count"] == 0
 assert report["summary"]["diagnostics"]["count"] == 0
+assert report["summary"]["findings"]["count"] > 0
+assessment = report["assessment"]
+assert assessment["classification"] in {
+    "expected-and-controlled",
+    "powerful-but-controlled",
+    "weakly-controlled",
+    "high-priority-review",
+    "insufficient-evidence",
+}
+assert 0 <= assessment["reviewPriority"]["score"] <= 100
+assert 0 <= assessment["risk"]["score"] <= 100
+assert 0 <= assessment["assurance"]["score"] <= 100
+assert 0 <= assessment["coverage"]["score"] <= 100
+assert len(assessment["bySdk"]) == 1
+assert assessment["bySdk"][0]["sdk"] == "fixture-sdk"
+assert "keyRisks" in assessment
+assert "keyRisks" in assessment["bySdk"][0]
+for highlight in assessment["keyRisks"]:
+    assert highlight["id"].startswith("risk.")
+    assert highlight["occurrences"] > 0
+    assert 0 <= highlight["score"] <= 100
+    assert highlight["scopes"]
 
 assert len(report["sdks"]) == 1
 sdk = report["sdks"][0]
@@ -121,7 +145,20 @@ assert sdk["source"] == "store"
 assert sdk["state"] == "Resolved"
 assert sdk["channel"] == "latest/stable"
 assert sdk["metadata"]["version"] == "1.0"
+assert sdk["findings"]
+assert all(finding["evidence"] for finding in sdk["findings"])
 assert sorted(hook["name"] for hook in sdk["hooks"]) == ["check-health", "setup-base"]
+for hook in sdk["hooks"]:
+    assert "relations" in hook
+    pending_operations = list(hook["operations"])
+    operation_ids = set()
+    while pending_operations:
+        operation = pending_operations.pop()
+        operation_ids.add(operation["id"])
+        pending_operations.extend(operation.get("children", []))
+    for relation in hook["relations"]:
+        assert relation["fromOperationId"] in operation_ids
+        assert relation["toOperationId"] in operation_ids
 
 capabilities = {
     capability["kind"]
@@ -142,7 +179,7 @@ PY
   >"$temporary_dir/setup-base"
 grep -F 'curl -fsSL https://example.invalid/tool' "$temporary_dir/setup-base" >/dev/null
 
-./build/latra cat fixture-sdk meta/sdk.yaml \
+./build/latra file fixture-sdk meta/sdk.yaml \
   --project testdata/e2e/project \
   >"$temporary_dir/sdk.yaml"
 grep -F 'name: fixture-sdk' "$temporary_dir/sdk.yaml" >/dev/null

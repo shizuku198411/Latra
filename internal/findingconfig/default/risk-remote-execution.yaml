@@ -1,0 +1,23 @@
+finding-rules:
+  - id: risk.remote-content-execution
+    kind: risk
+    family: remote-execution
+    title: Remote content is executed by a shell
+    severity: critical
+    confidence: high
+    weight: 85
+    match:
+      type: relation-flow
+      relation-kinds:
+        - pipeline
+        - substitution-flow
+        - variable-flow
+      source-capability: network-download
+      sink-commands:
+        - sh
+        - bash
+        - dash
+        - zsh
+        - ksh
+    message: Content received from a remote endpoint flows directly to a shell.
+    remediation: Download the artifact separately, verify an immutable digest, and execute only after verification succeeds.
