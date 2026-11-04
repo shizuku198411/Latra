@@ -39,21 +39,21 @@ func TestEmbeddedDefaultFragmentLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := map[string]bool{
-		"README.md":              true,
-		"capabilities.yaml":      true,
-		"commands-core.yaml":     true,
-		"commands-network.yaml":  true,
-		"commands-official.yaml": true,
-		"commands-runtime.yaml":  true,
-		"commands-system.yaml":   true,
-		"files.yaml":             true,
-		"interpreters.yaml":      true,
-		"operations.yaml":        true,
-		"path-capabilities.yaml": true,
-		"path-classes.yaml":      true,
-		"targets.yaml":           true,
-		"uploads.yaml":           true,
-		"wrappers.yaml":          true,
+		"README.md":                true,
+		"capabilities.yaml":        true,
+		"commands-core.yaml":       true,
+		"commands-network.yaml":    true,
+		"command-definitions.yaml": true,
+		"commands-runtime.yaml":    true,
+		"commands-system.yaml":     true,
+		"files.yaml":               true,
+		"interpreters.yaml":        true,
+		"operations.yaml":          true,
+		"path-capabilities.yaml":   true,
+		"path-classes.yaml":        true,
+		"targets.yaml":             true,
+		"uploads.yaml":             true,
+		"wrappers.yaml":            true,
 	}
 	if len(entries) != len(expected) {
 		t.Fatalf("fragment count = %d, want %d", len(entries), len(expected))

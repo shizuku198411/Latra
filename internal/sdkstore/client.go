@@ -498,6 +498,18 @@ func extractArchive(archivePath, target string, limits sdk.Limits) error {
 			if err := root.Symlink(header.Linkname, name); err != nil {
 				return err
 			}
+		case tar.TypeLink:
+			targetPath := filepath.ToSlash(filepath.Clean(header.Linkname))
+			if filepath.IsAbs(header.Linkname) || targetPath == "." || targetPath == ".." || strings.HasPrefix(targetPath, "../") {
+				return fmt.Errorf("unsafe SDK archive hard link %q -> %q", name, header.Linkname)
+			}
+			info, err := root.Lstat(targetPath)
+			if err != nil || !info.Mode().IsRegular() {
+				return fmt.Errorf("SDK archive hard link %q has an invalid target %q", name, header.Linkname)
+			}
+			if err := root.Link(targetPath, name); err != nil {
+				return fmt.Errorf("create SDK archive hard link %q -> %q: %w", name, header.Linkname, err)
+			}
 		default:
 			return fmt.Errorf("unsupported SDK archive entry type for %q", name)
 		}

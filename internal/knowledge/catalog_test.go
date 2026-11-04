@@ -58,6 +58,32 @@ func TestDefaultCatalogContainsOfficialWorkshopCommands(t *testing.T) {
 	}
 }
 
+func TestDefaultCatalogContainsCanonicalSDKCommandCategories(t *testing.T) {
+	t.Parallel()
+
+	catalog := knowledge.Default()
+	want := map[string]string{
+		"exit":                "shell-builtin",
+		"adduser":             "system-utility",
+		"dpkg-query":          "system-utility",
+		"gpg":                 "system-utility",
+		"tar":                 "system-utility",
+		"update-alternatives": "system-utility",
+		"docker":              "sdk-tool",
+		"corepack":            "sdk-tool",
+		"github-runner":       "sdk-tool",
+		"nvcc":                "sdk-tool",
+		"rocminfo":            "sdk-tool",
+		"rustup":              "sdk-tool",
+	}
+	for name, category := range want {
+		command, ok := findCommand(catalog, name)
+		if !ok || command.Category != category {
+			t.Errorf("command %q = %#v, present = %t; want category %q", name, command, ok, category)
+		}
+	}
+}
+
 func findCommand(catalog knowledge.Catalog, name string) (knowledge.Command, bool) {
 	for _, command := range catalog.Commands {
 		if command.Name == name {

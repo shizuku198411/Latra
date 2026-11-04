@@ -179,6 +179,38 @@ func TestExtractArchiveRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestExtractArchiveAcceptsConfinedHardLink(t *testing.T) {
+	archive := testArchiveHeaders(t, []tar.Header{
+		{Name: "bin/tool", Mode: 0o755, Size: 4, Typeflag: tar.TypeReg},
+		{Name: "bin/tool-alias", Mode: 0o755, Typeflag: tar.TypeLink, Linkname: "bin/tool"},
+	}, []string{"tool", ""})
+	archivePath := filepath.Join(t.TempDir(), "hard-link.sdk")
+	if err := os.WriteFile(archivePath, archive, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	if err := extractArchive(archivePath, target, sdk.DefaultLimits()); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(target, "bin", "tool-alias"))
+	if err != nil || string(content) != "tool" {
+		t.Fatalf("hard-link content = %q, error = %v", content, err)
+	}
+}
+
+func TestExtractArchiveRejectsEscapingHardLink(t *testing.T) {
+	archive := testArchiveHeaders(t, []tar.Header{
+		{Name: "bin/tool-alias", Mode: 0o755, Typeflag: tar.TypeLink, Linkname: "../outside"},
+	}, []string{""})
+	archivePath := filepath.Join(t.TempDir(), "unsafe-hard-link.sdk")
+	if err := os.WriteFile(archivePath, archive, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := extractArchive(archivePath, t.TempDir(), sdk.DefaultLimits()); err == nil {
+		t.Fatal("expected escaping hard link to be rejected")
+	}
+}
+
 func TestDownloadRejectsDigestMismatch(t *testing.T) {
 	archive := testArchive(t, map[string]string{"meta/sdk.yaml": "name: rust\n"})
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -235,6 +267,37 @@ func testArchive(t *testing.T, files map[string]string) []byte {
 		}
 		if _, err := writer.Write([]byte(content)); err != nil {
 			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var compressed bytes.Buffer
+	encoder, err := zstd.NewWriter(&compressed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := encoder.Write(tarBuffer.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return compressed.Bytes()
+}
+
+func testArchiveHeaders(t *testing.T, headers []tar.Header, contents []string) []byte {
+	t.Helper()
+	var tarBuffer bytes.Buffer
+	writer := tar.NewWriter(&tarBuffer)
+	for index := range headers {
+		if err := writer.WriteHeader(&headers[index]); err != nil {
+			t.Fatal(err)
+		}
+		if contents[index] != "" {
+			if _, err := writer.Write([]byte(contents[index])); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if err := writer.Close(); err != nil {

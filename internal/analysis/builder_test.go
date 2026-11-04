@@ -163,7 +163,12 @@ func TestKnownCommandCoverage(t *testing.T) {
 	if !analysis.IsKnownCommand(analysis.Value{Resolution: analysis.Resolved, Literal: "/usr/bin/curl"}) {
 		t.Error("curl should be covered by embedded command knowledge")
 	}
-	for _, command := range []string{"workshop", "/snap/bin/workshopctl"} {
+	for _, command := range []string{
+		"workshop", "/snap/bin/workshopctl", "[", "echo", "exit", "printf", "read", "set", "true",
+		"add-apt-repository", "addgroup", "adduser", "cut", "dpkg-divert", "dpkg-query",
+		"eatmydata", "gpg", "jq", "ldconfig", "sed", "sleep", "tar", "update-alternatives", "which",
+		"corepack", "docker", "github-runner", "nvcc", "nvidia-smi", "rocminfo", "rustup",
+	} {
 		if !analysis.IsKnownCommand(analysis.Value{Resolution: analysis.Resolved, Literal: command}) {
 			t.Errorf("%s should be covered by the official Workshop command definitions", command)
 		}
