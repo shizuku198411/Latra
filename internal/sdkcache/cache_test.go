@@ -42,6 +42,24 @@ func TestResolveRejectsAmbiguousChannels(t *testing.T) {
 	}
 }
 
+func TestResolveMatchesWorkshopChannelShorthand(t *testing.T) {
+	t.Parallel()
+
+	cache := t.TempDir()
+	createRevision(t, cache, "go", "latest/stable", 10)
+	createRevision(t, cache, "go", "1.26/stable", 26)
+	createRevision(t, cache, "go", "1.27/stable", 27)
+
+	stable, err := sdkcache.Resolve(cache, sdkcache.Selection{SDK: "go", Channel: "stable"})
+	if err != nil || stable.Channel != "latest/stable" {
+		t.Fatalf("stable entry = %#v, error = %v", stable, err)
+	}
+	track, err := sdkcache.Resolve(cache, sdkcache.Selection{SDK: "go", Channel: "1.26"})
+	if err != nil || track.Channel != "1.26/stable" || track.Revision != 26 {
+		t.Fatalf("track entry = %#v, error = %v", track, err)
+	}
+}
+
 func TestOpenFileConfinesPath(t *testing.T) {
 	cache := t.TempDir()
 	entry := createRevision(t, cache, "rust", "latest/stable", 54)

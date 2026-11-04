@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shizuku198411/Latra/internal/sdk"
@@ -72,6 +73,38 @@ func TestScanProjectSDKDirectly(t *testing.T) {
 	}
 	if len(result.SDKs) != 1 || result.SDKs[0].Name != "standard" {
 		t.Fatalf("unexpected SDKs: %#v", result.SDKs)
+	}
+}
+
+func TestResolveSDKReferenceUsesDeclaredChannel(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	writeSourceFile(t, filepath.Join(project, ".workshop", "dev.yaml"), `
+name: dev
+base: ubuntu@24.04
+sdks:
+  - name: go
+    channel: 1.26/stable
+`)
+	reference, err := source.ResolveSDKReference(project, "go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reference.Source != sdk.SourceStore || reference.Channel != "1.26/stable" ||
+		len(reference.Definitions) != 1 || reference.Definitions[0] != ".workshop/dev.yaml" {
+		t.Fatalf("reference = %#v", reference)
+	}
+}
+
+func TestResolveSDKReferenceRejectsConflictingChannels(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	writeSourceFile(t, filepath.Join(project, ".workshop", "one.yaml"), "name: one\nbase: ubuntu@24.04\nsdks:\n  - name: go\n    channel: 1.26/stable\n")
+	writeSourceFile(t, filepath.Join(project, ".workshop", "two.yaml"), "name: two\nbase: ubuntu@24.04\nsdks:\n  - name: go\n    channel: 1.27/stable\n")
+	if _, err := source.ResolveSDKReference(project, "go"); err == nil || !strings.Contains(err.Error(), "conflicting Workshop declarations") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

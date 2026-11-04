@@ -13,6 +13,7 @@ import (
 
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
+	"github.com/shizuku198411/Latra/internal/source"
 )
 
 const maxDisplayedFileBytes = int64(128 << 20)
@@ -30,7 +31,7 @@ func runCat(args []string, stdout, stderr io.Writer, dependencies Dependencies) 
 	if err != nil {
 		return usageError(stderr, "%v", err)
 	}
-	entry, err := resolveContentSDK(dependencies.CacheRoot, options)
+	entry, err := resolveContentSDK(dependencies, options)
 	if err != nil {
 		fmt.Fprintf(stderr, "latra: cat: %v\n", err)
 		return exitError
@@ -56,7 +57,7 @@ func runHook(args []string, stdout, stderr io.Writer, dependencies Dependencies)
 	if !isHookName(options.target) {
 		return usageError(stderr, "unknown Workshop hook %q", options.target)
 	}
-	entry, err := resolveContentSDK(dependencies.CacheRoot, options)
+	entry, err := resolveContentSDK(dependencies, options)
 	if err != nil {
 		fmt.Fprintf(stderr, "latra: hook: %v\n", err)
 		return exitError
@@ -125,32 +126,44 @@ func parseContentOptions(command, targetName string, args []string) (contentOpti
 	if len(positionals) != 2 {
 		return options, fmt.Errorf("%s requires exactly SDK and %s", command, targetName)
 	}
-	if options.project != "" && (options.channel != "" || options.revision != 0) {
-		return options, fmt.Errorf("--project cannot be combined with --channel or --revision")
-	}
 	options.sdk, options.target = positionals[0], positionals[1]
 	return options, nil
 }
 
-func resolveContentSDK(cacheRoot string, options contentOptions) (sdkcache.Entry, error) {
-	if options.project != "" {
-		return sdkcache.ResolveProject(options.project, options.sdk)
-	}
-	if options.channel == "" && options.revision == 0 {
-		entry, err := sdkcache.ResolveProject(".", options.sdk)
-		if err == nil {
-			return entry, nil
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return sdkcache.Entry{}, fmt.Errorf("inspect project SDK: %w", err)
-		}
-	}
+func resolveContentSDK(dependencies Dependencies, options contentOptions) (sdkcache.Entry, error) {
+	cacheRoot := dependencies.CacheRoot
 	if cacheRoot == "" {
 		cacheRoot = sdkcache.DefaultRoot
 	}
-	return sdkcache.Resolve(cacheRoot, sdkcache.Selection{
-		SDK: options.sdk, Channel: options.channel, Revision: options.revision,
-	})
+	if options.channel != "" {
+		return sdkcache.Resolve(cacheRoot, sdkcache.Selection{
+			SDK: options.sdk, Channel: options.channel, Revision: options.revision,
+		})
+	}
+	project := options.project
+	if project == "" {
+		project = dependencies.WorkingDirectory
+		if project == "" {
+			project = "."
+		}
+	}
+	reference, err := source.ResolveSDKReference(project, options.sdk)
+	if err != nil {
+		return sdkcache.Entry{}, fmt.Errorf("resolve SDK from Workshop project: %w", err)
+	}
+	switch reference.Source {
+	case sdk.SourceProject:
+		if options.revision != 0 {
+			return sdkcache.Entry{}, fmt.Errorf("--revision cannot select a project SDK")
+		}
+		return sdkcache.ResolveProject(project, options.sdk)
+	case sdk.SourceStore:
+		return sdkcache.Resolve(cacheRoot, sdkcache.Selection{
+			SDK: options.sdk, Channel: reference.Channel, Revision: options.revision,
+		})
+	default:
+		return sdkcache.Entry{}, fmt.Errorf("SDK %q uses unsupported source %q", options.sdk, reference.Source)
+	}
 }
 
 func isHookName(name string) bool {

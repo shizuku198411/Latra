@@ -20,6 +20,10 @@ func runCLIWithCache(args []string, cache string, stdout, stderr *bytes.Buffer) 
 	return cli.RunWithDependencies(args, stdout, stderr, cli.Dependencies{CacheRoot: cache})
 }
 
+func runCLIWithProject(args []string, cache, project string, stdout, stderr *bytes.Buffer) int {
+	return cli.RunWithDependencies(args, stdout, stderr, cli.Dependencies{CacheRoot: cache, WorkingDirectory: project})
+}
+
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -447,13 +451,13 @@ func TestRunCatPrintsTextAndDescribesBinary(t *testing.T) {
 	cacheRoot := filepath.Clean(filepath.Join(cache, "..", "..", "..", ".."))
 
 	var stdout, stderr bytes.Buffer
-	code := runCLIWithCache([]string{"cat", "rust", "meta/sdk.yaml"}, cacheRoot, &stdout, &stderr)
+	code := runCLIWithCache([]string{"cat", "rust", "meta/sdk.yaml", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
 	if code != 0 || stdout.String() != "name: rust\n" || stderr.Len() != 0 {
 		t.Fatalf("text cat code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	code = runCLIWithCache([]string{"cat", "rust", "rustup"}, cacheRoot, &stdout, &stderr)
+	code = runCLIWithCache([]string{"cat", "rust", "rustup", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("binary cat code=%d stderr=%q", code, stderr.String())
 	}
@@ -472,19 +476,19 @@ func TestRunHookResolvesWorkshopHookLayouts(t *testing.T) {
 	writeCachedFile(t, filepath.Join(cache, "hooks", "setup-base"), "#!/bin/bash\necho base\n")
 	cacheRoot := filepath.Clean(filepath.Join(cache, "..", "..", "..", ".."))
 	var stdout, stderr bytes.Buffer
-	code := runCLIWithCache([]string{"hook", "rust", "check-health"}, cacheRoot, &stdout, &stderr)
+	code := runCLIWithCache([]string{"hook", "rust", "check-health", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
 	if code != 0 || stdout.String() != "#!/bin/bash\necho ok\n" || stderr.Len() != 0 {
 		t.Fatalf("hook code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	code = runCLIWithCache([]string{"hook", "rust", "setup-base"}, cacheRoot, &stdout, &stderr)
+	code = runCLIWithCache([]string{"hook", "rust", "setup-base", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
 	if code != 0 || stdout.String() != "#!/bin/bash\necho base\n" {
 		t.Fatalf("short-layout hook code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 
-func TestRunCachedContentRequiresChannelWhenAmbiguous(t *testing.T) {
+func TestRunCachedContentUsesWorkshopDeclaredChannel(t *testing.T) {
 	t.Parallel()
 
 	stable := createCachedSDK(t, "rust", "latest/stable", "54")
@@ -492,9 +496,11 @@ func TestRunCachedContentRequiresChannelWhenAmbiguous(t *testing.T) {
 	writeCachedFile(t, filepath.Join(stable, "sdk.yaml"), "name: stable\n")
 	writeCachedFile(t, filepath.Join(edge, "sdk.yaml"), "name: edge\n")
 	cacheRoot := filepath.Clean(filepath.Join(stable, "..", "..", "..", ".."))
+	project := t.TempDir()
+	writeCachedFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: rust\n    channel: latest/stable\n")
 	var stdout, stderr bytes.Buffer
-	if code := runCLIWithCache([]string{"cat", "rust", "sdk.yaml"}, cacheRoot, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "multiple cached channels") {
-		t.Fatalf("ambiguous code=%d stderr=%q", code, stderr.String())
+	if code := runCLIWithProject([]string{"cat", "rust", "sdk.yaml"}, cacheRoot, project, &stdout, &stderr); code != 0 || stdout.String() != "name: stable\n" {
+		t.Fatalf("declared channel code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
@@ -507,6 +513,7 @@ func TestRunCatAndHookReadProjectSDK(t *testing.T) {
 	t.Parallel()
 
 	project := t.TempDir()
+	writeCachedFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: project-local\n")
 	writeCachedFile(t, filepath.Join(project, ".workshop", "local", "sdk.yaml"), "name: local\n")
 	writeCachedFile(t, filepath.Join(project, ".workshop", "local", "hooks", "check-health"), "echo project-ok\n")
 	var stdout, stderr bytes.Buffer
@@ -519,6 +526,22 @@ func TestRunCatAndHookReadProjectSDK(t *testing.T) {
 	code = runCLIWithCache([]string{"hook", "local", "check-health", "--project=" + project}, t.TempDir(), &stdout, &stderr)
 	if code != 0 || stdout.String() != "echo project-ok\n" || stderr.Len() != 0 {
 		t.Fatalf("project hook code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCachedContentDoesNotFallBackToUndeclaredSDK(t *testing.T) {
+	t.Parallel()
+
+	cache := createCachedSDK(t, "go", "1.26/stable", "26")
+	writeCachedFile(t, filepath.Join(cache, "sdk.yaml"), "name: go\n")
+	cacheRoot := filepath.Clean(filepath.Join(cache, "..", "..", "..", ".."))
+	project := t.TempDir()
+	writeCachedFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\n")
+
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithProject([]string{"cat", "go", "sdk.yaml"}, cacheRoot, project, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "not declared by this Workshop project") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 

@@ -40,8 +40,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 // Dependencies contains replaceable external services used by the CLI.
 type Dependencies struct {
-	StoreResolver source.StoreResolver
-	CacheRoot     string
+	StoreResolver    source.StoreResolver
+	CacheRoot        string
+	WorkingDirectory string
 }
 
 // RunWithDependencies executes the CLI with explicitly supplied external services.
@@ -292,7 +293,7 @@ Database:
   latra db capabilities [CAPABILITY] [--command COMMAND]
   latra db commands [COMMAND] [--capability CAPABILITY]
 
-Cached SDK content:
+SDK content:
   latra cat <SDK> <FILE> [--project PATH|--channel CHANNEL] [--revision REVISION]
   latra hook <SDK> <HOOK> [--project PATH|--channel CHANNEL] [--revision REVISION]
 
@@ -302,6 +303,11 @@ Options:
   --no-color          Disable terminal colors
   --quiet             Suppress non-error status output
   --verbose           Include complete SDK, file, hook, and analysis details
+
+Content selection:
+  --project PATH      Resolve the SDK from PATH's Workshop definitions (default: .)
+  --channel CHANNEL   Override the Workshop-declared Store channel
+  --revision REVISION Select a cached revision within the resolved channel
 
 Commands:
   scan       Inspect a Workshop project or project SDK

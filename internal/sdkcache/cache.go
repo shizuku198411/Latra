@@ -102,9 +102,6 @@ func Resolve(cacheRoot string, selection Selection) (Entry, error) {
 		if err := sdk.ValidateChannel(channel); err != nil {
 			return nil
 		}
-		if selection.Channel != "" && channel != selection.Channel {
-			return filepath.SkipDir
-		}
 		if selection.Revision != 0 && revision != selection.Revision {
 			return filepath.SkipDir
 		}
@@ -119,6 +116,12 @@ func Resolve(cacheRoot string, selection Selection) (Entry, error) {
 	}
 	if len(candidates) == 0 {
 		return Entry{}, fmt.Errorf("no cached revision matched SDK %q", selection.SDK)
+	}
+	if selection.Channel != "" {
+		candidates = selectChannel(candidates, selection.Channel)
+		if len(candidates) == 0 {
+			return Entry{}, fmt.Errorf("no cached revision matched SDK %q channel %q", selection.SDK, selection.Channel)
+		}
 	}
 
 	channels := make(map[string]struct{})
@@ -135,6 +138,50 @@ func Resolve(cacheRoot string, selection Selection) (Entry, error) {
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Revision > candidates[j].Revision })
 	return candidates[0], nil
+}
+
+func selectChannel(candidates []Entry, requested string) []Entry {
+	filter := func(matches func(string) bool) []Entry {
+		var selected []Entry
+		for _, candidate := range candidates {
+			if matches(candidate.Channel) {
+				selected = append(selected, candidate)
+			}
+		}
+		return selected
+	}
+	if exact := filter(func(channel string) bool { return channel == requested }); len(exact) > 0 {
+		return exact
+	}
+	parts := strings.Split(requested, "/")
+	risks := map[string]bool{"stable": true, "candidate": true, "beta": true, "edge": true}
+	preferred := ""
+	switch {
+	case len(parts) == 1 && risks[parts[0]]:
+		preferred = "latest/" + requested
+	case len(parts) == 1:
+		preferred = requested + "/stable"
+	case len(parts) == 2 && risks[parts[0]]:
+		preferred = "latest/" + requested
+	}
+	if preferred != "" {
+		if selected := filter(func(channel string) bool { return channel == preferred }); len(selected) > 0 {
+			return selected
+		}
+	}
+	return filter(func(channel string) bool {
+		effective := strings.Split(channel, "/")
+		switch {
+		case len(parts) == 1 && risks[parts[0]]:
+			return len(effective) >= 2 && effective[1] == parts[0]
+		case len(parts) == 1:
+			return len(effective) >= 1 && effective[0] == parts[0]
+		case len(parts) == 2 && risks[parts[0]]:
+			return len(effective) == 3 && effective[1] == parts[0] && effective[2] == parts[1]
+		default:
+			return false
+		}
+	})
 }
 
 // OpenFile safely opens a regular file relative to a selected SDK root.
