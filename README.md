@@ -79,7 +79,16 @@ Summary
     High-priority risks:
       -
   Diagnostics: 0: -
+```
 
+</details>
+
+### Review the assessment
+
+Each scan ends with an assessment that separates detected risk, positive
+assurance, and analysis coverage:
+
+```text
 Assessment
   Classification: expected-and-controlled
   Review Priority: 25/100 (medium)
@@ -98,7 +107,15 @@ Assessment
           sdk=go file=sdk/hooks/setup-base:1:11 hook=setup-base value="/etc/profile.d/go.sh"
 ```
 
-</details>
+This result indicates that Latra analyzed the available hook and command
+evidence with sufficient coverage. The SDK has strong observable assurance and
+one medium-risk behavior: it writes persistent startup configuration. The
+`expected-and-controlled` classification means the detected behavior is
+consistent with the observed controls, not that the SDK is guaranteed safe.
+
+`Key Risks` identifies what needs review and where it was detected. Its `sdk`,
+`file`, and `hook` values can be passed directly to the inspection commands in
+the next section.
 
 ### Inspect a hook or file
 
