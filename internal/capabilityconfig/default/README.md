@@ -3,6 +3,7 @@
 These YAML fragments are embedded into the Latra binary, strictly decoded, merged, and validated as one configuration.
 
 - `capabilities.yaml` owns `schema-version` and `capability-definitions`.
+- `commands-official.yaml` contains commands that are known by origin but do not imply a Capability by themselves.
 - `commands-*.yaml` contains command rules grouped by functional area.
 - `wrappers.yaml` contains normalized command-wrapper behavior.
 - `files.yaml`, `targets.yaml`, `interpreters.yaml`, `uploads.yaml`, and `operations.yaml` correspond to their evaluator models.

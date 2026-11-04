@@ -97,13 +97,16 @@ func ExtractCapabilities(operations []Operation, context HookContext) []Capabili
 }
 
 // IsKnownCommand reports whether a resolved command is covered by embedded
-// command, file, target, interpreter, or upload knowledge.
+// command definitions or behavioral knowledge.
 func IsKnownCommand(command Value) bool {
 	if command.Resolution != Resolved {
 		return false
 	}
 	name := filepath.Base(command.Literal)
 	config := capabilityconfig.MustDefault()
+	if _, ok := config.CommandDefinitions[name]; ok {
+		return true
+	}
 	for _, rule := range config.CommandRules {
 		if contains(rule.Commands, name) {
 			return true

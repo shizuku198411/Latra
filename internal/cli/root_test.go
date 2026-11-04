@@ -338,6 +338,21 @@ func TestRunDBJSONReverseLookup(t *testing.T) {
 	}
 }
 
+func TestRunDBOfficialWorkshopCommand(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := runCLI([]string{"db", "commands", "workshopctl"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
+	}
+	for _, want := range []string{"workshopctl", "Category: workshop-official", "Canonical Workshop in-environment control CLI."} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("output does not contain %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunDBFileMatchesStandardOutput(t *testing.T) {
 	t.Parallel()
 

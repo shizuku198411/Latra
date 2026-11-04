@@ -4,6 +4,7 @@ package capabilityconfig
 type Config struct {
 	SchemaVersion         string                          `yaml:"schema-version"`
 	CapabilityDefinitions map[string]CapabilityDefinition `yaml:"capability-definitions"`
+	CommandDefinitions    map[string]CommandDefinition    `yaml:"command-definitions"`
 	CommandRules          []CommandRule                   `yaml:"command-rules"`
 	WrapperRules          []WrapperRule                   `yaml:"wrapper-rules"`
 	FileCommandRules      []FileCommandRule               `yaml:"file-command-rules"`
@@ -22,6 +23,11 @@ type WrapperRule struct {
 }
 
 type CapabilityDefinition struct {
+	Description string `yaml:"description"`
+}
+
+type CommandDefinition struct {
+	Category    string `yaml:"category"`
 	Description string `yaml:"description"`
 }
 

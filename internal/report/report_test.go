@@ -220,6 +220,8 @@ func TestDocumentSummaryGroupsUnknownCommandsBySDKAndFile(t *testing.T) {
 	}
 	result.SDKs[0].Hooks[0].Analysis.Operations = append(
 		result.SDKs[0].Hooks[0].Analysis.Operations,
+		unknown("workshop"),
+		unknown("workshopctl"),
 		unknown("latra-unknown-fixture"),
 		analysis.Operation{Kind: analysis.OperationPipeline, Resolution: analysis.Resolved, Location: location, Children: []analysis.Operation{
 			unknown("latra-unknown-fixture"), unknown("another-unknown-fixture"),

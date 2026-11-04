@@ -1,0 +1,8 @@
+command-definitions:
+  workshop:
+    category: workshop-official
+    description: Canonical Workshop user CLI.
+
+  workshopctl:
+    category: workshop-official
+    description: Canonical Workshop in-environment control CLI.

@@ -23,6 +23,12 @@ func TestEmbeddedDefaultIsValid(t *testing.T) {
 	if len(config.CapabilityDefinitions) == 0 || len(config.FileCommandRules) == 0 {
 		t.Errorf("embedded capability knowledge is incomplete: %#v", config)
 	}
+	for _, command := range []string{"workshop", "workshopctl"} {
+		definition, ok := config.CommandDefinitions[command]
+		if !ok || definition.Category != "workshop-official" {
+			t.Errorf("command definition %q = %#v, present = %t", command, definition, ok)
+		}
+	}
 }
 
 func TestEmbeddedDefaultFragmentLayout(t *testing.T) {
@@ -37,6 +43,7 @@ func TestEmbeddedDefaultFragmentLayout(t *testing.T) {
 		"capabilities.yaml":      true,
 		"commands-core.yaml":     true,
 		"commands-network.yaml":  true,
+		"commands-official.yaml": true,
 		"commands-runtime.yaml":  true,
 		"commands-system.yaml":   true,
 		"files.yaml":             true,

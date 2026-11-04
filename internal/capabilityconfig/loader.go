@@ -98,6 +98,9 @@ func mergeConfig(target, fragment *Config, source string) error {
 	if target.CapabilityDefinitions == nil {
 		target.CapabilityDefinitions = make(map[string]CapabilityDefinition)
 	}
+	if target.CommandDefinitions == nil {
+		target.CommandDefinitions = make(map[string]CommandDefinition)
+	}
 	if target.PathClasses == nil {
 		target.PathClasses = make(map[string]PathClass)
 	}
@@ -109,6 +112,12 @@ func mergeConfig(target, fragment *Config, source string) error {
 			return fmt.Errorf("%s: duplicate capability definition %q", source, key)
 		}
 		target.CapabilityDefinitions[key] = value
+	}
+	for key, value := range fragment.CommandDefinitions {
+		if _, exists := target.CommandDefinitions[key]; exists {
+			return fmt.Errorf("%s: duplicate command definition %q", source, key)
+		}
+		target.CommandDefinitions[key] = value
 	}
 	for key, value := range fragment.PathClasses {
 		if _, exists := target.PathClasses[key]; exists {
@@ -145,6 +154,11 @@ func validate(config *Config) error {
 	for name, definition := range config.CapabilityDefinitions {
 		if !identifierPattern.MatchString(name) || strings.TrimSpace(definition.Description) == "" {
 			return fmt.Errorf("invalid capability definition %q", name)
+		}
+	}
+	for name, definition := range config.CommandDefinitions {
+		if strings.TrimSpace(name) == "" || !identifierPattern.MatchString(definition.Category) || strings.TrimSpace(definition.Description) == "" {
+			return fmt.Errorf("invalid command definition %q", name)
 		}
 	}
 	validateCapabilities := func(ruleID string, capabilities []string) error {

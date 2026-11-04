@@ -40,6 +40,33 @@ func TestSelectFiltersBothDirections(t *testing.T) {
 	}
 }
 
+func TestDefaultCatalogContainsOfficialWorkshopCommands(t *testing.T) {
+	t.Parallel()
+
+	catalog := knowledge.Default()
+	for _, name := range []string{"workshop", "workshopctl"} {
+		command, ok := findCommand(catalog, name)
+		if !ok {
+			t.Fatalf("command %q not found", name)
+		}
+		if command.Category != "workshop-official" || command.Description == "" {
+			t.Errorf("command %q = %#v", name, command)
+		}
+		if len(command.Associations) != 0 {
+			t.Errorf("official command %q unexpectedly has capability associations: %#v", name, command.Associations)
+		}
+	}
+}
+
+func findCommand(catalog knowledge.Catalog, name string) (knowledge.Command, bool) {
+	for _, command := range catalog.Commands {
+		if command.Name == name {
+			return command, true
+		}
+	}
+	return knowledge.Command{}, false
+}
+
 func assertAssociation(t *testing.T, catalog knowledge.Catalog, command, capability, associationType string) {
 	t.Helper()
 	for _, item := range catalog.Commands {
