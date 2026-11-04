@@ -35,16 +35,9 @@ on the host:
 ./scripts/install.sh
 ```
 
-The installation script runs `workshop run -- build` before installing the
-binary.
-
-The installer places Latra in `~/.local/bin` by default. To use another
-directory, set `LATRA_INSTALL_DIR` for both installation and removal:
-
-```bash
-LATRA_INSTALL_DIR=/path/to/bin ./scripts/install.sh
-LATRA_INSTALL_DIR=/path/to/bin ./scripts/uninstall.sh
-```
+The installation script launches the `dev` Workshop when needed and runs
+`workshop run -- build` before installing the binary. A Workshop launched by
+the script is removed after the build; an already-running Workshop is preserved.
 
 Remove the default installation with:
 
