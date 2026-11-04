@@ -20,6 +20,68 @@ type SDKReference struct {
 	Definitions []string
 }
 
+// StoreSDKNames returns the unique Store SDK names declared by a Workshop
+// project. Project, try, and system SDKs do not have Latra Store cache entries
+// and are excluded.
+func StoreSDKNames(projectPath string) ([]string, error) {
+	root, err := os.OpenRoot(projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("open project: %w", err)
+	}
+	defer root.Close()
+
+	entries, err := fs.ReadDir(root.FS(), ".workshop")
+	if err != nil {
+		return nil, fmt.Errorf("read .workshop: %w", err)
+	}
+	definitionNames := make([]string, 0)
+	for _, entry := range entries {
+		if !entry.IsDir() && path.Ext(entry.Name()) == ".yaml" {
+			definitionNames = append(definitionNames, entry.Name())
+		}
+	}
+	sort.Strings(definitionNames)
+	if len(definitionNames) == 0 {
+		return nil, fmt.Errorf("no Workshop definitions found under .workshop")
+	}
+
+	names := make(map[string]bool)
+	for _, definitionName := range definitionNames {
+		relative := path.Join(".workshop", definitionName)
+		content, err := readBounded(root, relative, maxDefinitionBytes)
+		if err != nil {
+			return nil, err
+		}
+		definition, err := decodeProjectDefinition(content)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", relative, err)
+		}
+		if err := validateProjectDefinition(definition); err != nil {
+			return nil, fmt.Errorf("%s: %w", relative, err)
+		}
+		for _, declaration := range definition.SDKs {
+			name, sourceType, err := classifyDeclaration(declaration.Name)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", relative, err)
+			}
+			if sourceType == sdk.SourceStore {
+				if declaration.Channel != "" {
+					if err := sdk.ValidateChannel(declaration.Channel); err != nil {
+						return nil, fmt.Errorf("%s: SDK %q: %w", relative, name, err)
+					}
+				}
+				names[name] = true
+			}
+		}
+	}
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
 // ResolveSDKReference resolves an SDK name against all Workshop definitions in
 // a project. It rejects declarations that disagree on source or channel.
 func ResolveSDKReference(projectPath, name string) (SDKReference, error) {

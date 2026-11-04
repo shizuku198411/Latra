@@ -289,6 +289,134 @@ func TestRunScanRejectsInvalidOptions(t *testing.T) {
 	}
 }
 
+func TestRunCacheCleanRemovesCurrentProjectStoreSDKs(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	definition := `name: dev
+base: ubuntu@26.04
+sdks:
+  - name: go
+    channel: 1.27/stable
+  - name: project-local
+`
+	if err := os.MkdirAll(filepath.Join(project, ".workshop", "local"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, ".workshop", "dev.yaml"), []byte(definition), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cache := t.TempDir()
+	for _, name := range []string{"go", "rust"} {
+		if err := os.MkdirAll(filepath.Join(cache, name, "latest", "stable", "1"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runCLIWithProject([]string{"cache", "clean"}, cache, project, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
+	}
+	if stdout.String() != "Removed SDK cache entries: go.\n" {
+		t.Errorf("stdout = %q", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(cache, "go")); !os.IsNotExist(err) {
+		t.Errorf("go cache still exists: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cache, "rust")); err != nil {
+		t.Errorf("unrelated rust cache was removed: %v", err)
+	}
+}
+
+func TestRunCacheCleanAll(t *testing.T) {
+	t.Parallel()
+
+	cache := t.TempDir()
+	for _, name := range []string{"go", "rust"} {
+		if err := os.Mkdir(filepath.Join(cache, name), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runCLIWithCache([]string{"cache", "clean", "--all"}, cache, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
+	}
+	if stdout.String() != "Removed all Latra cache entries (2).\n" {
+		t.Errorf("stdout = %q", stdout.String())
+	}
+	entries, err := os.ReadDir(cache)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("cache entries = %v, error = %v", entries, err)
+	}
+}
+
+func TestRunCacheList(t *testing.T) {
+	t.Parallel()
+
+	cache := t.TempDir()
+	for _, item := range []struct {
+		name     string
+		channel  string
+		revision string
+	}{
+		{name: "rust", channel: "latest/stable", revision: "42"},
+		{name: "go", channel: "1.27/stable", revision: "27"},
+	} {
+		root := filepath.Join(cache, item.name, filepath.FromSlash(item.channel), item.revision)
+		if err := os.MkdirAll(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(root+".sdk", []byte("archive"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runCLIWithCache([]string{"cache", "list"}, cache, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
+	}
+	want := "SDK   CHANNEL        REVISION\n" +
+		"go    1.27/stable    27\n" +
+		"rust  latest/stable  42\n"
+	if stdout.String() != want {
+		t.Errorf("stdout = %q, want %q", stdout.String(), want)
+	}
+}
+
+func TestRunCacheListEmpty(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := runCLIWithCache([]string{"cache", "list"}, filepath.Join(t.TempDir(), "missing"), &stdout, &stderr)
+	if code != 0 || stdout.String() != "No SDK cache entries found.\n" {
+		t.Fatalf("code = %d; stdout = %q; stderr = %q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCacheCleanRejectsInvalidUsage(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{
+		{"cache"},
+		{"cache", "list", "extra"},
+		{"cache", "clean", "extra"},
+		{"cache", "clean", "--all", "--project", "."},
+		{"cache", "clean", "--project="},
+	} {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		if code := runCLI(args, &stdout, &stderr); code != 2 {
+			t.Errorf("Run(%q) code = %d, want 2; stderr = %q", args, code, stderr.String())
+		}
+	}
+}
+
 func TestRunDBOverviewAndCapabilityDetail(t *testing.T) {
 	t.Parallel()
 

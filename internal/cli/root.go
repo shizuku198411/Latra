@@ -73,6 +73,8 @@ func RunWithDependencies(args []string, stdout, stderr io.Writer, dependencies D
 		return runCat(args[1:], stdout, stderr, dependencies)
 	case "hook":
 		return runHook(args[1:], stdout, stderr, dependencies)
+	case "cache":
+		return runCache(args[1:], stdout, stderr, dependencies)
 	default:
 		return usageError(stderr, "unknown command %q", args[0])
 	}
@@ -297,6 +299,11 @@ SDK content:
   latra cat <SDK> <FILE> [--project PATH|--channel CHANNEL] [--revision REVISION]
   latra hook <SDK> <HOOK> [--project PATH|--channel CHANNEL] [--revision REVISION]
 
+Cache:
+  latra cache list
+  latra cache clean [--project PATH]
+  latra cache clean --all
+
 Options:
   --format text|json  Report format (default: text)
   --output, -o PATH   Write report to PATH or stdout with - (default: -)
@@ -314,6 +321,7 @@ Commands:
   db         Inspect embedded capabilities, commands, and rules
   cat        Print a cached SDK file or describe its binary format
   hook       Print a cached SDK Workshop hook
+  cache      Remove cached SDK Store artifacts
   version    Print build version information
   help       Show this help`)
 }

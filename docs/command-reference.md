@@ -14,6 +14,7 @@ latra <command> [arguments] [options]
 | `db` | Inspect Latra's embedded command and capability database. |
 | `cat` | Print an SDK file or describe a binary SDK file. |
 | `hook` | Print a standard Workshop hook from an SDK. |
+| `cache` | Remove SDK Store artifacts from Latra's local cache. |
 | `version` | Print Latra build information. |
 | `help` | Print command-line help. |
 
@@ -293,6 +294,48 @@ Inspect a specific cached Store revision:
 ```bash
 latra hook rust setup-base --channel latest/stable --revision 54
 ```
+
+## `latra cache`
+
+Inspect or remove SDK Store artifacts cached by Latra.
+
+```text
+latra cache list
+latra cache clean [--project PATH]
+latra cache clean --all
+```
+
+List every complete SDK Store cache entry, independently of the current
+project:
+
+```bash
+latra cache list
+```
+
+The output contains the SDK name, effective Store channel, and revision. A
+cache entry is listed only when both its extracted revision directory and
+corresponding `.sdk` archive are present.
+
+Without `--all`, Latra reads the Workshop definitions in the current directory
+and removes every cached channel and revision for the Store SDKs declared by
+that project. Project SDKs, system SDKs, try SDKs, and Store SDKs unrelated to
+the project are not removed.
+
+Use `--project` to select another Workshop project:
+
+```bash
+latra cache clean --project ../another-project
+```
+
+Use `--all` to remove every entry beneath Latra's cache root:
+
+```bash
+latra cache clean --all
+```
+
+`--all` cannot be combined with `--project`. The cache root directory itself is
+preserved and will be reused by later scans. Missing matching entries are not
+treated as an error.
 
 ## `latra version`
 
