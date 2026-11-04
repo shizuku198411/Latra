@@ -179,6 +179,8 @@ Common operation kinds include:
 
 Use `latra hook` when an operation count needs to be understood in its original source context.
 
+In a verbose report, each operation has a hook-local ID such as `op-0001`. The hook's `relations` connect those IDs to show containment, execution order, pipelines, substitutions, and conservatively inferred variable flow. Capabilities refer back to their source operation with `operationId`. This graph is primarily intended for machine-readable JSON consumers and contextual finding analysis.
+
 ## Capabilities
 
 ```text

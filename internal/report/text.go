@@ -379,12 +379,29 @@ func writeHook(writer io.Writer, hook Hook) error {
 			return err
 		}
 	}
+	if _, err := fmt.Fprintf(writer, "        Relations: %d\n", len(hook.Relations)); err != nil {
+		return err
+	}
+	for _, relation := range hook.Relations {
+		if _, err := fmt.Fprintf(writer, "          %s [%s] %s -> %s", relation.Kind, relation.Resolution,
+			relation.FromOperationID, relation.ToOperationID); err != nil {
+			return err
+		}
+		if relation.Name != "" {
+			if _, err := fmt.Fprintf(writer, " name=%q", relation.Name); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(writer); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintf(writer, "        Capabilities: %d\n", len(hook.Capabilities)); err != nil {
 		return err
 	}
 	for _, capability := range hook.Capabilities {
-		if _, err := fmt.Fprintf(writer, "          %s [%s] rule=%s source=%s at %s target=%s\n",
-			capability.Kind, capability.Resolution, capability.RuleID, capability.RuleSource,
+		if _, err := fmt.Fprintf(writer, "          %s [%s] operation=%s rule=%s source=%s at %s target=%s\n",
+			capability.Kind, capability.Resolution, capability.OperationID, capability.RuleID, capability.RuleSource,
 			locationString(capability.Location), formatValue(capability.Target)); err != nil {
 			return err
 		}
@@ -404,7 +421,7 @@ func writeHook(writer io.Writer, hook Hook) error {
 }
 
 func writeOperation(writer io.Writer, operation analysis.Operation, indent string) error {
-	if _, err := fmt.Fprintf(writer, "%s%s [%s] at %s", indent, operation.Kind, operation.Resolution, locationString(operation.Location)); err != nil {
+	if _, err := fmt.Fprintf(writer, "%s%s %s [%s] at %s", indent, operation.ID, operation.Kind, operation.Resolution, locationString(operation.Location)); err != nil {
 		return err
 	}
 	if operation.Name != "" {

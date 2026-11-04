@@ -103,7 +103,7 @@ import sys
 with open(sys.argv[1]) as report_file:
     report = json.load(report_file)
 
-assert report["schemaVersion"] == "1"
+assert report["schemaVersion"] == "2"
 assert report["input"]["kind"] == "project"
 assert report["summary"]["sdks"] == {
     "count": 1,
@@ -122,6 +122,17 @@ assert sdk["state"] == "Resolved"
 assert sdk["channel"] == "latest/stable"
 assert sdk["metadata"]["version"] == "1.0"
 assert sorted(hook["name"] for hook in sdk["hooks"]) == ["check-health", "setup-base"]
+for hook in sdk["hooks"]:
+    assert "relations" in hook
+    pending_operations = list(hook["operations"])
+    operation_ids = set()
+    while pending_operations:
+        operation = pending_operations.pop()
+        operation_ids.add(operation["id"])
+        pending_operations.extend(operation.get("children", []))
+    for relation in hook["relations"]:
+        assert relation["fromOperationId"] in operation_ids
+        assert relation["toOperationId"] in operation_ids
 
 capabilities = {
     capability["kind"]

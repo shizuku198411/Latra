@@ -312,10 +312,12 @@ func fixtureResult() *source.Result {
 				Parse: &shell.Result{Path: location.Path, Status: shell.StatusParsed, NodeTypes: map[string]int{"CallExpr": 1, "File": 1}},
 				Analysis: &analysis.Result{
 					Context:    analysis.ContextFor("setup-project"),
-					Operations: []analysis.Operation{{Kind: analysis.OperationCommand, Command: command, Arguments: []analysis.Value{target}, Resolution: analysis.Resolved, Location: location}},
+					Operations: []analysis.Operation{{ID: "op-0001", Kind: analysis.OperationCommand, Command: command, Arguments: []analysis.Value{target}, Resolution: analysis.Resolved, Location: location}},
+					Relations:  []analysis.Relation{},
 					Capabilities: []analysis.Capability{{
 						Kind: "network-download", RuleID: "command.curl-download", RuleSource: "embedded-default",
-						Operation: analysis.OperationCommand, Target: command, Resolution: analysis.Resolved, Location: location,
+						Operation: analysis.OperationCommand, OperationID: "op-0001",
+						Target: command, Resolution: analysis.Resolved, Location: location,
 					}},
 				},
 			}},

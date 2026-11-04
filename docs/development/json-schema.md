@@ -1,6 +1,6 @@
 # JSON report schema
 
-The machine-readable JSON Schema for Latra scan reports is [`report.schema.json`](report.schema.json). It uses JSON Schema Draft 2020-12 and describes report `schemaVersion` `"1"`.
+The machine-readable JSON Schema for Latra scan reports is [`report.schema.json`](report.schema.json). It uses JSON Schema Draft 2020-12 and describes report `schemaVersion` `"2"`.
 
 ## Report variants
 
@@ -15,7 +15,7 @@ The root schema uses `oneOf` to distinguish these variants. The compact form int
 
 ## Stability boundary
 
-`schemaVersion` is the compatibility boundary for report consumers. Version `1` is fixed for the v0.1.0 report structure.
+`schemaVersion` is the compatibility boundary for report consumers. Version `1` is fixed for the v0.1.0 report structure. Version `2` adds the operation graph used by contextual finding analysis.
 
 Within one schema version:
 
@@ -51,6 +51,7 @@ report
 │   │   ├── parse
 │   │   ├── context
 │   │   ├── operations[]
+│   │   ├── relations[]
 │   │   └── capabilities[]
 │   └── diagnostics[]
 └── diagnostics[]
@@ -92,6 +93,24 @@ Values, operations, and capabilities use these resolution values:
 
 SDK resolution uses a separate `state` enum defined in the schema.
 
+## Operation graph
+
+Schema version 2 assigns a deterministic `id` to every operation in a hook. Child operations use `parentId`, and `sequence` is their zero-based position among siblings. IDs are local to one hook and must not be joined across hooks.
+
+The hook-level `relations` array connects operation IDs:
+
+| Relation | Meaning |
+| --- | --- |
+| `contains` | A compound operation directly contains a child operation. |
+| `sequence` | Two sibling operations execute in source order. |
+| `pipeline` | Standard output from one operation is connected to standard input of another. |
+| `substitution-flow` | Output from a command or process substitution is consumed by its owning operation. |
+| `variable-flow` | A variable assignment may supply a later reference in the same lexical scope. |
+
+Each capability includes `operationId`, linking the inferred behavior to its source operation. Relations and capabilities also carry `resolution`; consumers must preserve uncertainty rather than treating `PartiallyResolved` or `Unknown` as conclusive flow.
+
+The graph is a conservative static representation. It does not claim complete shell control-flow or runtime data-flow resolution.
+
 ## Diagnostics
 
 The top-level `diagnostics` array is the normalized project-wide diagnostic stream. Full reports may also include SDK-level diagnostics under `sdks[].diagnostics` and parser diagnostics under `sdks[].hooks[].parse.diagnostics`.
@@ -103,7 +122,7 @@ Consumers should use the top-level array for project-wide completeness checks an
 Generate a compact fixture:
 
 ```bash
-workshop run dev -- latra scan ./testdata/project-sdks/valid-project \
+workshop run -- latra scan ./testdata/project-sdks/valid-project \
   --format json \
   --output /tmp/latra-compact.json
 ```
@@ -111,7 +130,7 @@ workshop run dev -- latra scan ./testdata/project-sdks/valid-project \
 Generate a full fixture:
 
 ```bash
-workshop run dev -- latra scan ./testdata/project-sdks/valid-project \
+workshop run -- latra scan ./testdata/project-sdks/valid-project \
   --format json \
   --verbose \
   --output /tmp/latra-full.json

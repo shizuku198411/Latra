@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1",
+  "schemaVersion": "2",
   "scanner": {
     "name": "latra",
     "version": "dev",
@@ -140,6 +140,8 @@
           },
           "operations": [
             {
+              "id": "op-0001",
+              "sequence": 0,
               "kind": "command-invocation",
               "command": {
                 "parts": [
@@ -173,12 +175,14 @@
               }
             }
           ],
+          "relations": [],
           "capabilities": [
             {
               "kind": "network-download",
               "ruleId": "command.curl-download",
               "ruleSource": "embedded-default",
               "operation": "command-invocation",
+              "operationId": "op-0001",
               "target": {
                 "parts": [
                   {

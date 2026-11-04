@@ -13,7 +13,7 @@ import (
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
-const SchemaVersion = "1"
+const SchemaVersion = "2"
 
 // Document is the stable, versioned JSON inventory representation.
 type Document struct {
@@ -165,6 +165,7 @@ type Hook struct {
 	Parse        *Parse                `json:"parse,omitempty"`
 	Context      *analysis.HookContext `json:"context,omitempty"`
 	Operations   []analysis.Operation  `json:"operations"`
+	Relations    []analysis.Relation   `json:"relations"`
 	Capabilities []analysis.Capability `json:"capabilities"`
 }
 
@@ -231,7 +232,8 @@ func NewDocument(result *source.Result) Document {
 		for _, hook := range item.Hooks {
 			reportedHook := Hook{
 				Name: hook.Name, Path: hook.Path, Digest: hook.Digest, Size: hook.Size,
-				Operations: []analysis.Operation{}, Capabilities: []analysis.Capability{},
+				Operations: []analysis.Operation{}, Relations: []analysis.Relation{},
+				Capabilities: []analysis.Capability{},
 			}
 			if hook.Parse != nil {
 				reportedHook.Parse = &Parse{
@@ -252,6 +254,7 @@ func NewDocument(result *source.Result) Document {
 				context := hook.Analysis.Context
 				reportedHook.Context = &context
 				reportedHook.Operations = cloneAndSortOperations(hook.Analysis.Operations)
+				reportedHook.Relations = append([]analysis.Relation{}, hook.Analysis.Relations...)
 				reportedHook.Capabilities = append([]analysis.Capability{}, hook.Analysis.Capabilities...)
 				sortCapabilities(reportedHook.Capabilities)
 			}
