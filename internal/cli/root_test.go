@@ -16,6 +16,10 @@ func runCLI(args []string, stdout, stderr *bytes.Buffer) int {
 	return cli.RunWithDependencies(args, stdout, stderr, cli.Dependencies{})
 }
 
+func runCLIWithCache(args []string, cache string, stdout, stderr *bytes.Buffer) int {
+	return cli.RunWithDependencies(args, stdout, stderr, cli.Dependencies{CacheRoot: cache})
+}
+
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -414,5 +418,118 @@ func TestRunScanDoesNotReplaceFileWhenHookParsingFails(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunCatPrintsTextAndDescribesBinary(t *testing.T) {
+	t.Parallel()
+
+	cache := createCachedSDK(t, "rust", "latest/stable", "54")
+	writeCachedFile(t, filepath.Join(cache, "meta", "sdk.yaml"), "name: rust\n")
+	if err := os.WriteFile(filepath.Join(cache, "rustup"), []byte{'\x7f', 'E', 'L', 'F', 2, 1, 0}, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cacheRoot := filepath.Clean(filepath.Join(cache, "..", "..", "..", ".."))
+
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithCache([]string{"cat", "rust", "meta/sdk.yaml"}, cacheRoot, &stdout, &stderr)
+	if code != 0 || stdout.String() != "name: rust\n" || stderr.Len() != 0 {
+		t.Fatalf("text cat code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = runCLIWithCache([]string{"cat", "rust", "rustup"}, cacheRoot, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("binary cat code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{"Binary file", "Type: ELF 64-bit LSB", "Size: 7 bytes", "SHA3-384:"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("binary output does not contain %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunHookResolvesWorkshopHookLayouts(t *testing.T) {
+	t.Parallel()
+
+	cache := createCachedSDK(t, "rust", "latest/stable", "54")
+	writeCachedFile(t, filepath.Join(cache, "sdk", "hooks", "check-health"), "#!/bin/bash\necho ok\n")
+	writeCachedFile(t, filepath.Join(cache, "hooks", "setup-base"), "#!/bin/bash\necho base\n")
+	cacheRoot := filepath.Clean(filepath.Join(cache, "..", "..", "..", ".."))
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithCache([]string{"hook", "rust", "check-health"}, cacheRoot, &stdout, &stderr)
+	if code != 0 || stdout.String() != "#!/bin/bash\necho ok\n" || stderr.Len() != 0 {
+		t.Fatalf("hook code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = runCLIWithCache([]string{"hook", "rust", "setup-base"}, cacheRoot, &stdout, &stderr)
+	if code != 0 || stdout.String() != "#!/bin/bash\necho base\n" {
+		t.Fatalf("short-layout hook code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCachedContentRequiresChannelWhenAmbiguous(t *testing.T) {
+	t.Parallel()
+
+	stable := createCachedSDK(t, "rust", "latest/stable", "54")
+	edge := createCachedSDKAtRoot(t, filepath.Clean(filepath.Join(stable, "..", "..", "..", "..")), "rust", "latest/edge", "55")
+	writeCachedFile(t, filepath.Join(stable, "sdk.yaml"), "name: stable\n")
+	writeCachedFile(t, filepath.Join(edge, "sdk.yaml"), "name: edge\n")
+	cacheRoot := filepath.Clean(filepath.Join(stable, "..", "..", "..", ".."))
+	var stdout, stderr bytes.Buffer
+	if code := runCLIWithCache([]string{"cat", "rust", "sdk.yaml"}, cacheRoot, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "multiple cached channels") {
+		t.Fatalf("ambiguous code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := runCLIWithCache([]string{"cat", "rust", "sdk.yaml", "--channel", "latest/edge"}, cacheRoot, &stdout, &stderr); code != 0 || stdout.String() != "name: edge\n" {
+		t.Fatalf("selected code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCatAndHookReadProjectSDK(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	writeCachedFile(t, filepath.Join(project, ".workshop", "local", "sdk.yaml"), "name: local\n")
+	writeCachedFile(t, filepath.Join(project, ".workshop", "local", "hooks", "check-health"), "echo project-ok\n")
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithCache([]string{"cat", "local", "sdk.yaml", "--project", project}, t.TempDir(), &stdout, &stderr)
+	if code != 0 || stdout.String() != "name: local\n" || stderr.Len() != 0 {
+		t.Fatalf("project cat code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = runCLIWithCache([]string{"hook", "local", "check-health", "--project=" + project}, t.TempDir(), &stdout, &stderr)
+	if code != 0 || stdout.String() != "echo project-ok\n" || stderr.Len() != 0 {
+		t.Fatalf("project hook code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func createCachedSDK(t *testing.T, name, channel, revision string) string {
+	t.Helper()
+	return createCachedSDKAtRoot(t, t.TempDir(), name, channel, revision)
+}
+
+func createCachedSDKAtRoot(t *testing.T, root, name, channel, revision string) string {
+	t.Helper()
+	directory := filepath.Join(root, name, filepath.FromSlash(channel), revision)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(directory+".sdk", []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return directory
+}
+
+func writeCachedFile(t *testing.T, name, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -5,8 +5,6 @@ import (
 	"encoding/hex"
 	"io/fs"
 	"sort"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/buildinfo"
@@ -461,6 +459,9 @@ func reportFiles(files []sdk.File) []File {
 		}
 		if file.Type == sdk.FileRegular {
 			content, encoding := encodeContent(file.Content, file.Digest)
+			if file.Binary {
+				content, encoding = file.Digest, "sha3-384"
+			}
 			if item.Digest == "" && encoding == "sha3-384" {
 				item.Digest = content
 			}
@@ -473,7 +474,7 @@ func reportFiles(files []sdk.File) []File {
 }
 
 func encodeContent(content []byte, digest string) (string, string) {
-	if isTextContent(content) {
+	if sdk.IsTextContent(content) {
 		return string(content), "utf-8"
 	}
 	if digest == "" {
@@ -481,16 +482,4 @@ func encodeContent(content []byte, digest string) (string, string) {
 		digest = "sha3-384:" + hex.EncodeToString(sum[:])
 	}
 	return digest, "sha3-384"
-}
-
-func isTextContent(content []byte) bool {
-	if !utf8.Valid(content) {
-		return false
-	}
-	for _, character := range string(content) {
-		if unicode.IsControl(character) && character != '\n' && character != '\r' && character != '\t' {
-			return false
-		}
-	}
-	return true
 }

@@ -26,9 +26,9 @@ type Limits struct {
 // DefaultLimits returns conservative initial bounds for project SDKs.
 func DefaultLimits() Limits {
 	return Limits{
-		MaxFiles:         10_000,
-		MaxFileSize:      16 << 20,
-		MaxTotalBytes:    128 << 20,
+		MaxFiles:         25_000,
+		MaxFileSize:      128 << 20,
+		MaxTotalBytes:    512 << 20,
 		MaxRetainedBytes: 128 << 20,
 		MaxDepth:         64,
 	}
@@ -242,12 +242,15 @@ func inventory(root *os.Root, limits Limits) ([]File, map[string][]byte, int64, 
 			totalBytes += size
 			file.Size = size
 			file.Digest = digest
-			retainedBytes += int64(len(content))
-			if retainedBytes > limits.MaxRetainedBytes {
-				return resourceError(entryPath, "retained-bytes", limits.MaxRetainedBytes, retainedBytes)
+			file.Binary = !IsTextContent(content)
+			if !file.Binary {
+				retainedBytes += int64(len(content))
+				if retainedBytes > limits.MaxRetainedBytes {
+					return resourceError(entryPath, "retained-bytes", limits.MaxRetainedBytes, retainedBytes)
+				}
+				file.Content = content
+				contents[entryPath] = content
 			}
-			file.Content = content
-			contents[entryPath] = content
 		case FileSymlink:
 			target, err := root.Readlink(entryPath)
 			if err != nil {

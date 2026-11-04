@@ -118,6 +118,7 @@ type File struct {
 	Digest     string      `json:"digest,omitempty"`
 	LinkTarget string      `json:"linkTarget,omitempty"`
 	Content    []byte      `json:"-"`
+	Binary     bool        `json:"-"`
 }
 
 // Hook contains the source retained for later AST parsing.

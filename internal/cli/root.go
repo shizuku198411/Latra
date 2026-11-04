@@ -11,6 +11,7 @@ import (
 	"github.com/shizuku198411/Latra/internal/knowledge"
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
+	"github.com/shizuku198411/Latra/internal/sdkcache"
 	"github.com/shizuku198411/Latra/internal/sdkstore"
 	"github.com/shizuku198411/Latra/internal/shell"
 	"github.com/shizuku198411/Latra/internal/source"
@@ -25,7 +26,7 @@ const (
 // Run executes the command using the supplied streams and returns a process exit code.
 // User-facing command output is written to stdout. Diagnostics are written to stderr.
 func Run(args []string, stdout, stderr io.Writer) int {
-	dependencies := Dependencies{}
+	dependencies := Dependencies{CacheRoot: sdkcache.DefaultRoot}
 	if len(args) > 0 && args[0] == "scan" {
 		store, err := sdkstore.NewClient(sdkstore.Config{})
 		if err != nil {
@@ -40,6 +41,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 // Dependencies contains replaceable external services used by the CLI.
 type Dependencies struct {
 	StoreResolver source.StoreResolver
+	CacheRoot     string
 }
 
 // RunWithDependencies executes the CLI with explicitly supplied external services.
@@ -66,6 +68,10 @@ func RunWithDependencies(args []string, stdout, stderr io.Writer, dependencies D
 		return runScan(args[1:], stdout, stderr, dependencies)
 	case "db":
 		return runDB(args[1:], stdout, stderr)
+	case "cat":
+		return runCat(args[1:], stdout, stderr, dependencies)
+	case "hook":
+		return runHook(args[1:], stdout, stderr, dependencies)
 	default:
 		return usageError(stderr, "unknown command %q", args[0])
 	}
@@ -282,6 +288,10 @@ Database:
   latra db capabilities [CAPABILITY] [--command COMMAND]
   latra db commands [COMMAND] [--capability CAPABILITY]
 
+Cached SDK content:
+  latra cat <SDK> <FILE> [--project PATH|--channel CHANNEL] [--revision REVISION]
+  latra hook <SDK> <HOOK> [--project PATH|--channel CHANNEL] [--revision REVISION]
+
 Options:
   --format text|json  Report format (default: text)
   --output, -o PATH   Write report to PATH or stdout with - (default: -)
@@ -292,6 +302,8 @@ Options:
 Commands:
   scan       Inspect a Workshop project or project SDK
   db         Inspect embedded capabilities, commands, and rules
+  cat        Print a cached SDK file or describe its binary format
+  hook       Print a cached SDK Workshop hook
   version    Print build version information
   help       Show this help`)
 }

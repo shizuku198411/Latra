@@ -21,12 +21,13 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/shizuku198411/Latra/internal/sdk"
+	"github.com/shizuku198411/Latra/internal/sdkcache"
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
 const (
 	DefaultServerURL = "https://api.pkg.store"
-	DefaultCacheDir  = "/tmp/latra/cache"
+	DefaultCacheDir  = sdkcache.DefaultRoot
 	maxArchiveBytes  = int64(256 << 20)
 )
 
