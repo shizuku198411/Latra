@@ -91,6 +91,7 @@ func TestWriteTextIncludesInventoryDetailsAndEscapesControls(t *testing.T) {
 		"Context: root=false project=true interfaces=true state=false",
 		`command="curl"`, `args=["line1\nline2\x1b"]`,
 		"network-download [Resolved]", "Summary", "Operations: 1", "Unknown Commands: 0",
+		"Assessment", "Classification: expected-and-controlled", "Review Priority: 0/100 (info)",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text does not contain %q:\n%s", want, text)
@@ -98,6 +99,29 @@ func TestWriteTextIncludesInventoryDetailsAndEscapesControls(t *testing.T) {
 	}
 	if strings.Contains(text, "line1\nline2") {
 		t.Error("text contains an unescaped argument newline")
+	}
+}
+
+func TestWriteTextKeyRiskLocationUsesCLIArguments(t *testing.T) {
+	t.Parallel()
+	result := fixtureResult()
+	hook := &result.SDKs[0].Hooks[0]
+	hook.Name = sdk.HookSetupBase
+	hook.Path = "hooks/setup-base"
+	hook.Parse.Path = "example/hooks/setup-base"
+	hook.Analysis.Context = analysis.ContextFor("setup-base")
+	operation := &hook.Analysis.Operations[0]
+	operation.Command = analysis.Value{Parts: []analysis.ValuePart{{Kind: analysis.PartLiteral, Text: "unknown-tool"}}, Resolution: analysis.Resolved, Literal: "unknown-tool"}
+	operation.Location.Path = "example/hooks/setup-base"
+	hook.Analysis.Capabilities = nil
+
+	var output bytes.Buffer
+	if err := report.WriteTextSummary(&output, result); err != nil {
+		t.Fatal(err)
+	}
+	want := `sdk=example file=hooks/setup-base:1:1 hook=setup-base value="unknown-tool"`
+	if !strings.Contains(output.String(), want) {
+		t.Errorf("text does not contain %q:\n%s", want, output.String())
 	}
 }
 

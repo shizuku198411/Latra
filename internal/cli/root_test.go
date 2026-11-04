@@ -568,7 +568,7 @@ func TestRunScanDoesNotReplaceFileWhenHookParsingFails(t *testing.T) {
 	}
 }
 
-func TestRunCatPrintsTextAndDescribesBinary(t *testing.T) {
+func TestRunFilePrintsTextAndDescribesBinary(t *testing.T) {
 	t.Parallel()
 
 	cache := createCachedSDK(t, "rust", "latest/stable", "54")
@@ -579,15 +579,15 @@ func TestRunCatPrintsTextAndDescribesBinary(t *testing.T) {
 	cacheRoot := filepath.Clean(filepath.Join(cache, "..", "..", "..", ".."))
 
 	var stdout, stderr bytes.Buffer
-	code := runCLIWithCache([]string{"cat", "rust", "meta/sdk.yaml", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
+	code := runCLIWithCache([]string{"file", "rust", "meta/sdk.yaml", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
 	if code != 0 || stdout.String() != "name: rust\n" || stderr.Len() != 0 {
-		t.Fatalf("text cat code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+		t.Fatalf("text file code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	code = runCLIWithCache([]string{"cat", "rust", "rustup", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
+	code = runCLIWithCache([]string{"file", "rust", "rustup", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
 	if code != 0 {
-		t.Fatalf("binary cat code=%d stderr=%q", code, stderr.String())
+		t.Fatalf("binary file code=%d stderr=%q", code, stderr.String())
 	}
 	for _, want := range []string{"Binary file", "Type: ELF 64-bit LSB", "Size: 7 bytes", "SHA3-384:"} {
 		if !strings.Contains(stdout.String(), want) {
@@ -627,17 +627,17 @@ func TestRunCachedContentUsesWorkshopDeclaredChannel(t *testing.T) {
 	project := t.TempDir()
 	writeCachedFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: rust\n    channel: latest/stable\n")
 	var stdout, stderr bytes.Buffer
-	if code := runCLIWithProject([]string{"cat", "rust", "sdk.yaml"}, cacheRoot, project, &stdout, &stderr); code != 0 || stdout.String() != "name: stable\n" {
+	if code := runCLIWithProject([]string{"file", "rust", "sdk.yaml"}, cacheRoot, project, &stdout, &stderr); code != 0 || stdout.String() != "name: stable\n" {
 		t.Fatalf("declared channel code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := runCLIWithCache([]string{"cat", "rust", "sdk.yaml", "--channel", "latest/edge"}, cacheRoot, &stdout, &stderr); code != 0 || stdout.String() != "name: edge\n" {
+	if code := runCLIWithCache([]string{"file", "rust", "sdk.yaml", "--channel", "latest/edge"}, cacheRoot, &stdout, &stderr); code != 0 || stdout.String() != "name: edge\n" {
 		t.Fatalf("selected code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 
-func TestRunCatAndHookReadProjectSDK(t *testing.T) {
+func TestRunFileAndHookReadProjectSDK(t *testing.T) {
 	t.Parallel()
 
 	project := t.TempDir()
@@ -645,9 +645,9 @@ func TestRunCatAndHookReadProjectSDK(t *testing.T) {
 	writeCachedFile(t, filepath.Join(project, ".workshop", "local", "sdk.yaml"), "name: local\n")
 	writeCachedFile(t, filepath.Join(project, ".workshop", "local", "hooks", "check-health"), "echo project-ok\n")
 	var stdout, stderr bytes.Buffer
-	code := runCLIWithCache([]string{"cat", "local", "sdk.yaml", "--project", project}, t.TempDir(), &stdout, &stderr)
+	code := runCLIWithCache([]string{"file", "local", "sdk.yaml", "--project", project}, t.TempDir(), &stdout, &stderr)
 	if code != 0 || stdout.String() != "name: local\n" || stderr.Len() != 0 {
-		t.Fatalf("project cat code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+		t.Fatalf("project file code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
@@ -667,7 +667,7 @@ func TestRunCachedContentDoesNotFallBackToUndeclaredSDK(t *testing.T) {
 	writeCachedFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\n")
 
 	var stdout, stderr bytes.Buffer
-	code := runCLIWithProject([]string{"cat", "go", "sdk.yaml"}, cacheRoot, project, &stdout, &stderr)
+	code := runCLIWithProject([]string{"file", "go", "sdk.yaml"}, cacheRoot, project, &stdout, &stderr)
 	if code != 1 || !strings.Contains(stderr.String(), "not declared by this Workshop project") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}

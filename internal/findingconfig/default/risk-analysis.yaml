@@ -1,0 +1,58 @@
+finding-rules:
+  - id: risk.parse-failed
+    kind: risk
+    family: analysis-gap
+    title: Hook parsing failed
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: parse-status
+      parse-statuses:
+        - Failed
+    message: The hook could not be parsed, so its behavior is not fully visible.
+    remediation: Review the raw hook and make its shell syntax statically parseable.
+
+  - id: risk.parse-recovered
+    kind: risk
+    family: analysis-gap
+    title: Hook parsing required recovery
+    severity: medium
+    confidence: high
+    weight: 25
+    match:
+      type: parse-status
+      parse-statuses:
+        - Recovered
+    message: The parser recovered from invalid or incomplete syntax, reducing analysis coverage.
+    remediation: Correct the hook syntax and scan it again.
+
+  - id: risk.resource-limit-exceeded
+    kind: risk
+    family: analysis-gap
+    title: Analysis resource limit exceeded
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: sdk-diagnostic
+      diagnostic-codes:
+        - resource-limit
+      diagnostic-message-contains:
+        - resource-limit
+        - limit exceeded
+        - SDK archive exceeds
+    message: An SDK resource limit prevented complete inventory or analysis.
+    remediation: Review the diagnostic and the affected artifact before increasing a limit.
+
+  - id: risk.unresolved-sdk
+    kind: risk
+    family: analysis-gap
+    title: SDK could not be resolved
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: sdk-unresolved
+    message: The declared SDK artifact could not be obtained and analyzed.
+    remediation: Resolve the SDK diagnostic and repeat the scan.

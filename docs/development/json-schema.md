@@ -33,6 +33,7 @@ The scanner's release version is reported separately in `scanner.version`. It do
 report
 ├── schemaVersion
 ├── scanner
+├── findingDatabase
 ├── input
 ├── workshops[]
 ├── summary
@@ -42,7 +43,15 @@ report
 │   ├── operations
 │   ├── capabilities
 │   ├── unknownCommands
+│   ├── findings
 │   └── diagnostics
+├── assessment
+│   ├── classification
+│   ├── reviewPriority
+│   ├── risk
+│   ├── assurance
+│   ├── coverage
+│   └── bySdk[]
 ├── sdks[]                 # full report only
 │   ├── metadata
 │   ├── declarations[]
@@ -53,6 +62,7 @@ report
 │   │   ├── operations[]
 │   │   ├── relations[]
 │   │   └── capabilities[]
+│   ├── findings[]
 │   └── diagnostics[]
 └── diagnostics[]
 ```
@@ -110,6 +120,37 @@ The hook-level `relations` array connects operation IDs:
 Each capability includes `operationId`, linking the inferred behavior to its source operation. Relations and capabilities also carry `resolution`; consumers must preserve uncertainty rather than treating `PartiallyResolved` or `Unknown` as conclusive flow.
 
 The graph is a conservative static representation. It does not claim complete shell control-flow or runtime data-flow resolution.
+
+## Findings
+
+`findingDatabase` identifies the embedded rule set independently from the scanner and report schema versions. A full report stores findings under each SDK; compact and full reports both include aggregate counts under `summary.findings`.
+
+Findings have two independent kinds:
+
+- `risk` records behavior that may require review and carries `severity`;
+- `assurance` records an observed control or limitation and carries `strength`.
+
+Assurance findings do not remove or reduce risk findings. Neither kind is a claim that an SDK is malicious or safe. `confidence` describes evidence certainty, while `weight` is rule metadata reserved for later score calibration.
+
+Every finding contains at least one evidence item. Operation and flow evidence uses the hook-local operation IDs described above, allowing consumers to join a finding back to `operations`, `relations`, and source locations.
+
+## Assessment
+
+`assessment` is separate from the occurrence-oriented `summary`. It contains the project-wide final evaluation and an entry for every SDK under `bySdk`.
+
+- `reviewPriority` is the headline score. Higher values require earlier review.
+- `risk` and `assurance` are independently aggregated; assurance never subtracts from risk.
+- `coverage` records how much of the relevant static input was successfully analyzed.
+- `classification` combines the three axes into a descriptive outcome rather than a malware or safety verdict.
+- `keyRisks` groups risk findings by rule and retains every SDK, hook, location, and relevant value contributing to the assessment.
+
+Finding weights are multiplied by confidence (`low` 0.50, `medium` 0.75, `high` 1.00), aggregated with diminishing returns, and capped per family. Critical and high risk findings impose severity floors. The headline score is:
+
+```text
+reviewPriority = max(riskScore, 100 - coverageScore)
+```
+
+The JSON form retains family contributions, complete key-risk scopes, and hook, command, and file coverage counters so consumers can explain the displayed score. Assessment text and JSON both retain all key risks and locations.
 
 ## Diagnostics
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
+	"github.com/shizuku198411/Latra/internal/finding"
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
@@ -21,16 +22,20 @@ func WriteJSONSummary(writer io.Writer, result *source.Result) error {
 	compact := struct {
 		SchemaVersion string               `json:"schemaVersion"`
 		Scanner       Scanner              `json:"scanner"`
+		FindingDB     finding.Database     `json:"findingDatabase"`
 		Input         Input                `json:"input"`
 		Workshops     []source.Workshop    `json:"workshops"`
 		Summary       Summary              `json:"summary"`
+		Assessment    finding.Assessment   `json:"assessment"`
 		Diagnostics   []DocumentDiagnostic `json:"diagnostics"`
 	}{
 		SchemaVersion: document.SchemaVersion,
 		Scanner:       document.Scanner,
+		FindingDB:     document.FindingDB,
 		Input:         document.Input,
 		Workshops:     document.Workshops,
 		Summary:       document.Summary,
+		Assessment:    document.Assessment,
 		Diagnostics:   document.Diagnostics,
 	}
 	encoder := json.NewEncoder(writer)

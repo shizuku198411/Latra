@@ -29,9 +29,9 @@ latra hook go setup-base
 Display any detected SDK file by its reported path:
 
 ```bash
-# command: latra cat <sdk> <file>
+# command: latra file <sdk> <file>
 
-latra cat go meta/sdk.yaml
+latra file go meta/sdk.yaml
 ```
 
 Replace `go`, `setup-base`, and `meta/sdk.yaml` with values from your project report. Latra resolves the SDK from the current project's `.workshop/*.yaml` definitions, including its declared channel.

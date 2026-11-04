@@ -1,0 +1,69 @@
+finding-rules:
+  - id: risk.unknown-command-root
+    kind: risk
+    family: remote-execution
+    title: Unknown command runs in a root hook
+    severity: medium
+    confidence: high
+    weight: 25
+    match:
+      type: unknown-command
+      run-as-root: true
+    message: A command not covered by the embedded command database runs with root hook privileges.
+    remediation: Review the command and add a command database definition when its behavior is understood.
+
+  - id: risk.credential-read
+    kind: risk
+    family: sensitive-data
+    title: Credential-like data is read
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: capability
+      capabilities:
+        - credential-read
+    message: The hook reads a path classified as credential or sensitive data.
+    remediation: Limit the read to the minimum required path and avoid exposing its content.
+
+  - id: risk.external-send
+    kind: risk
+    family: data-exposure
+    title: Data is sent to an external endpoint
+    severity: medium
+    confidence: high
+    weight: 25
+    match:
+      type: capability
+      capabilities:
+        - external-send
+    message: The hook sends local or generated data to a network endpoint.
+    remediation: Review the source data, endpoint, and transport before allowing the transfer.
+
+  - id: risk.persistence-write
+    kind: risk
+    family: persistence
+    title: Persistent state or startup configuration is written
+    severity: medium
+    confidence: high
+    weight: 25
+    match:
+      type: capability
+      capabilities:
+        - persistence
+    message: The hook writes or changes a location that can retain behavior across sessions or boots.
+    remediation: Constrain persistence to documented SDK state and review restored behavior.
+
+  - id: risk.device-write
+    kind: risk
+    family: destructive
+    title: A device or kernel interface is modified
+    severity: critical
+    confidence: high
+    weight: 80
+    match:
+      type: path-write
+      path-classes:
+        - device
+    message: The hook accesses a device or kernel interface with potentially destructive impact.
+    remediation: Confirm the exact target and use the least privileged read-only operation possible.

@@ -69,8 +69,8 @@ func RunWithDependencies(args []string, stdout, stderr io.Writer, dependencies D
 		return runScan(args[1:], stdout, stderr, dependencies)
 	case "db":
 		return runDB(args[1:], stdout, stderr)
-	case "cat":
-		return runCat(args[1:], stdout, stderr, dependencies)
+	case "file":
+		return runFile(args[1:], stdout, stderr, dependencies)
 	case "hook":
 		return runHook(args[1:], stdout, stderr, dependencies)
 	case "cache":
@@ -296,7 +296,7 @@ Database:
   latra db commands [COMMAND] [--capability CAPABILITY]
 
 SDK content:
-  latra cat <SDK> <FILE> [--project PATH|--channel CHANNEL] [--revision REVISION]
+  latra file <SDK> <FILE> [--project PATH|--channel CHANNEL] [--revision REVISION]
   latra hook <SDK> <HOOK> [--project PATH|--channel CHANNEL] [--revision REVISION]
 
 Cache:
@@ -319,7 +319,7 @@ Content selection:
 Commands:
   scan       Inspect a Workshop project or project SDK
   db         Inspect embedded capabilities, commands, and rules
-  cat        Print a cached SDK file or describe its binary format
+  file       Print an SDK file or describe its binary format
   hook       Print a cached SDK Workshop hook
   cache      Remove cached SDK Store artifacts
   version    Print build version information

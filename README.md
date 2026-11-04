@@ -13,10 +13,11 @@ Latra aims to provide:
 - an inventory of SDK metadata, bundled files, and lifecycle hooks;
 - Bash syntax analysis based on an abstract syntax tree rather than text matching;
 - normalized commands, file and network interactions, data flows, and capabilities;
+- evidence-backed risk and assurance findings with explainable SDK assessments;
 - deterministic, versioned JSON output for local tooling and CI integration;
 - support for in-project SDKs followed by SDK Store resolution and analysis.
 
-Risk findings, policy enforcement, and explainable risk scoring are planned as later capabilities built on top of the inventory model.
+Latra reports review priority, risk, assurance, and static-analysis coverage independently. These assessments support review decisions; they do not declare an SDK safe or malicious.
 
 ## Project status
 
@@ -74,7 +75,27 @@ Summary
     go (9): identity-change (6), persistence (1), state-read (1), state-write (1)
   Unknown Commands: 0
     go (0)
+  Findings: 8 (1 risk, 7 assurance)
+    High-priority risks:
+      -
   Diagnostics: 0: -
+
+Assessment
+  Classification: expected-and-controlled
+  Review Priority: 25/100 (medium)
+  Risk: 25/100 (medium)
+  Assurance: 76/100 (high)
+  Coverage: 100/100 (sufficient)
+  Key Risks:
+    risk.persistence-write: Persistent state or startup configuration is written [medium, score=25, occurrences=1]
+      sdk=go file=sdk/hooks/setup-base:1:11 hook=setup-base value="/etc/profile.d/go.sh"
+  By SDK:
+    go: expected-and-controlled
+      Review Priority: 25/100 (medium)
+      Risk: 25/100 (medium), Assurance: 76/100 (high), Coverage: 100/100 (sufficient)
+      Key Risks:
+        risk.persistence-write: Persistent state or startup configuration is written [medium, score=25, occurrences=1]
+          sdk=go file=sdk/hooks/setup-base:1:11 hook=setup-base value="/etc/profile.d/go.sh"
 ```
 
 </details>
@@ -113,9 +134,9 @@ sudo -iu workshop -- go env -w GOTOOLCHAIN=local
 Display any detected SDK file by its reported path:
 
 ```bash
-# command: latra cat <sdk> <file>
+# command: latra file <sdk> <file>
 
-latra cat go meta/sdk.yaml
+latra file go meta/sdk.yaml
 ```
 
 <details>
