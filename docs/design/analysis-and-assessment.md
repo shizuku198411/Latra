@@ -309,15 +309,16 @@ coverage_score = round(0.6 * hook_score + 0.4 * command_score)
 
 Coverage is `sufficient` only when its score is at least `80` and no hook failed to parse. Otherwise it is `insufficient`.
 
-An unresolved SDK or a resource-limit diagnostic forces coverage to `0` and `insufficient`, because the inventory cannot be considered complete.
+An unresolved SDK or a resource limit affecting metadata, a standard hook, archive integrity, or complete archive traversal forces coverage to `0` and `insufficient`. Skipping only non-essential file content does not invalidate hook and command coverage.
 
 File counts are reported as transparency metadata:
 
 - inventoried entries;
 - text files whose content was available for analysis;
 - binary files represented only by metadata and digest.
+- files whose content was skipped while path, size, and digest remained inventoried.
 
-They are not a numeric term in the coverage formula. This avoids penalizing SDKs merely for containing many bundled binaries, while resource-limit failures still make the assessment incomplete.
+They are not a numeric term in the coverage formula. This avoids penalizing SDKs merely for containing many bundled binaries. A resource-limit failure affecting required analysis inputs still makes the assessment incomplete, while an explicit non-essential content skip remains visible without forcing coverage to zero.
 
 ## 8. Review priority and classification
 
@@ -351,7 +352,7 @@ This ordering is intentional:
 
 Latra calculates the same assessment for each SDK and for the entire scanned project.
 
-The project score is not an average of SDK scores. All project findings are aggregated by family using the same formulas, and coverage counters are combined before coverage is recalculated. If any SDK is unresolved or resource-limited, project coverage is incomplete.
+The project score is not an average of SDK scores. All project findings are aggregated by family using the same formulas, and coverage counters are combined before coverage is recalculated. If any SDK is unresolved or a required analysis input is resource-limited, project coverage is incomplete.
 
 This prevents a large number of low-risk SDKs from averaging away one high-risk SDK.
 

@@ -337,6 +337,9 @@ func hasDiagnostic(item sdk.SDK, code string) bool {
 
 func hasResourceLimitDiagnostic(item sdk.SDK) bool {
 	for _, diagnostic := range item.Diagnostics {
+		if diagnostic.Severity != sdk.SeverityError {
+			continue
+		}
 		if diagnostic.Code == "resource-limit" || containsAnySubstring(diagnostic.Message, []string{"resource-limit", "limit exceeded", "SDK archive exceeds"}) {
 			return true
 		}

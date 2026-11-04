@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "2",
+  "schemaVersion": "3",
   "scanner": {
     "name": "latra",
     "version": "dev",
@@ -29,13 +29,16 @@
     },
     "files": {
       "count": 1,
+      "contentSkipped": 0,
       "bySdk": [
         {
           "sdkName": "example",
           "count": 1,
+          "contentSkipped": 0,
           "filePaths": [
             "hooks/setup-project"
-          ]
+          ],
+          "skippedFiles": []
         }
       ]
     },
@@ -180,7 +183,8 @@
       "files": {
         "inventoried": 1,
         "contentAnalyzed": 0,
-        "binaryOnly": 0
+        "binaryOnly": 0,
+        "contentSkipped": 0
       }
     },
     "keyRisks": [],
@@ -235,7 +239,8 @@
           "files": {
             "inventoried": 1,
             "contentAnalyzed": 0,
-            "binaryOnly": 0
+            "binaryOnly": 0,
+            "contentSkipped": 0
           }
         },
         "keyRisks": []
@@ -264,7 +269,8 @@
           "size": 34,
           "digest": "sha3-384:hook",
           "content": "",
-          "contentEncoding": "utf-8"
+          "contentEncoding": "utf-8",
+          "contentStatus": "analyzed"
         }
       ],
       "hooks": [

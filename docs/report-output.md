@@ -113,6 +113,8 @@ Files: 26
 
 `Files` is the total number of inventoried filesystem entries across all SDKs. The count includes regular files, directories, and symbolic links.
 
+When Latra cannot retain non-essential file content within its resource limits, the section also reports a `content skipped` count and lists the affected paths with their reason and size. Their path, size, and digest remain inventoried, and metadata and hook analysis continues. A skipped non-essential file does not by itself make assessment coverage insufficient.
+
 Each SDK line contains:
 
 1. the SDK name;

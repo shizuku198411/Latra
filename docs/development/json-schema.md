@@ -1,6 +1,6 @@
 # JSON report schema
 
-The machine-readable JSON Schema for Latra scan reports is [`report.schema.json`](report.schema.json). It uses JSON Schema Draft 2020-12 and describes report `schemaVersion` `"2"`.
+The machine-readable JSON Schema for Latra scan reports is [`report.schema.json`](report.schema.json). It uses JSON Schema Draft 2020-12 and describes report `schemaVersion` `"3"`.
 
 ## Report variants
 
@@ -15,7 +15,7 @@ The root schema uses `oneOf` to distinguish these variants. The compact form int
 
 ## Stability boundary
 
-`schemaVersion` is the compatibility boundary for report consumers. Version `1` is fixed for the v0.1.0 report structure. Version `2` adds the operation graph used by contextual finding analysis.
+`schemaVersion` is the compatibility boundary for report consumers. Version `1` is fixed for the v0.1.0 report structure. Version `2` adds the operation graph used by contextual finding analysis. Version `3` distinguishes analyzed, binary-only, and resource-limited file content and exposes skipped-content totals.
 
 Within one schema version:
 
@@ -72,6 +72,7 @@ report
 Summary `count` fields contain occurrence totals, not unique-name totals.
 
 - `files.count` counts all inventoried SDK filesystem entries.
+- `files.contentSkipped` counts entries whose content was intentionally not retained because of a resource limit. Each per-SDK `skippedFiles` entry preserves its path, size, digest, and reason.
 - `hooks.count` counts detected standard hooks.
 - `operations.count` recursively counts top-level and child operations.
 - `capabilities.count` counts capability occurrences.
@@ -82,7 +83,16 @@ Per-SDK arrays contain the corresponding totals and sorted names. `CountedName.c
 
 ## File content
 
-Every regular file in a full report contains `content` and `contentEncoding`.
+Every file in a full report contains `contentStatus`.
+
+| `contentStatus` | Meaning |
+| --- | --- |
+| `analyzed` | Text content was retained and is available for analysis. |
+| `binary-only` | Binary content is represented by metadata and a digest. |
+| `skipped` | Content was not retained because of a resource limit. `skipReason` explains why. |
+| `not-applicable` | The entry is not a regular file. |
+
+Every regular file also contains `content` and `contentEncoding`. For skipped files, `content` is the digest rather than the original bytes.
 
 | `contentEncoding` | `content` value |
 | --- | --- |
@@ -150,7 +160,7 @@ Finding weights are multiplied by confidence (`low` 0.50, `medium` 0.75, `high` 
 reviewPriority = max(riskScore, 100 - coverageScore)
 ```
 
-The JSON form retains family contributions, complete key-risk scopes, and hook, command, and file coverage counters so consumers can explain the displayed score. Assessment text and JSON both retain all key risks and locations.
+The JSON form retains family contributions, complete key-risk scopes, and hook, command, and file coverage counters so consumers can explain the displayed score. File coverage includes `contentSkipped`; skipped non-essential content does not by itself make hook and command coverage insufficient. Assessment text and JSON both retain all key risks and locations.
 
 ## Diagnostics
 

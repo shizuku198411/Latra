@@ -103,7 +103,7 @@ import sys
 with open(sys.argv[1]) as report_file:
     report = json.load(report_file)
 
-assert report["schemaVersion"] == "2"
+assert report["schemaVersion"] == "3"
 assert report["findingDatabase"]["schemaVersion"] == "1"
 assert report["findingDatabase"]["source"] == "embedded-default"
 assert report["input"]["kind"] == "project"
@@ -114,6 +114,8 @@ assert report["summary"]["sdks"] == {
     "unresolved": 0,
 }
 assert report["summary"]["unknownCommands"]["count"] == 0
+assert report["summary"]["files"]["contentSkipped"] == 0
+assert all(item["contentSkipped"] == 0 for item in report["summary"]["files"]["bySdk"])
 assert report["summary"]["diagnostics"]["count"] == 0
 assert report["summary"]["findings"]["count"] > 0
 assessment = report["assessment"]
@@ -128,6 +130,7 @@ assert 0 <= assessment["reviewPriority"]["score"] <= 100
 assert 0 <= assessment["risk"]["score"] <= 100
 assert 0 <= assessment["assurance"]["score"] <= 100
 assert 0 <= assessment["coverage"]["score"] <= 100
+assert assessment["coverage"]["files"]["contentSkipped"] == 0
 assert len(assessment["bySdk"]) == 1
 assert assessment["bySdk"][0]["sdk"] == "fixture-sdk"
 assert "keyRisks" in assessment
@@ -169,8 +172,10 @@ assert {"network-access", "network-download", "privilege-modification"} <= capab
 
 files = {item["path"]: item for item in sdk["files"]}
 assert files["meta/sdk.yaml"]["contentEncoding"] == "utf-8"
+assert files["meta/sdk.yaml"]["contentStatus"] == "analyzed"
 assert "name: fixture-sdk" in files["meta/sdk.yaml"]["content"]
 assert files["share/config.json"]["contentEncoding"] == "utf-8"
+assert files["share/config.json"]["contentStatus"] == "analyzed"
 assert report["diagnostics"] == []
 PY
 

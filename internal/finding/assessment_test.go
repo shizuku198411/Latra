@@ -49,6 +49,27 @@ func TestCoveragePenaltyRaisesReviewPriority(t *testing.T) {
 	}
 }
 
+func TestSkippedNonRequiredContentDoesNotInvalidateCoverage(t *testing.T) {
+	t.Parallel()
+	item := analyzedSDK(t, "printf ok\n", sdk.HookSetupProject)
+	item.Files = append(item.Files, sdk.File{
+		Path: "bin/model", Type: sdk.FileRegular, Size: 1024, Digest: "sha3-384:fixture",
+		Skipped: true, SkipReason: "size-limit",
+	})
+	item.Diagnostics = append(item.Diagnostics, sdk.Diagnostic{
+		Code: "file-content-skipped", Severity: sdk.SeverityWarning, Phase: "inventory",
+		Message: "1 non-essential file content was skipped due to resource limits",
+	})
+
+	assessment := finding.AssessSDK(item, finding.AnalyzeSDK(item))
+	if assessment.Coverage.Level != "sufficient" || assessment.Coverage.Score != 100 {
+		t.Fatalf("coverage = %#v", assessment.Coverage)
+	}
+	if assessment.Coverage.Files.ContentSkipped != 1 {
+		t.Fatalf("file coverage = %#v", assessment.Coverage.Files)
+	}
+}
+
 func TestAssessmentAggregatesRiskLocationsByRule(t *testing.T) {
 	t.Parallel()
 	item := analyzedSDK(t, "first-unknown\nsecond-unknown\n", sdk.HookSetupBase)
