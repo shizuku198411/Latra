@@ -39,7 +39,6 @@ func TestEmbeddedDefaultFragmentLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := map[string]bool{
-		"README.md":                true,
 		"capabilities.yaml":        true,
 		"commands-core.yaml":       true,
 		"commands-network.yaml":    true,

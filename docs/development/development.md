@@ -72,6 +72,12 @@ $ workshop shell dev
 
 The repository is mounted at `/project` and changes made there are reflected on the host checkout.
 
+## Command database changes
+
+See [Command database development](command-database.md) when adding known commands, capability mappings, match rules, or path classifications under `internal/capabilityconfig/default/`.
+
+See [JSON report schema](json-schema.md) when changing report fields, JSON tags, enums, compact output, or verbose output.
+
 ## Dependency changes
 
 Run Go module commands inside the workshop:

@@ -1,0 +1,620 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/shizuku198411/Latra/blob/main/docs/development/report.schema.json",
+  "title": "Latra scan report",
+  "description": "Schema for compact and verbose Latra scan reports with schemaVersion 1.",
+  "oneOf": [
+    { "$ref": "#/$defs/compactReport" },
+    { "$ref": "#/$defs/fullReport" }
+  ],
+  "$defs": {
+    "compactReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "scanner", "input", "workshops", "summary", "diagnostics"],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "scanner": { "$ref": "#/$defs/scanner" },
+        "input": { "$ref": "#/$defs/input" },
+        "workshops": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/workshop" }
+        },
+        "summary": { "$ref": "#/$defs/summary" },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/documentDiagnostic" }
+        }
+      }
+    },
+    "fullReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "scanner", "input", "summary", "workshops", "sdks", "diagnostics"],
+      "properties": {
+        "schemaVersion": { "const": "1" },
+        "scanner": { "$ref": "#/$defs/scanner" },
+        "input": { "$ref": "#/$defs/input" },
+        "summary": { "$ref": "#/$defs/summary" },
+        "workshops": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/workshop" }
+        },
+        "sdks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sdk" }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/documentDiagnostic" }
+        }
+      }
+    },
+    "scanner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "commit", "buildDate"],
+      "properties": {
+        "name": { "type": "string", "const": "latra" },
+        "version": { "type": "string" },
+        "commit": { "type": "string" },
+        "buildDate": { "type": "string" }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "root"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["project", "project-sdk"]
+        },
+        "root": { "type": "string" }
+      }
+    },
+    "workshop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "base", "definition"],
+      "properties": {
+        "name": { "type": "string" },
+        "base": { "type": "string" },
+        "runtime": { "type": "string" },
+        "definition": { "type": "string" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdks", "files", "hooks", "operations", "capabilities", "unknownCommands", "diagnostics"],
+      "properties": {
+        "sdks": { "$ref": "#/$defs/sdkSummary" },
+        "files": { "$ref": "#/$defs/fileSummary" },
+        "hooks": { "$ref": "#/$defs/hookSummary" },
+        "operations": { "$ref": "#/$defs/operationSummary" },
+        "capabilities": { "$ref": "#/$defs/capabilitySummary" },
+        "unknownCommands": { "$ref": "#/$defs/unknownCommandSummary" },
+        "diagnostics": { "$ref": "#/$defs/diagnosticSummary" }
+      }
+    },
+    "sdkSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "sdkNames", "resolved", "unresolved"],
+      "properties": {
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "sdkNames": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["resolved", "unresolved"],
+          "properties": {
+            "resolved": { "$ref": "#/$defs/stringArray" },
+            "unresolved": { "$ref": "#/$defs/stringArray" }
+          }
+        },
+        "resolved": { "$ref": "#/$defs/nonNegativeInteger" },
+        "unresolved": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "fileSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "bySdk"],
+      "properties": {
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "bySdk": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sdkFileSummary" }
+        }
+      }
+    },
+    "sdkFileSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdkName", "count", "filePaths"],
+      "properties": {
+        "sdkName": { "type": "string" },
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "filePaths": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "hookSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "bySdk"],
+      "properties": {
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "bySdk": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sdkHookSummary" }
+        }
+      }
+    },
+    "sdkHookSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdkName", "count", "hookNames"],
+      "properties": {
+        "sdkName": { "type": "string" },
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "hookNames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hookName" }
+        }
+      }
+    },
+    "operationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "bySdk"],
+      "properties": {
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "bySdk": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sdkOperationSummary" }
+        }
+      }
+    },
+    "sdkOperationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdkName", "count", "operationKinds"],
+      "properties": {
+        "sdkName": { "type": "string" },
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "operationKinds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/countedName" }
+        }
+      }
+    },
+    "capabilitySummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "bySdk"],
+      "properties": {
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "bySdk": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sdkCapabilitySummary" }
+        }
+      }
+    },
+    "sdkCapabilitySummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdkName", "count", "capabilityNames"],
+      "properties": {
+        "sdkName": { "type": "string" },
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "capabilityNames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/countedName" }
+        }
+      }
+    },
+    "unknownCommandSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "bySdk"],
+      "properties": {
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "bySdk": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sdkUnknownCommandSummary" }
+        }
+      }
+    },
+    "sdkUnknownCommandSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdkName", "count", "files"],
+      "properties": {
+        "sdkName": { "type": "string" },
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "files": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fileUnknownCommandSummary" }
+        }
+      }
+    },
+    "fileUnknownCommandSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filePath", "count", "commandNames"],
+      "properties": {
+        "filePath": { "type": "string" },
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "commandNames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/countedName" }
+        }
+      }
+    },
+    "diagnosticSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "diagnosticCodes"],
+      "properties": {
+        "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "diagnosticCodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/countedName" }
+        }
+      }
+    },
+    "countedName": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "count"],
+      "properties": {
+        "name": { "type": "string" },
+        "count": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "sdk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source", "state", "declarations", "files", "hooks"],
+      "properties": {
+        "name": { "type": "string" },
+        "source": {
+          "type": "string",
+          "enum": ["store", "project", "try", "system"]
+        },
+        "state": { "$ref": "#/$defs/resolutionState" },
+        "channel": { "type": "string" },
+        "root": { "type": "string" },
+        "digest": { "type": "string" },
+        "metadataPath": { "type": "string" },
+        "metadata": { "$ref": "#/$defs/metadata" },
+        "declarations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/declaration" }
+        },
+        "files": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/file" }
+        },
+        "hooks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hook" }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sdkDiagnostic" }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "title": { "type": "string" },
+        "version": { "type": "string" },
+        "summary": { "type": "string" },
+        "description": { "type": "string" },
+        "base": { "type": "string" },
+        "architecture": { "type": "string" },
+        "contact": { "$ref": "#/$defs/stringArray" },
+        "issues": { "$ref": "#/$defs/stringArray" },
+        "sourceCode": { "type": "string" },
+        "website": { "type": "string" },
+        "license": { "type": "string" },
+        "plugs": { "$ref": "#/$defs/freeFormObject" },
+        "slots": { "$ref": "#/$defs/freeFormObject" },
+        "sdkcraftStartedAt": { "type": "string" },
+        "type": { "type": "string" }
+      }
+    },
+    "declaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["definition", "workshop", "base"],
+      "properties": {
+        "definition": { "type": "string" },
+        "workshop": { "type": "string" },
+        "base": { "type": "string" },
+        "channel": { "type": "string" },
+        "plugs": { "$ref": "#/$defs/freeFormObject" },
+        "slots": { "$ref": "#/$defs/freeFormObject" }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "type", "mode"],
+      "properties": {
+        "path": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["regular", "directory", "symlink", "other"]
+        },
+        "mode": { "$ref": "#/$defs/nonNegativeInteger" },
+        "size": { "$ref": "#/$defs/nonNegativeInteger" },
+        "digest": { "type": "string" },
+        "linkTarget": { "type": "string" },
+        "content": { "type": "string" },
+        "contentEncoding": {
+          "type": "string",
+          "enum": ["utf-8", "sha3-384"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "regular" } },
+            "required": ["type"]
+          },
+          "then": { "required": ["content", "contentEncoding"] }
+        }
+      ]
+    },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path", "digest", "size", "operations", "capabilities"],
+      "properties": {
+        "name": { "$ref": "#/$defs/hookName" },
+        "path": { "type": "string" },
+        "digest": { "type": "string" },
+        "size": { "$ref": "#/$defs/nonNegativeInteger" },
+        "parse": { "$ref": "#/$defs/parse" },
+        "context": { "$ref": "#/$defs/hookContext" },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operation" }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/capability" }
+        }
+      }
+    },
+    "parse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "recovered", "nodeTypes", "diagnostics"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["Parsed", "Recovered", "Failed"]
+        },
+        "recovered": { "type": "boolean" },
+        "nodeTypes": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/nonNegativeInteger" }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parseDiagnostic" }
+        }
+      }
+    },
+    "parseDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message", "location"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "message": { "type": "string" },
+        "location": { "$ref": "#/$defs/location" },
+        "incomplete": { "type": "boolean" }
+      }
+    },
+    "hookContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "runAsRoot", "projectMounted", "interfacesActive", "stateMounted"],
+      "properties": {
+        "name": { "$ref": "#/$defs/hookName" },
+        "runAsRoot": { "type": "boolean" },
+        "projectMounted": { "type": "boolean" },
+        "interfacesActive": { "type": "boolean" },
+        "stateMounted": { "type": "boolean" },
+        "contextDependent": { "type": "boolean" }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "resolution", "location"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/operationKind" },
+        "command": { "$ref": "#/$defs/value" },
+        "name": { "type": "string" },
+        "wrappers": { "$ref": "#/$defs/stringArray" },
+        "arguments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/value" }
+        },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dataReference" }
+        },
+        "outputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dataReference" }
+        },
+        "resolution": { "$ref": "#/$defs/resolution" },
+        "location": { "$ref": "#/$defs/location" },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operation" }
+        }
+      }
+    },
+    "dataReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": { "type": "string" },
+        "value": { "$ref": "#/$defs/value" }
+      }
+    },
+    "value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolution"],
+      "properties": {
+        "parts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/valuePart" }
+        },
+        "resolution": { "$ref": "#/$defs/resolution" },
+        "literal": { "type": "string" },
+        "candidates": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "valuePart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "literal",
+            "quoted-literal",
+            "variable-reference",
+            "command-substitution",
+            "arithmetic-expansion",
+            "glob",
+            "unknown-expansion"
+          ]
+        },
+        "text": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ruleId", "ruleSource", "operation", "resolution", "location"],
+      "properties": {
+        "kind": { "type": "string" },
+        "ruleId": { "type": "string" },
+        "ruleSource": { "type": "string" },
+        "operation": { "$ref": "#/$defs/operationKind" },
+        "target": { "$ref": "#/$defs/value" },
+        "resolution": { "$ref": "#/$defs/resolution" },
+        "location": { "$ref": "#/$defs/location" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "startLine", "startColumn", "endLine", "endColumn"],
+      "properties": {
+        "path": { "type": "string" },
+        "startLine": { "$ref": "#/$defs/nonNegativeInteger" },
+        "startColumn": { "$ref": "#/$defs/nonNegativeInteger" },
+        "endLine": { "$ref": "#/$defs/nonNegativeInteger" },
+        "endColumn": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "documentDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sdk", "code", "severity", "message"],
+      "properties": {
+        "sdk": { "type": "string" },
+        "hook": { "$ref": "#/$defs/hookName" },
+        "code": { "type": "string" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "phase": { "type": "string" },
+        "message": { "type": "string" },
+        "location": { "$ref": "#/$defs/location" },
+        "incomplete": { "type": "boolean" }
+      }
+    },
+    "sdkDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "phase": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "resolutionState": {
+      "type": "string",
+      "enum": [
+        "Resolved",
+        "NotResolved",
+        "DownloadFailed",
+        "DigestMismatch",
+        "UnsupportedPlatform",
+        "InvalidArtifact"
+      ]
+    },
+    "resolution": {
+      "type": "string",
+      "enum": ["Resolved", "PartiallyResolved", "Unknown"]
+    },
+    "operationKind": {
+      "type": "string",
+      "enum": [
+        "command-invocation",
+        "assignment",
+        "pipeline",
+        "redirect-read",
+        "redirect-write",
+        "command-substitution",
+        "process-substitution",
+        "function-declaration",
+        "function-invocation",
+        "source",
+        "eval",
+        "control-flow"
+      ]
+    },
+    "hookName": {
+      "type": "string",
+      "enum": ["setup-base", "setup-project", "check-health", "save-state", "restore-state"]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["warning", "error"]
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "stringArray": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "freeFormObject": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

@@ -25,7 +25,7 @@ All commits must be your own work or otherwise legally contributed under the pro
 
 ## Development
 
-Latra development uses the committed Workshop environment and its Go 1.27 SDK. Do not use a host Go installation for project development. See [docs/development.md](docs/development.md) for setup and environment details.
+Latra development uses the committed Workshop environment and its Go 1.27 SDK. Do not use a host Go installation for project development. See [development.md](docs/development/development.md) for setup and environment details.
 
 The standard development commands are:
 
