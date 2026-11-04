@@ -31,6 +31,8 @@ actions:
     go vet ./...
     go test ./...
 
+  e2e: bash testdata/e2e/run.sh
+
   build: |
     mkdir -p build
     go build -trimpath -o build/latra ./cmd/latra

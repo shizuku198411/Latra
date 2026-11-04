@@ -1,0 +1,5 @@
+name: e2e
+base: ubuntu@24.04
+sdks:
+  - name: fixture-sdk
+    channel: latest/stable
