@@ -16,8 +16,27 @@ import (
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
+const (
+	ansiReset     = "\x1b[0m"
+	ansiRed       = "\x1b[31m"
+	ansiGreen     = "\x1b[32m"
+	ansiYellow    = "\x1b[33m"
+	ansiCyan      = "\x1b[36m"
+	ansiBrightRed = "\x1b[91m"
+)
+
+// TextOptions controls terminal-specific text rendering.
+type TextOptions struct {
+	Color bool
+}
+
 // WriteText renders the complete SDK inventory in a deterministic format.
 func WriteText(writer io.Writer, result *source.Result) error {
+	return WriteTextWithOptions(writer, result, TextOptions{})
+}
+
+// WriteTextWithOptions renders the complete SDK inventory with explicit text options.
+func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextOptions) error {
 	document := NewDocument(result)
 	if _, err := fmt.Fprintf(writer, "Input\n  Kind: %s\n  Root: %s\n", document.Input.Kind, document.Input.Root); err != nil {
 		return err
@@ -43,7 +62,7 @@ func WriteText(writer io.Writer, result *source.Result) error {
 	if err := writeSummary(writer, document.Summary, document.Assessment, false); err != nil {
 		return err
 	}
-	if err := writeAssessment(writer, document.Assessment); err != nil {
+	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
 		return err
 	}
 	return writeDocumentDiagnostics(writer, document.Diagnostics)
@@ -51,6 +70,11 @@ func WriteText(writer io.Writer, result *source.Result) error {
 
 // WriteTextSummary renders input, Workshop definitions, and the summary only.
 func WriteTextSummary(writer io.Writer, result *source.Result) error {
+	return WriteTextSummaryWithOptions(writer, result, TextOptions{})
+}
+
+// WriteTextSummaryWithOptions renders the compact representation with explicit text options.
+func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, options TextOptions) error {
 	document := NewDocument(result)
 	if _, err := fmt.Fprintf(writer, "Input\n  Kind: %s\n  Root: %s\n", document.Input.Kind, document.Input.Root); err != nil {
 		return err
@@ -68,19 +92,19 @@ func WriteTextSummary(writer io.Writer, result *source.Result) error {
 	if err := writeSummary(writer, document.Summary, document.Assessment, true); err != nil {
 		return err
 	}
-	if err := writeAssessment(writer, document.Assessment); err != nil {
+	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
 		return err
 	}
 	return writeDocumentDiagnostics(writer, document.Diagnostics)
 }
 
-func writeAssessment(writer io.Writer, assessment finding.Assessment) error {
-	if _, err := fmt.Fprintf(writer, "\nAssessment\n  Classification: %s\n  Review Priority: %d/100 (%s)\n  Risk: %d/100 (%s)\n  Assurance: %d/100 (%s)\n  Coverage: %d/100 (%s)\n",
+func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool) error {
+	if _, err := fmt.Fprintf(writer, "\nAssessment\n  Classification: %s\n  Review Priority: %s\n  Risk: %s\n  Assurance: %s\n  Coverage: %s\n",
 		assessment.Classification,
-		assessment.ReviewPriority.Score, assessment.ReviewPriority.Level,
-		assessment.Risk.Score, assessment.Risk.Level,
-		assessment.Assurance.Score, assessment.Assurance.Level,
-		assessment.Coverage.Score, assessment.Coverage.Level); err != nil {
+		formatAssessmentScore(assessment.ReviewPriority.Score, assessment.ReviewPriority.Level, false, color),
+		formatAssessmentScore(assessment.Risk.Score, assessment.Risk.Level, false, color),
+		formatAssessmentScore(assessment.Assurance.Score, assessment.Assurance.Level, true, color),
+		formatAssessmentScore(assessment.Coverage.Score, assessment.Coverage.Level, true, color)); err != nil {
 		return err
 	}
 	if err := writeKeyRisks(writer, assessment.KeyRisks, "  "); err != nil {
@@ -94,12 +118,12 @@ func writeAssessment(writer io.Writer, assessment finding.Assessment) error {
 		return err
 	}
 	for _, item := range assessment.BySDK {
-		if _, err := fmt.Fprintf(writer, "    %s: %s\n      Review Priority: %d/100 (%s)\n      Risk: %d/100 (%s), Assurance: %d/100 (%s), Coverage: %d/100 (%s)\n",
+		if _, err := fmt.Fprintf(writer, "    %s: %s\n      Review Priority: %s\n      Risk: %s, Assurance: %s, Coverage: %s\n",
 			item.SDK, item.Classification,
-			item.ReviewPriority.Score, item.ReviewPriority.Level,
-			item.Risk.Score, item.Risk.Level,
-			item.Assurance.Score, item.Assurance.Level,
-			item.Coverage.Score, item.Coverage.Level); err != nil {
+			formatAssessmentScore(item.ReviewPriority.Score, item.ReviewPriority.Level, false, color),
+			formatAssessmentScore(item.Risk.Score, item.Risk.Level, false, color),
+			formatAssessmentScore(item.Assurance.Score, item.Assurance.Level, true, color),
+			formatAssessmentScore(item.Coverage.Score, item.Coverage.Level, true, color)); err != nil {
 			return err
 		}
 		if err := writeKeyRisks(writer, item.KeyRisks, "      "); err != nil {
@@ -107,6 +131,46 @@ func writeAssessment(writer io.Writer, assessment finding.Assessment) error {
 		}
 	}
 	return nil
+}
+
+func formatAssessmentScore(score int, level string, positive bool, color bool) string {
+	value := fmt.Sprintf("%d/100 (%s)", score, level)
+	if !color {
+		return value
+	}
+	code := negativeScoreColor(level)
+	if positive {
+		code = positiveScoreColor(level)
+	}
+	return code + value + ansiReset
+}
+
+func negativeScoreColor(level string) string {
+	switch level {
+	case "critical":
+		return ansiBrightRed
+	case "high":
+		return ansiRed
+	case "medium":
+		return ansiYellow
+	case "low":
+		return ansiCyan
+	default:
+		return ansiGreen
+	}
+}
+
+func positiveScoreColor(level string) string {
+	switch level {
+	case "high", "sufficient":
+		return ansiGreen
+	case "medium":
+		return ansiYellow
+	case "low":
+		return ansiRed
+	default:
+		return ansiBrightRed
+	}
 }
 
 func writeKeyRisks(writer io.Writer, highlights []finding.RiskHighlight, indent string) error {

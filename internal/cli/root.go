@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/shizuku198411/Latra/internal/buildinfo"
@@ -264,6 +265,13 @@ func parseScanOptions(args []string) (scanOptions, error) {
 
 func writeReport(options scanOptions, stdout io.Writer, result *source.Result) error {
 	if options.output == "-" {
+		if options.format == report.FormatText {
+			textOptions := report.TextOptions{Color: !options.noColor && os.Getenv("NO_COLOR") == "" && isTerminalWriter(stdout)}
+			if !options.verbose {
+				return report.WriteTextSummaryWithOptions(stdout, result, textOptions)
+			}
+			return report.WriteTextWithOptions(stdout, result, textOptions)
+		}
 		if !options.verbose {
 			return report.WriteSummary(stdout, options.format, result)
 		}

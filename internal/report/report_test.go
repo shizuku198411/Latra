@@ -102,6 +102,28 @@ func TestWriteTextIncludesInventoryDetailsAndEscapesControls(t *testing.T) {
 	}
 }
 
+func TestWriteTextSummaryColorsAssessmentScores(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	var output bytes.Buffer
+	if err := report.WriteTextSummaryWithOptions(&output, result, report.TextOptions{Color: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"Review Priority: \x1b[32m0/100 (info)\x1b[0m",
+		"Risk: \x1b[32m0/100 (info)\x1b[0m",
+		"Assurance: \x1b[32m72/100 (high)\x1b[0m",
+		"Coverage: \x1b[32m100/100 (sufficient)\x1b[0m",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text does not contain %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestWriteTextKeyRiskLocationUsesCLIArguments(t *testing.T) {
 	t.Parallel()
 	result := fixtureResult()
