@@ -35,16 +35,6 @@ on the host:
 ./scripts/install.sh
 ```
 
-The installation script launches the `dev` Workshop when needed and runs
-`workshop run -- build` before installing the binary. A Workshop launched by
-the script is removed after the build; an already-running Workshop is preserved.
-
-Remove the default installation with:
-
-```bash
-./scripts/uninstall.sh
-```
-
 Run Latra from the root of a Workshop project.
 
 ### Scan the project
@@ -196,6 +186,19 @@ Write the complete inventory and analysis details to a file:
 ```bash
 latra scan . --format json --verbose --output latra-report.json
 ```
+
+### Uninstall
+
+```bash
+./scripts/uninstall.sh
+```
+
+## User documentation
+
+- [Command reference](docs/command-reference.md) — CLI commands, arguments,
+  options, exit codes, and environment variables.
+- [Understanding scan output](docs/report-output.md) — how to read each report
+  section and use its SDK, hook, and file values for further investigation.
 
 ## Contributing
 
