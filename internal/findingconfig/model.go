@@ -28,6 +28,10 @@ type Matcher struct {
 	Capabilities              []string `yaml:"capabilities,omitempty"`
 	HookNames                 []string `yaml:"hook-names,omitempty"`
 	RunAsRoot                 *bool    `yaml:"run-as-root,omitempty"`
+	ProjectMounted            *bool    `yaml:"project-mounted,omitempty"`
+	InterfacesActive          *bool    `yaml:"interfaces-active,omitempty"`
+	StateMounted              *bool    `yaml:"state-mounted,omitempty"`
+	ContextDependent          *bool    `yaml:"context-dependent,omitempty"`
 	ParseStatuses             []string `yaml:"parse-statuses,omitempty"`
 	DiagnosticCodes           []string `yaml:"diagnostic-codes,omitempty"`
 	DiagnosticMessageContains []string `yaml:"diagnostic-message-contains,omitempty"`

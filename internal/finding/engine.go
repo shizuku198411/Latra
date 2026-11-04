@@ -180,7 +180,7 @@ func matchParseStatuses(item sdk.SDK, rule findingconfig.Rule) []match {
 	var matches []match
 	for index := range item.Hooks {
 		hook := &item.Hooks[index]
-		if hook.Parse == nil || !contains(rule.Matcher.ParseStatuses, string(hook.Parse.Status)) {
+		if !hookMatches(hook, rule) || hook.Parse == nil || !contains(rule.Matcher.ParseStatuses, string(hook.Parse.Status)) {
 			continue
 		}
 		location := shell.Location{Path: hook.Path}
@@ -194,6 +194,22 @@ func matchParseStatuses(item sdk.SDK, rule findingconfig.Rule) []match {
 
 func matchAbsence(item sdk.SDK, rule findingconfig.Rule) []match {
 	if len(rule.Matcher.Capabilities) > 0 {
+		if hasHookSelector(rule.Matcher) {
+			var matches []match
+			for index := range item.Hooks {
+				hook := &item.Hooks[index]
+				if !hookMatches(hook, rule) || hook.Analysis == nil || hook.Parse == nil || hook.Parse.Status != shell.StatusParsed || hook.Parse.Recovered || hookHasUnknownCommand(*hook) {
+					continue
+				}
+				if hasCapability(hook.Analysis.Capabilities, rule.Matcher.Capabilities) {
+					continue
+				}
+				matches = append(matches, match{hook: hook, key: string(hook.Name), evidence: []Evidence{{
+					Type: "context", ID: "capability-absent", Value: strings.Join(rule.Matcher.Capabilities, ","), Resolution: analysis.Resolved,
+				}}})
+			}
+			return matches
+		}
 		if !completeAnalysis(item) || hasUnknownCommand(item) || hasAnyCapability(item, rule.Matcher.Capabilities) {
 			return nil
 		}
@@ -307,10 +323,30 @@ func hookMatches(hook *sdk.Hook, rule findingconfig.Rule) bool {
 	if len(rule.Matcher.HookNames) > 0 && !contains(rule.Matcher.HookNames, string(hook.Name)) {
 		return false
 	}
-	if rule.Matcher.RunAsRoot != nil {
-		return hook.Analysis != nil && hook.Analysis.Context.RunAsRoot == *rule.Matcher.RunAsRoot
+	if !hasContextSelector(rule.Matcher) {
+		return true
 	}
-	return true
+	if hook.Analysis == nil {
+		return false
+	}
+	context := hook.Analysis.Context
+	return matchesBool(rule.Matcher.RunAsRoot, context.RunAsRoot) &&
+		matchesBool(rule.Matcher.ProjectMounted, context.ProjectMounted) &&
+		matchesBool(rule.Matcher.InterfacesActive, context.InterfacesActive) &&
+		matchesBool(rule.Matcher.StateMounted, context.StateMounted) &&
+		matchesBool(rule.Matcher.ContextDependent, context.ContextDependent)
+}
+
+func hasHookSelector(matcher findingconfig.Matcher) bool {
+	return len(matcher.HookNames) > 0 || hasContextSelector(matcher)
+}
+
+func hasContextSelector(matcher findingconfig.Matcher) bool {
+	return matcher.RunAsRoot != nil || matcher.ProjectMounted != nil || matcher.InterfacesActive != nil || matcher.StateMounted != nil || matcher.ContextDependent != nil
+}
+
+func matchesBool(expected *bool, actual bool) bool {
+	return expected == nil || *expected == actual
 }
 
 func allHooksParsed(item sdk.SDK) bool {

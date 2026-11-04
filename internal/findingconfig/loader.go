@@ -90,7 +90,7 @@ func decode(content []byte) (*Config, error) {
 var identifierPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*$`)
 
 func validate(config *Config) error {
-	if config.SchemaVersion != "1" || strings.TrimSpace(config.ContentVersion) == "" {
+	if config.SchemaVersion != "2" || strings.TrimSpace(config.ContentVersion) == "" {
 		return fmt.Errorf("unsupported or incomplete finding configuration version %q", config.SchemaVersion)
 	}
 	if len(config.Rules) == 0 {
@@ -127,6 +127,27 @@ func validate(config *Config) error {
 		if !validMatchers[rule.Matcher.Type] {
 			return fmt.Errorf("rule %q has invalid matcher %q", rule.ID, rule.Matcher.Type)
 		}
+		if err := validateMatcherContext(rule); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateMatcherContext(rule Rule) error {
+	for _, name := range rule.Matcher.HookNames {
+		if !contains([]string{"setup-base", "setup-project", "check-health", "save-state", "restore-state"}, name) {
+			return fmt.Errorf("rule %q has invalid hook name %q", rule.ID, name)
+		}
+	}
+	hasContext := rule.Matcher.RunAsRoot != nil || rule.Matcher.ProjectMounted != nil ||
+		rule.Matcher.InterfacesActive != nil || rule.Matcher.StateMounted != nil || rule.Matcher.ContextDependent != nil
+	if !hasContext && len(rule.Matcher.HookNames) == 0 {
+		return nil
+	}
+	sdkMatchers := []string{"sdk-unresolved", "sdk-diagnostic", "all-hooks-parsed", "all-commands-known", "archive-digest", "complete-file-inventory"}
+	if contains(sdkMatchers, rule.Matcher.Type) {
+		return fmt.Errorf("rule %q applies hook context to SDK-level matcher %q", rule.ID, rule.Matcher.Type)
 	}
 	return nil
 }

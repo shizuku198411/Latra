@@ -59,6 +59,28 @@ Risk rules require `severity`; assurance rules require `strength`. All rules req
 | `complete-file-inventory` | A resolved SDK without a resource-limit diagnostic. |
 | `read-only-health-check` | A parsed, known-command health check without detected mutation capabilities. |
 
+## Hook context constraints
+
+Hook-level matchers can narrow a rule with any combination of the following fields:
+
+```yaml
+match:
+  type: capability
+  capabilities:
+    - project-write
+  hook-names:
+    - check-health
+  run-as-root: true
+  project-mounted: true
+  interfaces-active: true
+  state-mounted: false
+  context-dependent: false
+```
+
+All configured fields use AND semantics. Omitted fields do not constrain the match. If a rule requires execution context but hook analysis did not produce that context, the rule does not match; Latra does not infer a positive match from the hook name alone.
+
+Context fields are supported by hook-level matchers such as `capability`, `path-write`, `unknown-command`, `parse-status`, `relation-flow`, `read-only-health-check`, and hook-scoped `absence-capability`. SDK-level matchers reject hook context fields during configuration validation.
+
 ## Adding a rule
 
 1. Select the closest category file under `internal/findingconfig/default/`.
@@ -69,4 +91,4 @@ Risk rules require `severity`; assurance rules require `strength`. All rules req
 6. Run `workshop run -- format`, `workshop run -- check`, and `workshop run -- test`.
 7. Review the normal SDK corpus for frequency and false positives.
 
-Adding a rule or changing its weight requires updating `content-version` in `schema.yaml`. Changing the YAML structure requires a finding database `schema-version` change. Report structure changes are versioned separately by the report `schemaVersion`.
+Adding a rule, changing matcher behavior, or changing a weight requires updating `content-version` in `schema.yaml`. Changing the YAML structure requires a finding database `schema-version` change. Report structure changes are versioned separately by the report `schemaVersion`.

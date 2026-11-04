@@ -39,6 +39,9 @@ finding-rules:
     match:
       type: absence-capability
       run-as-root: false
+      project-mounted: true
+      interfaces-active: true
+      state-mounted: false
     message: The Workshop lifecycle runs this hook as the workshop user.
     limitations:
       - The user context can still modify mounted project and user data.

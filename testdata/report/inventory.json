@@ -7,8 +7,8 @@
     "buildDate": "unknown"
   },
   "findingDatabase": {
-    "schemaVersion": "1",
-    "contentVersion": "2026.11.1",
+    "schemaVersion": "2",
+    "contentVersion": "2026.11.2",
     "source": "embedded-default"
   },
   "input": {

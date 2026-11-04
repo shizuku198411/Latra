@@ -157,6 +157,8 @@ Each rule defines:
 - a matcher and optional hook context;
 - explanatory text, remediation, limitations, and protected risks;
 
+Hook-level rules may constrain `run-as-root`, `project-mounted`, `interfaces-active`, `state-mounted`, and `context-dependent`. Configured context fields use AND semantics. If required hook context is unavailable, the rule does not match; Latra does not infer a positive contextual finding from the hook name alone.
+
 ### Matcher types
 
 The current engine supports matchers for:

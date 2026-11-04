@@ -12,6 +12,10 @@ finding-rules:
         - project-write
       hook-names:
         - check-health
+      run-as-root: true
+      project-mounted: true
+      interfaces-active: true
+      state-mounted: false
     message: A health check modifies the mounted project instead of observing health only.
     remediation: Move the mutation to a setup hook and keep health checks read-only.
 
@@ -28,6 +32,10 @@ finding-rules:
         - system-modification
       hook-names:
         - check-health
+      run-as-root: true
+      project-mounted: true
+      interfaces-active: true
+      state-mounted: false
     message: A health check changes protected system state.
     remediation: Move the change to setup-base and keep health checks read-only.
 
@@ -44,5 +52,9 @@ finding-rules:
         - destructive-operation
       hook-names:
         - check-health
+      run-as-root: true
+      project-mounted: true
+      interfaces-active: true
+      state-mounted: false
     message: A health check deletes or overwrites data.
     remediation: Remove destructive behavior from the health-check lifecycle.

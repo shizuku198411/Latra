@@ -70,7 +70,7 @@
       "additionalProperties": false,
       "required": ["schemaVersion", "contentVersion", "source"],
       "properties": {
-        "schemaVersion": { "const": "1" },
+        "schemaVersion": { "const": "2" },
         "contentVersion": { "type": "string" },
         "source": { "const": "embedded-default" }
       }

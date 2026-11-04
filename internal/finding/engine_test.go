@@ -48,6 +48,15 @@ func TestLifecycleRiskAndAssuranceUseHookContext(t *testing.T) {
 	}
 }
 
+func TestHealthCheckLifecycleRiskRequiresCombinedContext(t *testing.T) {
+	t.Parallel()
+	item := analyzedSDK(t, "printf changed > /project/generated\n", sdk.HookCheckHealth)
+	item.Hooks[0].Analysis.Context.ProjectMounted = false
+	if got := findFinding(finding.AnalyzeSDK(item), "risk.project-write-in-health-check"); got != nil {
+		t.Fatalf("finding matched without project-mounted context: %#v", got)
+	}
+}
+
 func TestDeviceWriteIgnoresDevNull(t *testing.T) {
 	t.Parallel()
 	item := analyzedSDK(t, "printf quiet > /dev/null\n", sdk.HookSetupBase)
