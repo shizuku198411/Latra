@@ -178,16 +178,20 @@ func runScan(args []string, stdout, stderr io.Writer, dependencies Dependencies)
 	if err != nil {
 		return usageError(stderr, "%v", err)
 	}
+	progress := startScanProgress(stderr, !options.quiet && isTerminalWriter(stderr))
 	result, err := source.ScanWithResolver(context.Background(), options.path, sdk.DefaultLimits(), dependencies.StoreResolver)
 	if err != nil {
+		progress.stop(false)
 		fmt.Fprintf(stderr, "latra: scan failed: %v\n", err)
 		return exitError
 	}
 	parseErr := source.ParseHooks(result, shell.NewParser())
 	if parseErr != nil && options.output != "-" {
+		progress.stop(false)
 		fmt.Fprintf(stderr, "latra: scan incomplete: %v\n", parseErr)
 		return exitError
 	}
+	progress.stop(true)
 	if err := writeReport(options, stdout, result); err != nil {
 		fmt.Fprintf(stderr, "latra: write report: %v\n", err)
 		return exitError

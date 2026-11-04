@@ -205,6 +205,42 @@ func TestDocumentIncludesSDKResolutionDiagnostic(t *testing.T) {
 	}
 }
 
+func TestWriteTextSummaryCompactsNonHookFiles(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	result.SDKs[0].Files = append(result.SDKs[0].Files,
+		sdk.File{Path: "sdk.yaml", Type: sdk.FileRegular},
+		sdk.File{Path: "bin/tool", Type: sdk.FileRegular},
+		sdk.File{Path: "share/config.json", Type: sdk.FileRegular},
+	)
+
+	var compact bytes.Buffer
+	if err := report.WriteTextSummary(&compact, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"hooks/setup-project", "sdk.yaml", "... and more files (2)"} {
+		if !strings.Contains(compact.String(), want) {
+			t.Errorf("compact text does not contain %q:\n%s", want, compact.String())
+		}
+	}
+	for _, excluded := range []string{"bin/tool", "share/config.json"} {
+		if strings.Contains(compact.String(), excluded) {
+			t.Errorf("compact text unexpectedly contains %q:\n%s", excluded, compact.String())
+		}
+	}
+
+	var verbose bytes.Buffer
+	if err := report.WriteText(&verbose, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"bin/tool", "share/config.json"} {
+		if !strings.Contains(verbose.String(), want) {
+			t.Errorf("verbose text does not contain %q:\n%s", want, verbose.String())
+		}
+	}
+}
+
 func TestDocumentSummaryGroupsUnknownCommandsBySDKAndFile(t *testing.T) {
 	t.Parallel()
 
