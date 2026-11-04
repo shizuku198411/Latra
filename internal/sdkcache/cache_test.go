@@ -1,6 +1,7 @@
 package sdkcache_test
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
 )
 
@@ -125,6 +127,28 @@ func TestOpenFileConfinesPath(t *testing.T) {
 	}
 	if _, _, err := sdkcache.OpenFile(entry, "../54.sdk"); err == nil {
 		t.Fatal("expected traversal to be rejected")
+	}
+}
+
+func TestOpenFileReportsSkippedCacheContent(t *testing.T) {
+	t.Parallel()
+
+	cache := t.TempDir()
+	entry := createRevision(t, cache, "rust", "latest/stable", 54)
+	skipped := sdk.File{
+		Path: "bin/large-tool", Type: sdk.FileRegular, Mode: 0o755, Size: 1024,
+		Digest: "sha3-384:0123456789abcdef", Skipped: true, SkipReason: "size-limit",
+	}
+	if err := sdkcache.WriteManifest(entry.Root, []sdk.File{skipped}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := sdkcache.OpenFile(entry, skipped.Path)
+	var skippedErr *sdkcache.ContentSkippedError
+	if !errors.As(err, &skippedErr) {
+		t.Fatalf("error = %v, want ContentSkippedError", err)
+	}
+	if skippedErr.File.Path != skipped.Path || skippedErr.File.Size != skipped.Size || skippedErr.File.Digest != skipped.Digest {
+		t.Fatalf("skipped file = %#v", skippedErr.File)
 	}
 }
 

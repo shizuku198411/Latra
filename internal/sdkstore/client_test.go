@@ -171,7 +171,7 @@ func TestExtractArchiveRejectsTraversal(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := t.TempDir()
-	if err := extractArchive(archivePath, target, sdk.DefaultLimits()); err == nil {
+	if _, err := extractArchive(archivePath, target, sdk.DefaultLimits()); err == nil {
 		t.Fatal("expected archive traversal to be rejected")
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(target), "outside")); !os.IsNotExist(err) {
@@ -189,12 +189,132 @@ func TestExtractArchiveAcceptsConfinedHardLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := t.TempDir()
-	if err := extractArchive(archivePath, target, sdk.DefaultLimits()); err != nil {
+	if _, err := extractArchive(archivePath, target, sdk.DefaultLimits()); err != nil {
 		t.Fatal(err)
 	}
 	content, err := os.ReadFile(filepath.Join(target, "bin", "tool-alias"))
 	if err != nil || string(content) != "tool" {
 		t.Fatalf("hard-link content = %q, error = %v", content, err)
+	}
+}
+
+func TestExtractArchiveSkipsOversizedNonRequiredFileAndContinues(t *testing.T) {
+	payload := "oversized-payload"
+	archive := testArchiveHeaders(t, []tar.Header{
+		{Name: "bin/model", Mode: 0o644, Size: int64(len(payload)), Typeflag: tar.TypeReg},
+		{Name: "meta/sdk.yaml", Mode: 0o644, Size: 11, Typeflag: tar.TypeReg},
+		{Name: "sdk/hooks/setup-base", Mode: 0o755, Size: 10, Typeflag: tar.TypeReg},
+	}, []string{payload, "name: test\n", "echo hook\n"})
+	archivePath := filepath.Join(t.TempDir(), "large.sdk")
+	if err := os.WriteFile(archivePath, archive, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	limits := sdk.DefaultLimits()
+	limits.MaxFileSize = 8
+
+	skipped, err := extractArchive(archivePath, target, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 1 || skipped[0].Path != "bin/model" || skipped[0].Size != int64(len(payload)) || skipped[0].Digest == "" {
+		t.Fatalf("skipped = %#v", skipped)
+	}
+	if _, err := os.Stat(filepath.Join(target, "bin", "model")); !os.IsNotExist(err) {
+		t.Fatalf("skipped payload exists: %v", err)
+	}
+	for _, name := range []string{"meta/sdk.yaml", "sdk/hooks/setup-base"} {
+		if _, err := os.Stat(filepath.Join(target, filepath.FromSlash(name))); err != nil {
+			t.Errorf("required file %q was not extracted: %v", name, err)
+		}
+	}
+}
+
+func TestExtractArchivePreservesLinksToSkippedContentInManifest(t *testing.T) {
+	payload := "oversized-payload"
+	archive := testArchiveHeaders(t, []tar.Header{
+		{Name: "bin/model", Mode: 0o644, Size: int64(len(payload)), Typeflag: tar.TypeReg},
+		{Name: "bin/model-hard", Mode: 0o644, Typeflag: tar.TypeLink, Linkname: "bin/model"},
+		{Name: "bin/model-link", Mode: 0o777, Typeflag: tar.TypeSymlink, Linkname: "model"},
+		{Name: "sdk.yaml", Mode: 0o644, Size: 11, Typeflag: tar.TypeReg},
+	}, []string{payload, "", "", "name: test\n"})
+	archivePath := filepath.Join(t.TempDir(), "links.sdk")
+	if err := os.WriteFile(archivePath, archive, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	limits := sdk.DefaultLimits()
+	limits.MaxFileSize = 8
+	skipped, err := extractArchive(archivePath, t.TempDir(), limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 3 {
+		t.Fatalf("skipped = %#v", skipped)
+	}
+	if skipped[1].Path != "bin/model-hard" || skipped[1].Digest != skipped[0].Digest || skipped[1].SkipReason != "linked-content-skipped" {
+		t.Errorf("hard link = %#v", skipped[1])
+	}
+	if skipped[2].Path != "bin/model-link" || skipped[2].Type != sdk.FileSymlink || skipped[2].LinkTarget != "model" {
+		t.Errorf("symlink = %#v", skipped[2])
+	}
+}
+
+func TestResolveRestoresSkippedInventoryFromCacheManifest(t *testing.T) {
+	payload := "oversized-payload"
+	archive := testArchiveHeaders(t, []tar.Header{
+		{Name: "bin/model", Mode: 0o644, Size: int64(len(payload)), Typeflag: tar.TypeReg},
+		{Name: "meta/sdk.yaml", Mode: 0o644, Size: 11, Typeflag: tar.TypeReg},
+		{Name: "sdk/hooks/setup-base", Mode: 0o755, Size: 10, Typeflag: tar.TypeReg},
+	}, []string{payload, "name: test\n", "echo hook\n"})
+	digest := sha3.Sum384(archive)
+	downloads := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v2/revisions/resolve", func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(writer).Encode(map[string]any{"package-results": []any{
+			map[string]any{"instance-key": "latra-0", "status": "ok", "name": "test", "id": "package-id", "result": map[string]any{
+				"channel": map[string]any{"effective-channel": "latest/stable"},
+				"revision": map[string]any{"revision": 1, "download": map[string]any{
+					"size": len(archive), "sha3-384": hex.EncodeToString(digest[:]),
+				}},
+			}},
+		}})
+	})
+	mux.HandleFunc("/api/v1/sdks/download/package-id_1.sdk", func(writer http.ResponseWriter, request *http.Request) {
+		downloads++
+		writer.Write(archive)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	cache := filepath.Join(t.TempDir(), "cache")
+	client, err := NewClient(Config{BaseURL: server.URL, CacheDir: cache, Architecture: "amd64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits := sdk.DefaultLimits()
+	limits.MaxFileSize = 8
+	request := source.StoreRequest{Name: "test", Channel: "latest/stable", Base: "ubuntu@24.04"}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		result, err := client.Resolve(context.Background(), request, limits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found bool
+		for _, file := range result.Files {
+			if file.Path == "bin/model" {
+				found = file.Skipped && file.Digest != "" && file.Size == int64(len(payload))
+			}
+		}
+		if !found {
+			t.Fatalf("attempt %d did not restore skipped inventory: %#v", attempt, result.Files)
+		}
+		if len(result.Hooks) != 1 || string(result.Hooks[0].Content) != "echo hook\n" {
+			t.Fatalf("attempt %d hooks = %#v", attempt, result.Hooks)
+		}
+	}
+	if downloads != 1 {
+		t.Fatalf("downloads = %d, want 1", downloads)
 	}
 }
 
@@ -206,7 +326,7 @@ func TestExtractArchiveRejectsEscapingHardLink(t *testing.T) {
 	if err := os.WriteFile(archivePath, archive, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := extractArchive(archivePath, t.TempDir(), sdk.DefaultLimits()); err == nil {
+	if _, err := extractArchive(archivePath, t.TempDir(), sdk.DefaultLimits()); err == nil {
 		t.Fatal("expected escaping hard link to be rejected")
 	}
 }

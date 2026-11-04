@@ -504,7 +504,7 @@ func reportFiles(files []sdk.File) []File {
 		}
 		if file.Type == sdk.FileRegular {
 			content, encoding := encodeContent(file.Content, file.Digest)
-			if file.Binary {
+			if file.Binary || file.Skipped {
 				content, encoding = file.Digest, "sha3-384"
 			}
 			if item.Digest == "" && encoding == "sha3-384" {

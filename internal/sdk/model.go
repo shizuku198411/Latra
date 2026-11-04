@@ -119,6 +119,8 @@ type File struct {
 	LinkTarget string      `json:"linkTarget,omitempty"`
 	Content    []byte      `json:"-"`
 	Binary     bool        `json:"-"`
+	Skipped    bool        `json:"-"`
+	SkipReason string      `json:"-"`
 }
 
 // Hook contains the source retained for later AST parsing.

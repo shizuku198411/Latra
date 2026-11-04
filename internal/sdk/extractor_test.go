@@ -215,22 +215,6 @@ func TestReadResourceLimits(t *testing.T) {
 			},
 		},
 		{
-			name: "single file",
-			limits: func() sdk.Limits {
-				limits := sdk.DefaultLimits()
-				limits.MaxFileSize = 8
-				return limits
-			},
-		},
-		{
-			name: "total bytes",
-			limits: func() sdk.Limits {
-				limits := sdk.DefaultLimits()
-				limits.MaxTotalBytes = 16
-				return limits
-			},
-		},
-		{
 			name: "retained bytes",
 			limits: func() sdk.Limits {
 				limits := sdk.DefaultLimits()
@@ -255,6 +239,65 @@ func TestReadResourceLimits(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReadSkipsNonRequiredFilesOverResourceLimits(t *testing.T) {
+	t.Parallel()
+
+	sdkDir := filepath.Join(t.TempDir(), "fixture")
+	writeFile(t, filepath.Join(sdkDir, "sdk.yaml"), "name: fixture\n")
+	writeFile(t, filepath.Join(sdkDir, "payload"), "payload-data")
+	limits := sdk.DefaultLimits()
+	limits.MaxFileSize = 8
+
+	resolved, err := sdk.Read(sdkDir, "fixture", limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := findSDKFile(t, resolved.Files, "payload")
+	if !file.Skipped || file.SkipReason != "size-limit" || file.Digest == "" || file.Size != int64(len("payload-data")) {
+		t.Fatalf("skipped file = %#v", file)
+	}
+	if len(resolved.Diagnostics) != 1 || resolved.Diagnostics[0].Code != "file-content-skipped" || resolved.Diagnostics[0].Severity != sdk.SeverityWarning {
+		t.Fatalf("diagnostics = %#v", resolved.Diagnostics)
+	}
+}
+
+func TestReadRejectsRequiredFileOverLimit(t *testing.T) {
+	t.Parallel()
+
+	sdkDir := filepath.Join(t.TempDir(), "x")
+	writeFile(t, filepath.Join(sdkDir, "sdk.yaml"), "name: x\n")
+	writeFile(t, filepath.Join(sdkDir, "hooks", "setup-base"), "echo long\n")
+	limits := sdk.DefaultLimits()
+	limits.MaxRequiredFileSize = 8
+
+	_, err := sdk.Read(sdkDir, "x", limits)
+	assertErrorCode(t, err, sdk.CodeResourceLimit)
+}
+
+func TestReadRejectsStreamedBytesOverLimit(t *testing.T) {
+	t.Parallel()
+
+	sdkDir := filepath.Join(t.TempDir(), "x")
+	writeFile(t, filepath.Join(sdkDir, "sdk.yaml"), "name: x\n")
+	writeFile(t, filepath.Join(sdkDir, "payload"), "payload-data")
+	limits := sdk.DefaultLimits()
+	limits.MaxStreamedBytes = 10
+
+	_, err := sdk.Read(sdkDir, "x", limits)
+	assertErrorCode(t, err, sdk.CodeResourceLimit)
+}
+
+func findSDKFile(t *testing.T, files []sdk.File, name string) sdk.File {
+	t.Helper()
+	for _, file := range files {
+		if file.Path == name {
+			return file
+		}
+	}
+	t.Fatalf("file %q was not inventoried", name)
+	return sdk.File{}
 }
 
 func TestReadDirectoryDepthLimit(t *testing.T) {

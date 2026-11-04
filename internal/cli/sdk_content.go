@@ -38,6 +38,14 @@ func runFile(args []string, stdout, stderr io.Writer, dependencies Dependencies)
 	}
 	file, info, err := sdkcache.OpenFile(entry, options.target)
 	if err != nil {
+		var skipped *sdkcache.ContentSkippedError
+		if errors.As(err, &skipped) {
+			if writeErr := writeSkippedFile(stdout, skipped.File, "not extracted", &entry); writeErr != nil {
+				fmt.Fprintf(stderr, "latra: file: %v\n", writeErr)
+				return exitError
+			}
+			return exitOK
+		}
 		fmt.Fprintf(stderr, "latra: file: SDK %q file %q: %v\n", options.sdk, options.target, err)
 		return exitError
 	}
@@ -202,7 +210,15 @@ func openHook(entry sdkcache.Entry, hook string) (io.ReadCloser, fs.FileInfo, er
 
 func writeCachedFile(writer io.Writer, reader io.Reader, info fs.FileInfo) error {
 	if info.Size() > maxDisplayedFileBytes {
-		return fmt.Errorf("file exceeds display limit of %d bytes", maxDisplayedFileBytes)
+		hasher := sha3.New384()
+		size, err := io.Copy(hasher, reader)
+		if err != nil {
+			return err
+		}
+		return writeSkippedFile(writer, sdk.File{
+			Type: sdk.FileRegular, Size: size, Digest: "sha3-384:" + hex.EncodeToString(hasher.Sum(nil)),
+			SkipReason: "display-size-limit",
+		}, "not displayed", nil)
 	}
 	content, err := io.ReadAll(io.LimitReader(reader, maxDisplayedFileBytes+1))
 	if err != nil {
@@ -219,6 +235,18 @@ func writeCachedFile(writer io.Writer, reader io.Reader, info fs.FileInfo) error
 	_, err = fmt.Fprintf(writer, "Binary file\nType: %s\nMIME: %s\nSize: %d bytes\nSHA3-384: %s\n",
 		describeBinary(content), http.DetectContentType(content), len(content), hex.EncodeToString(digest[:]))
 	return err
+}
+
+func writeSkippedFile(writer io.Writer, file sdk.File, status string, entry *sdkcache.Entry) error {
+	if _, err := fmt.Fprintf(writer, "File content %s\nReason: %s\nType: %s\nSize: %d bytes\nSHA3-384: %s\n",
+		status, file.SkipReason, file.Type, file.Size, strings.TrimPrefix(file.Digest, "sha3-384:")); err != nil {
+		return err
+	}
+	if entry != nil && entry.Channel != "" {
+		_, err := fmt.Fprintf(writer, "Channel: %s\nRevision: %d\n", entry.Channel, entry.Revision)
+		return err
+	}
+	return nil
 }
 
 func describeBinary(content []byte) string {
