@@ -22,7 +22,7 @@ func TestWriteJSONGolden(t *testing.T) {
 	if err := report.WriteJSON(&output, fixtureResult()); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.ReadFile(filepath.Join("testdata", "inventory.json"))
+	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "report", "inventory.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,21 +101,26 @@ func TestWriteTextIncludesInventoryDetailsAndEscapesControls(t *testing.T) {
 	}
 }
 
-func TestDocumentEncodesFileContentWithoutDataLoss(t *testing.T) {
+func TestDocumentRepresentsBinaryFileContentByDigest(t *testing.T) {
 	t.Parallel()
 
 	result := fixtureResult()
 	result.SDKs[0].Files = append(result.SDKs[0].Files,
 		sdk.File{Path: "text.txt", Type: sdk.FileRegular, Content: []byte("hello\n")},
 		sdk.File{Path: "binary", Type: sdk.FileRegular, Content: []byte{0xff, 0x00}},
+		sdk.File{Path: "z-nul-binary", Type: sdk.FileRegular, Content: []byte{'a', 0x00, 'b'}},
 	)
 	document := report.NewDocument(result)
 	files := document.SDKs[0].Files
-	if files[0].Content == nil || *files[0].Content != "/wA=" || files[0].ContentEncoding != "base64" {
+	const binaryDigest = "sha3-384:c100c311dfd4de0ca49c25625b170bfdc221fe73ac05033f80b94d7369e03bdab47a810f48f34e1137a349c18c351716"
+	if files[0].Content == nil || *files[0].Content != binaryDigest || files[0].ContentEncoding != "sha3-384" || files[0].Digest != binaryDigest {
 		t.Errorf("binary file = %#v", files[0])
 	}
 	if files[2].Content == nil || *files[2].Content != "hello\n" || files[2].ContentEncoding != "utf-8" {
 		t.Errorf("text file = %#v", files[2])
+	}
+	if files[3].Content == nil || files[3].ContentEncoding != "sha3-384" || *files[3].Content != files[3].Digest {
+		t.Errorf("NUL-containing file = %#v", files[3])
 	}
 }
 
@@ -160,6 +165,82 @@ func TestDocumentSummaryDeduplicatesDetectedItems(t *testing.T) {
 	}
 }
 
+func TestDocumentIncludesSDKResolutionDiagnostic(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	result.SDKs[0].State = sdk.StateDownloadFailed
+	result.SDKs[0].Diagnostics = []sdk.Diagnostic{{
+		Code: "store-download-failed", Severity: sdk.SeverityError,
+		Phase: "download", Message: "service unavailable",
+	}}
+	document := report.NewDocument(result)
+	if document.Summary.SDKs.Resolved != 0 || document.Summary.SDKs.Unresolved != 1 {
+		t.Fatalf("SDK summary = %#v", document.Summary.SDKs)
+	}
+	if document.Summary.Diagnostics.Count != 1 || len(document.Diagnostics) != 1 {
+		t.Fatalf("diagnostics = %#v", document.Diagnostics)
+	}
+	diagnostic := document.Diagnostics[0]
+	if diagnostic.Code != "store-download-failed" || diagnostic.Phase != "download" || diagnostic.SDK != "example" {
+		t.Fatalf("diagnostic = %#v", diagnostic)
+	}
+	var output bytes.Buffer
+	if err := report.WriteTextSummary(&output, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"1 unresolved", "store-download-failed", "service unavailable"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("text does not contain %q:\n%s", want, output.String())
+		}
+	}
+	output.Reset()
+	if err := report.WriteJSONSummary(&output, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"diagnostics"`, `"store-download-failed"`, `"service unavailable"`} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("compact JSON does not contain %q:\n%s", want, output.String())
+		}
+	}
+}
+
+func TestWriteTextSummaryCompactsNonHookFiles(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	result.SDKs[0].Files = append(result.SDKs[0].Files,
+		sdk.File{Path: "sdk.yaml", Type: sdk.FileRegular},
+		sdk.File{Path: "bin/tool", Type: sdk.FileRegular},
+		sdk.File{Path: "share/config.json", Type: sdk.FileRegular},
+	)
+
+	var compact bytes.Buffer
+	if err := report.WriteTextSummary(&compact, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"hooks/setup-project", "sdk.yaml", "... and more files (2)"} {
+		if !strings.Contains(compact.String(), want) {
+			t.Errorf("compact text does not contain %q:\n%s", want, compact.String())
+		}
+	}
+	for _, excluded := range []string{"bin/tool", "share/config.json"} {
+		if strings.Contains(compact.String(), excluded) {
+			t.Errorf("compact text unexpectedly contains %q:\n%s", excluded, compact.String())
+		}
+	}
+
+	var verbose bytes.Buffer
+	if err := report.WriteText(&verbose, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"bin/tool", "share/config.json"} {
+		if !strings.Contains(verbose.String(), want) {
+			t.Errorf("verbose text does not contain %q:\n%s", want, verbose.String())
+		}
+	}
+}
+
 func TestDocumentSummaryGroupsUnknownCommandsBySDKAndFile(t *testing.T) {
 	t.Parallel()
 
@@ -175,6 +256,8 @@ func TestDocumentSummaryGroupsUnknownCommandsBySDKAndFile(t *testing.T) {
 	}
 	result.SDKs[0].Hooks[0].Analysis.Operations = append(
 		result.SDKs[0].Hooks[0].Analysis.Operations,
+		unknown("workshop"),
+		unknown("workshopctl"),
 		unknown("latra-unknown-fixture"),
 		analysis.Operation{Kind: analysis.OperationPipeline, Resolution: analysis.Resolved, Location: location, Children: []analysis.Operation{
 			unknown("latra-unknown-fixture"), unknown("another-unknown-fixture"),

@@ -12,6 +12,18 @@ import (
 	"github.com/shizuku198411/Latra/internal/cli"
 )
 
+func runCLI(args []string, stdout, stderr *bytes.Buffer) int {
+	return cli.RunWithDependencies(args, stdout, stderr, cli.Dependencies{})
+}
+
+func runCLIWithCache(args []string, cache string, stdout, stderr *bytes.Buffer) int {
+	return cli.RunWithDependencies(args, stdout, stderr, cli.Dependencies{CacheRoot: cache})
+}
+
+func runCLIWithProject(args []string, cache, project string, stdout, stderr *bytes.Buffer) int {
+	return cli.RunWithDependencies(args, stdout, stderr, cli.Dependencies{CacheRoot: cache, WorkingDirectory: project})
+}
+
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -65,7 +77,7 @@ func TestRun(t *testing.T) {
 
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
-			code := cli.Run(tt.args, &stdout, &stderr)
+			code := runCLI(tt.args, &stdout, &stderr)
 
 			if code != tt.wantCode {
 				t.Errorf("Run() code = %d, want %d", code, tt.wantCode)
@@ -85,7 +97,7 @@ func TestRunScanProject(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"scan", "../../testdata/project-sdks/valid-project", "--verbose"}, &stdout, &stderr)
+	code := runCLI([]string{"scan", "../../testdata/project-sdks/valid-project", "--verbose"}, &stdout, &stderr)
 
 	if code != 0 {
 		t.Fatalf("Run() code = %d, want 0; stderr = %q", code, stderr.String())
@@ -132,7 +144,7 @@ func TestRunScanReportsMalformedHookAsIncomplete(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"scan", root, "--verbose"}, &stdout, &stderr)
+	code := runCLI([]string{"scan", root, "--verbose"}, &stdout, &stderr)
 
 	if code != 1 {
 		t.Errorf("Run() code = %d, want 1", code)
@@ -152,7 +164,7 @@ func TestRunScanJSONToStandardOutput(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{
+	code := runCLI([]string{
 		"scan", "--format", "json", "--no-color", "--quiet",
 		"../../testdata/project-sdks/valid-project",
 	}, &stdout, &stderr)
@@ -185,14 +197,14 @@ func TestRunScanJSONFileMatchesStandardOutput(t *testing.T) {
 	project := "../../testdata/project-sdks/valid-project"
 	var standardOutput bytes.Buffer
 	var standardError bytes.Buffer
-	if code := cli.Run([]string{"scan", project, "--format=json", "--verbose"}, &standardOutput, &standardError); code != 0 {
+	if code := runCLI([]string{"scan", project, "--format=json", "--verbose"}, &standardOutput, &standardError); code != 0 {
 		t.Fatalf("stdout scan code = %d; stderr = %q", code, standardError.String())
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "inventory.json")
 	var fileStdout bytes.Buffer
 	var fileStderr bytes.Buffer
-	if code := cli.Run([]string{"scan", project, "--format", "json", "-o", outputPath, "--verbose"}, &fileStdout, &fileStderr); code != 0 {
+	if code := runCLI([]string{"scan", project, "--format", "json", "-o", outputPath, "--verbose"}, &fileStdout, &fileStderr); code != 0 {
 		t.Fatalf("file scan code = %d; stderr = %q", code, fileStderr.String())
 	}
 	if fileStdout.Len() != 0 {
@@ -213,7 +225,7 @@ func TestRunScanJSONFileIsCompactByDefault(t *testing.T) {
 	outputPath := filepath.Join(t.TempDir(), "inventory.json")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{
+	code := runCLI([]string{
 		"scan", "../../testdata/project-sdks/valid-project",
 		"--format", "json", "--output", outputPath,
 	}, &stdout, &stderr)
@@ -244,7 +256,7 @@ func TestRunScanTextIsCompactByDefault(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"scan", "../../testdata/project-sdks/valid-project"}, &stdout, &stderr)
+	code := runCLI([]string{"scan", "../../testdata/project-sdks/valid-project"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
 	}
@@ -268,7 +280,7 @@ func TestRunScanRejectsInvalidOptions(t *testing.T) {
 	} {
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
-		if code := cli.Run(args, &stdout, &stderr); code != 2 {
+		if code := runCLI(args, &stdout, &stderr); code != 2 {
 			t.Errorf("Run(%q) code = %d, want 2", args, code)
 		}
 		if stdout.Len() != 0 {
@@ -282,7 +294,7 @@ func TestRunDBOverviewAndCapabilityDetail(t *testing.T) {
 
 	var overview bytes.Buffer
 	var overviewError bytes.Buffer
-	if code := cli.Run([]string{"db"}, &overview, &overviewError); code != 0 {
+	if code := runCLI([]string{"db"}, &overview, &overviewError); code != 0 {
 		t.Fatalf("overview code = %d; stderr = %q", code, overviewError.String())
 	}
 	for _, want := range []string{"Latra Embedded DB", "Capabilities:", "Commands:", "Rules:"} {
@@ -293,7 +305,7 @@ func TestRunDBOverviewAndCapabilityDetail(t *testing.T) {
 
 	var detail bytes.Buffer
 	var detailError bytes.Buffer
-	if code := cli.Run([]string{"db", "capabilities", "network-access"}, &detail, &detailError); code != 0 {
+	if code := runCLI([]string{"db", "capabilities", "network-access"}, &detail, &detailError); code != 0 {
 		t.Fatalf("detail code = %d; stderr = %q", code, detailError.String())
 	}
 	for _, want := range []string{"network-access", "curl [direct]", "command.curl-network"} {
@@ -308,7 +320,7 @@ func TestRunDBJSONReverseLookup(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"db", "commands", "--capability", "identity-change", "--format", "json"}, &stdout, &stderr)
+	code := runCLI([]string{"db", "commands", "--capability", "identity-change", "--format", "json"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
 	}
@@ -330,19 +342,34 @@ func TestRunDBJSONReverseLookup(t *testing.T) {
 	}
 }
 
+func TestRunDBOfficialWorkshopCommand(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := runCLI([]string{"db", "commands", "workshopctl"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
+	}
+	for _, want := range []string{"workshopctl", "Category: workshop-official", "Canonical Workshop in-environment control CLI."} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("output does not contain %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRunDBFileMatchesStandardOutput(t *testing.T) {
 	t.Parallel()
 
 	args := []string{"db", "commands", "curl", "--format=json"}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	if code := cli.Run(args, &stdout, &stderr); code != 0 {
+	if code := runCLI(args, &stdout, &stderr); code != 0 {
 		t.Fatalf("stdout code = %d; stderr = %q", code, stderr.String())
 	}
 	path := filepath.Join(t.TempDir(), "curl.json")
 	var fileStdout bytes.Buffer
 	var fileStderr bytes.Buffer
-	if code := cli.Run(append(args, "--output", path), &fileStdout, &fileStderr); code != 0 {
+	if code := runCLI(append(args, "--output", path), &fileStdout, &fileStderr); code != 0 {
 		t.Fatalf("file code = %d; stderr = %q", code, fileStderr.String())
 	}
 	content, err := os.ReadFile(path)
@@ -359,17 +386,17 @@ func TestRunDBRejectsInvalidQueries(t *testing.T) {
 
 	for _, args := range [][]string{{"db", "rules"}, {"db", "commands", "--command", "curl"}, {"db", "capabilities", "--capability", "network-access"}} {
 		var stdout, stderr bytes.Buffer
-		if code := cli.Run(args, &stdout, &stderr); code != 2 {
+		if code := runCLI(args, &stdout, &stderr); code != 2 {
 			t.Errorf("Run(%q) code = %d, want 2", args, code)
 		}
 	}
 	var stdout, stderr bytes.Buffer
-	if code := cli.Run([]string{"db", "commands", "not-in-latra-db"}, &stdout, &stderr); code != 1 {
+	if code := runCLI([]string{"db", "commands", "not-in-latra-db"}, &stdout, &stderr); code != 1 {
 		t.Errorf("missing command code = %d, want 1", code)
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := cli.Run([]string{"db", "commands", "--capability", "not-in-latra-db"}, &stdout, &stderr); code != 1 {
+	if code := runCLI([]string{"db", "commands", "--capability", "not-in-latra-db"}, &stdout, &stderr); code != 1 {
 		t.Errorf("missing capability filter code = %d, want 1", code)
 	}
 }
@@ -397,7 +424,7 @@ func TestRunScanDoesNotReplaceFileWhenHookParsingFails(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := cli.Run([]string{"scan", root, "--format", "json", "-o", outputPath}, &stdout, &stderr)
+	code := runCLI([]string{"scan", root, "--format", "json", "-o", outputPath}, &stdout, &stderr)
 	if code != 1 {
 		t.Errorf("code = %d, want 1", code)
 	}
@@ -410,5 +437,137 @@ func TestRunScanDoesNotReplaceFileWhenHookParsingFails(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunCatPrintsTextAndDescribesBinary(t *testing.T) {
+	t.Parallel()
+
+	cache := createCachedSDK(t, "rust", "latest/stable", "54")
+	writeCachedFile(t, filepath.Join(cache, "meta", "sdk.yaml"), "name: rust\n")
+	if err := os.WriteFile(filepath.Join(cache, "rustup"), []byte{'\x7f', 'E', 'L', 'F', 2, 1, 0}, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cacheRoot := filepath.Clean(filepath.Join(cache, "..", "..", "..", ".."))
+
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithCache([]string{"cat", "rust", "meta/sdk.yaml", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
+	if code != 0 || stdout.String() != "name: rust\n" || stderr.Len() != 0 {
+		t.Fatalf("text cat code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = runCLIWithCache([]string{"cat", "rust", "rustup", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("binary cat code=%d stderr=%q", code, stderr.String())
+	}
+	for _, want := range []string{"Binary file", "Type: ELF 64-bit LSB", "Size: 7 bytes", "SHA3-384:"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("binary output does not contain %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunHookResolvesWorkshopHookLayouts(t *testing.T) {
+	t.Parallel()
+
+	cache := createCachedSDK(t, "rust", "latest/stable", "54")
+	writeCachedFile(t, filepath.Join(cache, "sdk", "hooks", "check-health"), "#!/bin/bash\necho ok\n")
+	writeCachedFile(t, filepath.Join(cache, "hooks", "setup-base"), "#!/bin/bash\necho base\n")
+	cacheRoot := filepath.Clean(filepath.Join(cache, "..", "..", "..", ".."))
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithCache([]string{"hook", "rust", "check-health", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
+	if code != 0 || stdout.String() != "#!/bin/bash\necho ok\n" || stderr.Len() != 0 {
+		t.Fatalf("hook code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = runCLIWithCache([]string{"hook", "rust", "setup-base", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
+	if code != 0 || stdout.String() != "#!/bin/bash\necho base\n" {
+		t.Fatalf("short-layout hook code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCachedContentUsesWorkshopDeclaredChannel(t *testing.T) {
+	t.Parallel()
+
+	stable := createCachedSDK(t, "rust", "latest/stable", "54")
+	edge := createCachedSDKAtRoot(t, filepath.Clean(filepath.Join(stable, "..", "..", "..", "..")), "rust", "latest/edge", "55")
+	writeCachedFile(t, filepath.Join(stable, "sdk.yaml"), "name: stable\n")
+	writeCachedFile(t, filepath.Join(edge, "sdk.yaml"), "name: edge\n")
+	cacheRoot := filepath.Clean(filepath.Join(stable, "..", "..", "..", ".."))
+	project := t.TempDir()
+	writeCachedFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: rust\n    channel: latest/stable\n")
+	var stdout, stderr bytes.Buffer
+	if code := runCLIWithProject([]string{"cat", "rust", "sdk.yaml"}, cacheRoot, project, &stdout, &stderr); code != 0 || stdout.String() != "name: stable\n" {
+		t.Fatalf("declared channel code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := runCLIWithCache([]string{"cat", "rust", "sdk.yaml", "--channel", "latest/edge"}, cacheRoot, &stdout, &stderr); code != 0 || stdout.String() != "name: edge\n" {
+		t.Fatalf("selected code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCatAndHookReadProjectSDK(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	writeCachedFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: project-local\n")
+	writeCachedFile(t, filepath.Join(project, ".workshop", "local", "sdk.yaml"), "name: local\n")
+	writeCachedFile(t, filepath.Join(project, ".workshop", "local", "hooks", "check-health"), "echo project-ok\n")
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithCache([]string{"cat", "local", "sdk.yaml", "--project", project}, t.TempDir(), &stdout, &stderr)
+	if code != 0 || stdout.String() != "name: local\n" || stderr.Len() != 0 {
+		t.Fatalf("project cat code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = runCLIWithCache([]string{"hook", "local", "check-health", "--project=" + project}, t.TempDir(), &stdout, &stderr)
+	if code != 0 || stdout.String() != "echo project-ok\n" || stderr.Len() != 0 {
+		t.Fatalf("project hook code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCachedContentDoesNotFallBackToUndeclaredSDK(t *testing.T) {
+	t.Parallel()
+
+	cache := createCachedSDK(t, "go", "1.26/stable", "26")
+	writeCachedFile(t, filepath.Join(cache, "sdk.yaml"), "name: go\n")
+	cacheRoot := filepath.Clean(filepath.Join(cache, "..", "..", "..", ".."))
+	project := t.TempDir()
+	writeCachedFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\n")
+
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithProject([]string{"cat", "go", "sdk.yaml"}, cacheRoot, project, &stdout, &stderr)
+	if code != 1 || !strings.Contains(stderr.String(), "not declared by this Workshop project") {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
+func createCachedSDK(t *testing.T, name, channel, revision string) string {
+	t.Helper()
+	return createCachedSDKAtRoot(t, t.TempDir(), name, channel, revision)
+}
+
+func createCachedSDKAtRoot(t *testing.T, root, name, channel, revision string) string {
+	t.Helper()
+	directory := filepath.Join(root, name, filepath.FromSlash(channel), revision)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(directory+".sdk", []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return directory
+}
+
+func writeCachedFile(t *testing.T, name, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

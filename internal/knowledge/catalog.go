@@ -35,6 +35,8 @@ type Capability struct {
 
 type Command struct {
 	Name         string        `json:"name"`
+	Category     string        `json:"category,omitempty"`
+	Description  string        `json:"description,omitempty"`
 	Associations []Association `json:"associations,omitempty"`
 }
 
@@ -52,6 +54,9 @@ func Build(config *capabilityconfig.Config) Catalog {
 	commands := make(map[string]*Command)
 	for name, definition := range config.CapabilityDefinitions {
 		capabilities[name] = &Capability{Name: name, Description: definition.Description, Associations: []Association{}}
+	}
+	for name, definition := range config.CommandDefinitions {
+		commands[name] = &Command{Name: name, Category: definition.Category, Description: definition.Description, Associations: []Association{}}
 	}
 	add := func(command, capability, associationType string, ruleIDs ...string) {
 		association := Association{Capability: capability, Command: command, Type: associationType, RuleIDs: sortedUnique(ruleIDs)}

@@ -1,0 +1,7 @@
+name: fixture-sdk
+title: Latra E2E fixture SDK
+version: "1.0"
+summary: Exercises SDK Store resolution and hook analysis.
+base: ubuntu@24.04
+architecture: all
+license: MIT

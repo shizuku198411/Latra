@@ -1,6 +1,7 @@
 package source
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -41,7 +42,7 @@ type connection struct {
 	Slot string `yaml:"slot"`
 }
 
-func readProject(projectPath string, limits sdk.Limits) (*Result, error) {
+func readProject(ctx context.Context, projectPath string, limits sdk.Limits, resolver StoreResolver) (*Result, error) {
 	root, err := os.OpenRoot(projectPath)
 	if err != nil {
 		return nil, fmt.Errorf("open project: %w", err)
@@ -111,7 +112,11 @@ func readProject(projectPath string, limits sdk.Limits) (*Result, error) {
 				Plugs:      declaration.Plugs,
 				Slots:      declaration.Slots,
 			}
-			key := string(sourceType) + "\x00" + name + "\x00" + declaration.Channel + "\x00" + definition.Base
+			resolvedChannel := declaration.Channel
+			if sourceType == sdk.SourceStore && resolvedChannel == "" {
+				resolvedChannel = "stable"
+			}
+			key := string(sourceType) + "\x00" + name + "\x00" + resolvedChannel + "\x00" + definition.Base
 			if sourceType == sdk.SourceProject {
 				key = string(sourceType) + "\x00" + name
 			}
@@ -142,12 +147,32 @@ func readProject(projectPath string, limits sdk.Limits) (*Result, error) {
 				if resolved.Metadata.Base != "" && resolved.Metadata.Base != definition.Base {
 					return nil, fmt.Errorf("%s: SDK %q targets %q, required %q", relative, name, resolved.Metadata.Base, definition.Base)
 				}
+			} else if sourceType == sdk.SourceStore && resolver != nil {
+				resolved, err = resolver.Resolve(ctx, StoreRequest{
+					Name: name, Channel: resolvedChannel, Base: definition.Base,
+				}, limits)
+				if err != nil {
+					state := sdk.StateNotResolved
+					diagnostic := sdk.Diagnostic{
+						Code: "store-resolution-failed", Severity: sdk.SeverityError,
+						Phase: "resolve", Message: err.Error(),
+					}
+					var resolutionError *ResolutionError
+					if errors.As(err, &resolutionError) {
+						state = resolutionError.State
+						diagnostic = resolutionError.Diagnostic
+					}
+					resolved = &sdk.SDK{
+						Name: name, Source: sdk.SourceStore, State: state,
+						Channel: resolvedChannel, Diagnostics: []sdk.Diagnostic{diagnostic},
+					}
+				}
 			} else {
 				resolved = &sdk.SDK{
 					Name:    name,
 					Source:  sourceType,
 					State:   sdk.StateNotResolved,
-					Channel: declaration.Channel,
+					Channel: resolvedChannel,
 				}
 			}
 			resolved.Declarations = []sdk.Declaration{usage}

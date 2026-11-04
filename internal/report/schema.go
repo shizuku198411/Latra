@@ -1,10 +1,10 @@
 package report
 
 import (
-	"encoding/base64"
+	"crypto/sha3"
+	"encoding/hex"
 	"io/fs"
 	"sort"
-	"unicode/utf8"
 
 	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/buildinfo"
@@ -143,6 +143,7 @@ type SDK struct {
 	Declarations []sdk.Declaration   `json:"declarations"`
 	Files        []File              `json:"files"`
 	Hooks        []Hook              `json:"hooks"`
+	Diagnostics  []sdk.Diagnostic    `json:"diagnostics,omitempty"`
 }
 
 type File struct {
@@ -175,9 +176,14 @@ type Parse struct {
 }
 
 type DocumentDiagnostic struct {
-	SDK        string           `json:"sdk"`
-	Hook       sdk.HookName     `json:"hook"`
-	Diagnostic shell.Diagnostic `json:"diagnostic"`
+	SDK        string          `json:"sdk"`
+	Hook       sdk.HookName    `json:"hook,omitempty"`
+	Code       string          `json:"code"`
+	Severity   string          `json:"severity"`
+	Phase      string          `json:"phase,omitempty"`
+	Message    string          `json:"message"`
+	Location   *shell.Location `json:"location,omitempty"`
+	Incomplete bool            `json:"incomplete,omitempty"`
 }
 
 // NewDocument builds a deterministic report document from a scan result.
@@ -207,6 +213,13 @@ func NewDocument(result *source.Result) Document {
 			Declarations: append([]sdk.Declaration{}, item.Declarations...),
 			Files:        reportFiles(item.Files),
 			Hooks:        []Hook{},
+			Diagnostics:  append([]sdk.Diagnostic{}, item.Diagnostics...),
+		}
+		for _, diagnostic := range item.Diagnostics {
+			document.Diagnostics = append(document.Diagnostics, DocumentDiagnostic{
+				SDK: item.Name, Code: diagnostic.Code, Severity: string(diagnostic.Severity),
+				Phase: diagnostic.Phase, Message: diagnostic.Message,
+			})
 		}
 		sort.Slice(reported.Declarations, func(i, j int) bool {
 			if reported.Declarations[i].Workshop != reported.Declarations[j].Workshop {
@@ -227,8 +240,11 @@ func NewDocument(result *source.Result) Document {
 					Diagnostics: append([]shell.Diagnostic{}, hook.Parse.Diagnostics...),
 				}
 				for _, diagnostic := range hook.Parse.Diagnostics {
+					location := diagnostic.Location
 					document.Diagnostics = append(document.Diagnostics, DocumentDiagnostic{
-						SDK: item.Name, Hook: hook.Name, Diagnostic: diagnostic,
+						SDK: item.Name, Hook: hook.Name, Code: diagnostic.Code,
+						Severity: string(diagnostic.Severity), Message: diagnostic.Message,
+						Location: &location, Incomplete: diagnostic.Incomplete,
 					})
 				}
 			}
@@ -252,10 +268,20 @@ func NewDocument(result *source.Result) Document {
 		if left.Hook != right.Hook {
 			return left.Hook < right.Hook
 		}
-		if left.Diagnostic.Location.StartLine != right.Diagnostic.Location.StartLine {
-			return left.Diagnostic.Location.StartLine < right.Diagnostic.Location.StartLine
+		if left.Phase != right.Phase {
+			return left.Phase < right.Phase
 		}
-		return left.Diagnostic.Location.StartColumn < right.Diagnostic.Location.StartColumn
+		if left.Code != right.Code {
+			return left.Code < right.Code
+		}
+		leftLine, rightLine := 0, 0
+		if left.Location != nil {
+			leftLine = left.Location.StartLine
+		}
+		if right.Location != nil {
+			rightLine = right.Location.StartLine
+		}
+		return leftLine < rightLine
 	})
 	document.Summary = summarize(document)
 	return document
@@ -278,7 +304,7 @@ func summarize(document Document) Summary {
 	unresolvedSDKNames := make(map[string]struct{})
 	diagnosticCodes := make(map[string]int)
 	for _, diagnostic := range document.Diagnostics {
-		diagnosticCodes[diagnostic.Diagnostic.Code]++
+		diagnosticCodes[diagnostic.Code]++
 	}
 	for _, item := range document.SDKs {
 		if item.State == sdk.StateResolved {
@@ -432,7 +458,13 @@ func reportFiles(files []sdk.File) []File {
 			Digest: file.Digest, LinkTarget: file.LinkTarget,
 		}
 		if file.Type == sdk.FileRegular {
-			content, encoding := encodeContent(file.Content)
+			content, encoding := encodeContent(file.Content, file.Digest)
+			if file.Binary {
+				content, encoding = file.Digest, "sha3-384"
+			}
+			if item.Digest == "" && encoding == "sha3-384" {
+				item.Digest = content
+			}
 			item.Content = &content
 			item.ContentEncoding = encoding
 		}
@@ -441,9 +473,13 @@ func reportFiles(files []sdk.File) []File {
 	return reported
 }
 
-func encodeContent(content []byte) (string, string) {
-	if utf8.Valid(content) {
+func encodeContent(content []byte, digest string) (string, string) {
+	if sdk.IsTextContent(content) {
 		return string(content), "utf-8"
 	}
-	return base64.StdEncoding.EncodeToString(content), "base64"
+	if digest == "" {
+		sum := sha3.Sum384(content)
+		digest = "sha3-384:" + hex.EncodeToString(sum[:])
+	}
+	return digest, "sha3-384"
 }

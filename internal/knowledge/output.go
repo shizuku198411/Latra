@@ -147,6 +147,16 @@ func writeText(writer io.Writer, catalog Catalog, query Query) error {
 		if _, err := fmt.Fprintf(writer, "\n%s\n", command.Name); err != nil {
 			return err
 		}
+		if command.Category != "" {
+			if _, err := fmt.Fprintf(writer, "  Category: %s\n", command.Category); err != nil {
+				return err
+			}
+		}
+		if command.Description != "" {
+			if _, err := fmt.Fprintf(writer, "  %s\n", command.Description); err != nil {
+				return err
+			}
+		}
 		if len(command.Associations) > 0 {
 			if err := writeAssociations(writer, command.Associations, true); err != nil {
 				return err

@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/shizuku198411/Latra/internal/knowledge"
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
+	"github.com/shizuku198411/Latra/internal/sdkcache"
+	"github.com/shizuku198411/Latra/internal/sdkstore"
 	"github.com/shizuku198411/Latra/internal/shell"
 	"github.com/shizuku198411/Latra/internal/source"
 )
@@ -23,6 +26,27 @@ const (
 // Run executes the command using the supplied streams and returns a process exit code.
 // User-facing command output is written to stdout. Diagnostics are written to stderr.
 func Run(args []string, stdout, stderr io.Writer) int {
+	dependencies := Dependencies{CacheRoot: sdkcache.DefaultRoot}
+	if len(args) > 0 && args[0] == "scan" {
+		store, err := sdkstore.NewClient(sdkstore.Config{})
+		if err != nil {
+			fmt.Fprintf(stderr, "latra: initialize SDK Store client: %v\n", err)
+			return exitError
+		}
+		dependencies.StoreResolver = store
+	}
+	return RunWithDependencies(args, stdout, stderr, dependencies)
+}
+
+// Dependencies contains replaceable external services used by the CLI.
+type Dependencies struct {
+	StoreResolver    source.StoreResolver
+	CacheRoot        string
+	WorkingDirectory string
+}
+
+// RunWithDependencies executes the CLI with explicitly supplied external services.
+func RunWithDependencies(args []string, stdout, stderr io.Writer, dependencies Dependencies) int {
 	if len(args) == 0 {
 		writeUsage(stdout)
 		return exitOK
@@ -42,9 +66,13 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, buildinfo.Current().String())
 		return exitOK
 	case "scan":
-		return runScan(args[1:], stdout, stderr)
+		return runScan(args[1:], stdout, stderr, dependencies)
 	case "db":
 		return runDB(args[1:], stdout, stderr)
+	case "cat":
+		return runCat(args[1:], stdout, stderr, dependencies)
+	case "hook":
+		return runHook(args[1:], stdout, stderr, dependencies)
 	default:
 		return usageError(stderr, "unknown command %q", args[0])
 	}
@@ -146,21 +174,25 @@ func parseDBOptions(args []string) (dbOptions, error) {
 	return options, nil
 }
 
-func runScan(args []string, stdout, stderr io.Writer) int {
+func runScan(args []string, stdout, stderr io.Writer, dependencies Dependencies) int {
 	options, err := parseScanOptions(args)
 	if err != nil {
 		return usageError(stderr, "%v", err)
 	}
-	result, err := source.Scan(options.path, sdk.DefaultLimits())
+	progress := startScanProgress(stderr, !options.quiet && isTerminalWriter(stderr))
+	result, err := source.ScanWithResolver(context.Background(), options.path, sdk.DefaultLimits(), dependencies.StoreResolver)
 	if err != nil {
+		progress.stop(false)
 		fmt.Fprintf(stderr, "latra: scan failed: %v\n", err)
 		return exitError
 	}
 	parseErr := source.ParseHooks(result, shell.NewParser())
 	if parseErr != nil && options.output != "-" {
+		progress.stop(false)
 		fmt.Fprintf(stderr, "latra: scan incomplete: %v\n", parseErr)
 		return exitError
 	}
+	progress.stop(true)
 	if err := writeReport(options, stdout, result); err != nil {
 		fmt.Fprintf(stderr, "latra: write report: %v\n", err)
 		return exitError
@@ -261,6 +293,10 @@ Database:
   latra db capabilities [CAPABILITY] [--command COMMAND]
   latra db commands [COMMAND] [--capability CAPABILITY]
 
+SDK content:
+  latra cat <SDK> <FILE> [--project PATH|--channel CHANNEL] [--revision REVISION]
+  latra hook <SDK> <HOOK> [--project PATH|--channel CHANNEL] [--revision REVISION]
+
 Options:
   --format text|json  Report format (default: text)
   --output, -o PATH   Write report to PATH or stdout with - (default: -)
@@ -268,9 +304,16 @@ Options:
   --quiet             Suppress non-error status output
   --verbose           Include complete SDK, file, hook, and analysis details
 
+Content selection:
+  --project PATH      Resolve the SDK from PATH's Workshop definitions (default: .)
+  --channel CHANNEL   Override the Workshop-declared Store channel
+  --revision REVISION Select a cached revision within the resolved channel
+
 Commands:
   scan       Inspect a Workshop project or project SDK
   db         Inspect embedded capabilities, commands, and rules
+  cat        Print a cached SDK file or describe its binary format
+  hook       Print a cached SDK Workshop hook
   version    Print build version information
   help       Show this help`)
 }

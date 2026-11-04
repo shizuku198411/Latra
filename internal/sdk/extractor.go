@@ -26,10 +26,10 @@ type Limits struct {
 // DefaultLimits returns conservative initial bounds for project SDKs.
 func DefaultLimits() Limits {
 	return Limits{
-		MaxFiles:         10_000,
-		MaxFileSize:      16 << 20,
-		MaxTotalBytes:    128 << 20,
-		MaxRetainedBytes: 8 << 20,
+		MaxFiles:         25_000,
+		MaxFileSize:      512 << 20,
+		MaxTotalBytes:    2 << 30,
+		MaxRetainedBytes: 128 << 20,
 		MaxDepth:         64,
 	}
 }
@@ -228,7 +228,7 @@ func inventory(root *os.Root, limits Limits) ([]File, map[string][]byte, int64, 
 				remaining = 0
 			}
 			readLimit := min(limits.MaxFileSize, remaining)
-			digest, content, size, err := readRegular(root, entryPath, readLimit)
+			digest, content, size, binary, err := readRegular(root, entryPath, readLimit)
 			if err != nil {
 				var limitErr *LimitError
 				if errors.As(err, &limitErr) && readLimit == remaining && remaining < limits.MaxFileSize {
@@ -242,12 +242,15 @@ func inventory(root *os.Root, limits Limits) ([]File, map[string][]byte, int64, 
 			totalBytes += size
 			file.Size = size
 			file.Digest = digest
-			retainedBytes += int64(len(content))
-			if retainedBytes > limits.MaxRetainedBytes {
-				return resourceError(entryPath, "retained-bytes", limits.MaxRetainedBytes, retainedBytes)
+			file.Binary = binary
+			if !file.Binary {
+				retainedBytes += int64(len(content))
+				if retainedBytes > limits.MaxRetainedBytes {
+					return resourceError(entryPath, "retained-bytes", limits.MaxRetainedBytes, retainedBytes)
+				}
+				file.Content = content
+				contents[entryPath] = content
 			}
-			file.Content = content
-			contents[entryPath] = content
 		case FileSymlink:
 			target, err := root.Readlink(entryPath)
 			if err != nil {
@@ -271,25 +274,68 @@ func inventory(root *os.Root, limits Limits) ([]File, map[string][]byte, int64, 
 	return files, contents, totalBytes, nil
 }
 
-func readRegular(root *os.Root, name string, limit int64) (string, []byte, int64, error) {
+func readRegular(root *os.Root, name string, limit int64) (string, []byte, int64, bool, error) {
 	file, err := root.Open(name)
 	if err != nil {
-		return "", nil, 0, wrap(CodeFilesystem, name, err)
+		return "", nil, 0, false, wrap(CodeFilesystem, name, err)
 	}
 	defer file.Close()
 
 	hasher := sha3.New384()
-	var builder strings.Builder
-	writer := io.MultiWriter(hasher, &builder)
-	written, err := io.Copy(writer, io.LimitReader(file, limit+1))
+	const sampleSize int64 = 64 << 10
+	sample, err := io.ReadAll(io.LimitReader(file, min(sampleSize, limit+1)))
 	if err != nil {
-		return "", nil, written, wrap(CodeFilesystem, name, err)
+		return "", nil, 0, false, wrap(CodeFilesystem, name, err)
+	}
+	written := int64(len(sample))
+	if written > limit {
+		return "", nil, written, false, resourceError(name, "single-file-bytes", limit, written)
+	}
+	if _, err := hasher.Write(sample); err != nil {
+		return "", nil, written, false, wrap(CodeFilesystem, name, err)
+	}
+	if !isTextSample(sample) {
+		copied, err := io.Copy(hasher, io.LimitReader(file, limit-written+1))
+		written += copied
+		if err != nil {
+			return "", nil, written, true, wrap(CodeFilesystem, name, err)
+		}
+		if written > limit {
+			return "", nil, written, true, resourceError(name, "single-file-bytes", limit, written)
+		}
+		return formatDigest(hasher), nil, written, true, nil
+	}
+
+	var builder strings.Builder
+	builder.Write(sample)
+	writer := io.MultiWriter(hasher, &builder)
+	copied, err := io.Copy(writer, io.LimitReader(file, limit-written+1))
+	written += copied
+	if err != nil {
+		return "", nil, written, false, wrap(CodeFilesystem, name, err)
 	}
 	if written > limit {
-		return "", nil, written, resourceError(name, "single-file-bytes", limit, written)
+		return "", nil, written, false, resourceError(name, "single-file-bytes", limit, written)
 	}
 	content := []byte(builder.String())
-	return formatDigest(hasher), content, written, nil
+	binary := !IsTextContent(content)
+	if binary {
+		content = nil
+	}
+	return formatDigest(hasher), content, written, binary, nil
+}
+
+func isTextSample(content []byte) bool {
+	if IsTextContent(content) {
+		return true
+	}
+	// A bounded sample can end in the middle of a valid UTF-8 sequence.
+	for trim := 1; trim <= 3 && trim < len(content); trim++ {
+		if IsTextContent(content[:len(content)-trim]) {
+			return true
+		}
+	}
+	return false
 }
 
 func classify(mode fs.FileMode) FileType {

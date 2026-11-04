@@ -1,14 +1,29 @@
 package source_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/source"
 )
+
+type fakeStoreResolver struct {
+	requests []source.StoreRequest
+	err      error
+}
+
+func (resolver *fakeStoreResolver) Resolve(_ context.Context, request source.StoreRequest, _ sdk.Limits) (*sdk.SDK, error) {
+	resolver.requests = append(resolver.requests, request)
+	if resolver.err != nil {
+		return nil, resolver.err
+	}
+	return &sdk.SDK{Name: request.Name, Source: sdk.SourceStore, State: sdk.StateResolved, Channel: "latest/stable"}, nil
+}
 
 func TestScanProject(t *testing.T) {
 	t.Parallel()
@@ -61,6 +76,38 @@ func TestScanProjectSDKDirectly(t *testing.T) {
 	}
 }
 
+func TestResolveSDKReferenceUsesDeclaredChannel(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	writeSourceFile(t, filepath.Join(project, ".workshop", "dev.yaml"), `
+name: dev
+base: ubuntu@24.04
+sdks:
+  - name: go
+    channel: 1.26/stable
+`)
+	reference, err := source.ResolveSDKReference(project, "go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reference.Source != sdk.SourceStore || reference.Channel != "1.26/stable" ||
+		len(reference.Definitions) != 1 || reference.Definitions[0] != ".workshop/dev.yaml" {
+		t.Fatalf("reference = %#v", reference)
+	}
+}
+
+func TestResolveSDKReferenceRejectsConflictingChannels(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	writeSourceFile(t, filepath.Join(project, ".workshop", "one.yaml"), "name: one\nbase: ubuntu@24.04\nsdks:\n  - name: go\n    channel: 1.26/stable\n")
+	writeSourceFile(t, filepath.Join(project, ".workshop", "two.yaml"), "name: two\nbase: ubuntu@24.04\nsdks:\n  - name: go\n    channel: 1.27/stable\n")
+	if _, err := source.ResolveSDKReference(project, "go"); err == nil || !strings.Contains(err.Error(), "conflicting Workshop declarations") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestScanDeduplicatesSharedProjectSDK(t *testing.T) {
 	t.Parallel()
 
@@ -97,6 +144,49 @@ func TestScanKeepsStorePlatformsSeparate(t *testing.T) {
 	}
 	if result.SDKs[0].Declarations[0].Base == result.SDKs[1].Declarations[0].Base {
 		t.Fatalf("store SDK bases were merged: %#v", result.SDKs)
+	}
+}
+
+func TestScanWithResolverResolvesStoreSDK(t *testing.T) {
+	project := t.TempDir()
+	writeSourceFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: rust\n")
+	resolver := &fakeStoreResolver{}
+	result, err := source.ScanWithResolver(context.Background(), project, sdk.DefaultLimits(), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved := findSDK(t, result, "rust")
+	if resolved.State != sdk.StateResolved || resolved.Source != sdk.SourceStore {
+		t.Fatalf("Store SDK was not resolved: %#v", resolved)
+	}
+	if len(resolver.requests) != 1 || resolver.requests[0] != (source.StoreRequest{Name: "rust", Channel: "stable", Base: "ubuntu@24.04"}) {
+		t.Fatalf("resolve requests = %#v", resolver.requests)
+	}
+	if len(resolved.Declarations) != 1 || resolved.Declarations[0].Workshop != "dev" {
+		t.Fatalf("declarations were not retained: %#v", resolved.Declarations)
+	}
+}
+
+func TestScanWithResolverKeepsProjectResultsWhenStoreResolutionFails(t *testing.T) {
+	project := t.TempDir()
+	writeSourceFile(t, filepath.Join(project, ".workshop", "local", "sdk.yaml"), "name: local\n")
+	writeSourceFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: rust\n  - name: project-local\n")
+	resolver := &fakeStoreResolver{err: &source.ResolutionError{
+		State:      sdk.StateDownloadFailed,
+		Diagnostic: sdk.Diagnostic{Code: "store-download-failed", Severity: sdk.SeverityError, Phase: "download", Message: "service unavailable"},
+		Err:        errors.New("service unavailable"),
+	}}
+	result, err := source.ScanWithResolver(context.Background(), project, sdk.DefaultLimits(), resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	storeSDK := findSDK(t, result, "rust")
+	if storeSDK.State != sdk.StateDownloadFailed || len(storeSDK.Diagnostics) != 1 || storeSDK.Diagnostics[0].Code != "store-download-failed" {
+		t.Fatalf("failed Store SDK = %#v", storeSDK)
+	}
+	projectSDK := findSDK(t, result, "local")
+	if projectSDK.State != sdk.StateResolved {
+		t.Fatalf("project SDK was not retained: %#v", projectSDK)
 	}
 }
 

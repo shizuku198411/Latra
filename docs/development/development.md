@@ -46,10 +46,13 @@ $ workshop run dev -- format-check
 $ workshop run dev -- vet
 $ workshop run dev -- test
 $ workshop run dev -- check
+$ workshop run dev -- e2e
 $ workshop run dev -- build
 ```
 
 Use `check` before opening a pull request. It checks formatting, runs `go vet`, and executes the complete test suite.
+
+Use `e2e` to build the Latra binary and run the SDK Store workflow against the loopback-only Python mock Store under `testdata/e2e/`. The action does not contact the production SDK Store.
 
 The `build` action writes the development binary to `build/latra`. Run the current source without relying on a host toolchain through the `latra` action:
 
@@ -71,6 +74,12 @@ $ workshop shell dev
 ```
 
 The repository is mounted at `/project` and changes made there are reflected on the host checkout.
+
+## Command database changes
+
+See [Command database development](command-database.md) when adding known commands, capability mappings, match rules, or path classifications under `internal/capabilityconfig/default/`.
+
+See [JSON report schema](json-schema.md) when changing report fields, JSON tags, enums, compact output, or verbose output.
 
 ## Dependency changes
 
@@ -94,4 +103,3 @@ $ workshop run dev -- check
 ```
 
 If the definition or SDK revision changed, use `workshop refresh dev`. Inspect failures with `workshop changes`, `workshop tasks`, and `workshop info dev`.
-

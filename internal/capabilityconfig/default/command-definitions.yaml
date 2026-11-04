@@ -1,0 +1,124 @@
+command-definitions:
+  "[":
+    category: shell-builtin
+    description: POSIX test shell builtin.
+
+  echo:
+    category: shell-builtin
+    description: Shell builtin that writes its arguments.
+
+  exit:
+    category: shell-builtin
+    description: Shell builtin that terminates the current shell.
+
+  printf:
+    category: shell-builtin
+    description: Shell builtin that writes formatted output.
+
+  read:
+    category: shell-builtin
+    description: Shell builtin that reads input into variables.
+
+  set:
+    category: shell-builtin
+    description: Shell builtin that changes shell options or positional parameters.
+
+  true:
+    category: shell-builtin
+    description: Shell builtin that returns a successful status.
+
+  add-apt-repository:
+    category: system-utility
+    description: Ubuntu utility for managing APT repositories.
+
+  addgroup:
+    category: system-utility
+    description: Debian utility for adding system groups.
+
+  adduser:
+    category: system-utility
+    description: Debian utility for adding users to the system or to groups.
+
+  cut:
+    category: system-utility
+    description: Utility for selecting fields or character ranges from text.
+
+  dpkg-query:
+    category: system-utility
+    description: Debian utility for querying the package database.
+
+  dpkg-divert:
+    category: system-utility
+    description: Debian utility for managing package file diversions.
+
+  eatmydata:
+    category: system-utility
+    description: Utility for running commands with durability operations disabled.
+
+  gpg:
+    category: system-utility
+    description: OpenPGP encryption and signing utility.
+
+  ldconfig:
+    category: system-utility
+    description: System utility for updating the shared-library cache and links.
+
+  jq:
+    category: system-utility
+    description: Command-line JSON processor.
+
+  sed:
+    category: system-utility
+    description: Stream editor for transforming text.
+
+  sleep:
+    category: system-utility
+    description: Utility that delays execution for a specified duration.
+
+  tar:
+    category: system-utility
+    description: Archive creation and extraction utility.
+
+  update-alternatives:
+    category: system-utility
+    description: Debian utility for managing command alternatives.
+
+  which:
+    category: system-utility
+    description: Utility for locating a command on PATH.
+
+  corepack:
+    category: sdk-tool
+    description: Node.js package-manager version manager.
+
+  docker:
+    category: sdk-tool
+    description: Docker container CLI.
+
+  github-runner:
+    category: sdk-tool
+    description: GitHub Actions runner management command supplied by the SDK.
+
+  nvcc:
+    category: sdk-tool
+    description: NVIDIA CUDA compiler driver.
+
+  nvidia-smi:
+    category: sdk-tool
+    description: NVIDIA system management interface command.
+
+  rocminfo:
+    category: sdk-tool
+    description: AMD ROCm system information command.
+
+  rustup:
+    category: sdk-tool
+    description: Rust toolchain installer and version manager.
+
+  workshop:
+    category: workshop-official
+    description: Canonical Workshop user CLI.
+
+  workshopctl:
+    category: workshop-official
+    description: Canonical Workshop in-environment control CLI.

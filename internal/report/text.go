@@ -39,7 +39,10 @@ func WriteText(writer io.Writer, result *source.Result) error {
 			return err
 		}
 	}
-	return writeSummary(writer, document.Summary)
+	if err := writeSummary(writer, document.Summary, false); err != nil {
+		return err
+	}
+	return writeDocumentDiagnostics(writer, document.Diagnostics)
 }
 
 // WriteTextSummary renders input, Workshop definitions, and the summary only.
@@ -58,10 +61,13 @@ func WriteTextSummary(writer io.Writer, result *source.Result) error {
 			}
 		}
 	}
-	return writeSummary(writer, document.Summary)
+	if err := writeSummary(writer, document.Summary, true); err != nil {
+		return err
+	}
+	return writeDocumentDiagnostics(writer, document.Diagnostics)
 }
 
-func writeSummary(writer io.Writer, summary Summary) error {
+func writeSummary(writer io.Writer, summary Summary, compactFiles bool) error {
 	if _, err := fmt.Fprintf(writer, "\nSummary\n  SDKs: %d (%d resolved, %d unresolved)\n    Resolved: %s\n    Unresolved: %s\n",
 		summary.SDKs.Count, summary.SDKs.Resolved, summary.SDKs.Unresolved,
 		formatSummaryItems(summary.SDKs.SDKNames.Resolved),
@@ -72,7 +78,16 @@ func writeSummary(writer io.Writer, summary Summary) error {
 		return err
 	}
 	for _, item := range summary.Files.BySDK {
-		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatSummaryItems(item.FilePaths)); err != nil {
+		filePaths := item.FilePaths
+		omitted := 0
+		if compactFiles {
+			filePaths, omitted = compactSummaryFiles(item.FilePaths, item.Count)
+		}
+		formatted := formatSummaryItems(filePaths)
+		if omitted > 0 {
+			formatted += fmt.Sprintf(", ... and more files (%d)", omitted)
+		}
+		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatted); err != nil {
 			return err
 		}
 	}
@@ -117,6 +132,36 @@ func writeSummary(writer io.Writer, summary Summary) error {
 	return err
 }
 
+func compactSummaryFiles(filePaths []string, total int) ([]string, int) {
+	selected := make([]string, 0, len(filePaths))
+	for _, filePath := range filePaths {
+		if filePath == "sdk.yaml" || filePath == "meta/sdk.yaml" || isHookPath(filePath) {
+			selected = append(selected, filePath)
+		}
+	}
+	omitted := total - len(selected)
+	if omitted < 0 {
+		omitted = 0
+	}
+	return selected, omitted
+}
+
+func isHookPath(filePath string) bool {
+	prefix := "hooks/"
+	if strings.HasPrefix(filePath, "sdk/hooks/") {
+		prefix = "sdk/hooks/"
+	} else if !strings.HasPrefix(filePath, prefix) {
+		return false
+	}
+	name := strings.TrimPrefix(filePath, prefix)
+	for _, hookName := range sdk.HookNames {
+		if name == string(hookName) {
+			return true
+		}
+	}
+	return false
+}
+
 func formatCountedItems(items []CountedName) string {
 	if len(items) == 0 {
 		return "-"
@@ -144,7 +189,13 @@ func writeSDK(writer io.Writer, item SDK) error {
 			return err
 		}
 	}
-	if item.State == sdk.StateNotResolved {
+	for _, diagnostic := range item.Diagnostics {
+		if _, err := fmt.Fprintf(writer, "    Diagnostic: [%s] %s (%s): %s\n",
+			diagnostic.Severity, diagnostic.Code, diagnostic.Phase, diagnostic.Message); err != nil {
+			return err
+		}
+	}
+	if item.State != sdk.StateResolved {
 		return nil
 	}
 	if _, err := fmt.Fprintf(writer, "    Digest: %s\n    Metadata: %s\n", item.Digest, item.MetadataPath); err != nil {
@@ -188,6 +239,30 @@ func writeSDK(writer io.Writer, item SDK) error {
 	}
 	for _, hook := range item.Hooks {
 		if err := writeHook(writer, hook); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeDocumentDiagnostics(writer io.Writer, diagnostics []DocumentDiagnostic) error {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(writer, "\nDiagnostics"); err != nil {
+		return err
+	}
+	for _, diagnostic := range diagnostics {
+		context := diagnostic.SDK
+		if diagnostic.Hook != "" {
+			context += "/" + string(diagnostic.Hook)
+		}
+		phase := ""
+		if diagnostic.Phase != "" {
+			phase = " (" + diagnostic.Phase + ")"
+		}
+		if _, err := fmt.Fprintf(writer, "  %s: [%s] %s%s: %s\n",
+			context, diagnostic.Severity, diagnostic.Code, phase, diagnostic.Message); err != nil {
 			return err
 		}
 	}

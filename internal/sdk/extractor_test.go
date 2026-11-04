@@ -48,12 +48,46 @@ func TestReadSupportedLayouts(t *testing.T) {
 				if file.Type == sdk.FileRegular && file.Digest == "" {
 					t.Errorf("regular file %q has no digest", file.Path)
 				}
-				if file.Type == sdk.FileRegular && int64(len(file.Content)) != file.Size {
+				if file.Type == sdk.FileRegular && !file.Binary && int64(len(file.Content)) != file.Size {
 					t.Errorf("regular file %q retained %d bytes, want %d", file.Path, len(file.Content), file.Size)
+				}
+				if file.Binary && len(file.Content) != 0 {
+					t.Errorf("binary file %q retained %d bytes", file.Path, len(file.Content))
 				}
 			}
 		})
 	}
+}
+
+func TestReadLargeBinaryHashesWithoutRetainingContent(t *testing.T) {
+	t.Parallel()
+
+	sdkDir := filepath.Join(t.TempDir(), "large-binary")
+	writeFile(t, filepath.Join(sdkDir, "sdk.yaml"), "name: large-binary\n")
+	binaryPath := filepath.Join(sdkDir, "bin", "tool")
+	if err := os.MkdirAll(filepath.Dir(binaryPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binaryPath, []byte{0}, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(binaryPath, 17<<20); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := sdk.Read(sdkDir, "large-binary", sdk.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range resolved.Files {
+		if file.Path != "bin/tool" {
+			continue
+		}
+		if !file.Binary || len(file.Content) != 0 || file.Digest == "" || file.Size != 17<<20 {
+			t.Fatalf("large binary = %#v", file)
+		}
+		return
+	}
+	t.Fatal("large binary was not inventoried")
 }
 
 func TestReadDigestIsDeterministic(t *testing.T) {

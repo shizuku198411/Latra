@@ -23,6 +23,12 @@ func TestEmbeddedDefaultIsValid(t *testing.T) {
 	if len(config.CapabilityDefinitions) == 0 || len(config.FileCommandRules) == 0 {
 		t.Errorf("embedded capability knowledge is incomplete: %#v", config)
 	}
+	for _, command := range []string{"workshop", "workshopctl"} {
+		definition, ok := config.CommandDefinitions[command]
+		if !ok || definition.Category != "workshop-official" {
+			t.Errorf("command definition %q = %#v, present = %t", command, definition, ok)
+		}
+	}
 }
 
 func TestEmbeddedDefaultFragmentLayout(t *testing.T) {
@@ -33,20 +39,20 @@ func TestEmbeddedDefaultFragmentLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := map[string]bool{
-		"README.md":              true,
-		"capabilities.yaml":      true,
-		"commands-core.yaml":     true,
-		"commands-network.yaml":  true,
-		"commands-runtime.yaml":  true,
-		"commands-system.yaml":   true,
-		"files.yaml":             true,
-		"interpreters.yaml":      true,
-		"operations.yaml":        true,
-		"path-capabilities.yaml": true,
-		"path-classes.yaml":      true,
-		"targets.yaml":           true,
-		"uploads.yaml":           true,
-		"wrappers.yaml":          true,
+		"capabilities.yaml":        true,
+		"commands-core.yaml":       true,
+		"commands-network.yaml":    true,
+		"command-definitions.yaml": true,
+		"commands-runtime.yaml":    true,
+		"commands-system.yaml":     true,
+		"files.yaml":               true,
+		"interpreters.yaml":        true,
+		"operations.yaml":          true,
+		"path-capabilities.yaml":   true,
+		"path-classes.yaml":        true,
+		"targets.yaml":             true,
+		"uploads.yaml":             true,
+		"wrappers.yaml":            true,
 	}
 	if len(entries) != len(expected) {
 		t.Fatalf("fragment count = %d, want %d", len(entries), len(expected))

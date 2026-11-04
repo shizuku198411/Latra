@@ -22,9 +22,29 @@ const (
 type ResolutionState string
 
 const (
-	StateResolved    ResolutionState = "Resolved"
-	StateNotResolved ResolutionState = "NotResolved"
+	StateResolved            ResolutionState = "Resolved"
+	StateNotResolved         ResolutionState = "NotResolved"
+	StateDownloadFailed      ResolutionState = "DownloadFailed"
+	StateDigestMismatch      ResolutionState = "DigestMismatch"
+	StateUnsupportedPlatform ResolutionState = "UnsupportedPlatform"
+	StateInvalidArtifact     ResolutionState = "InvalidArtifact"
 )
+
+// DiagnosticSeverity classifies inventory completeness diagnostics.
+type DiagnosticSeverity string
+
+const (
+	SeverityWarning DiagnosticSeverity = "warning"
+	SeverityError   DiagnosticSeverity = "error"
+)
+
+// Diagnostic records why an SDK could not be completely resolved or analyzed.
+type Diagnostic struct {
+	Code     string             `json:"code"`
+	Severity DiagnosticSeverity `json:"severity"`
+	Phase    string             `json:"phase,omitempty"`
+	Message  string             `json:"message"`
+}
 
 // HookName is a Workshop lifecycle hook recognized by Latra.
 type HookName string
@@ -98,6 +118,7 @@ type File struct {
 	Digest     string      `json:"digest,omitempty"`
 	LinkTarget string      `json:"linkTarget,omitempty"`
 	Content    []byte      `json:"-"`
+	Binary     bool        `json:"-"`
 }
 
 // Hook contains the source retained for later AST parsing.
@@ -124,4 +145,5 @@ type SDK struct {
 	Files        []File          `json:"files,omitempty"`
 	Digest       string          `json:"digest,omitempty"`
 	Declarations []Declaration   `json:"declarations,omitempty"`
+	Diagnostics  []Diagnostic    `json:"diagnostics,omitempty"`
 }
