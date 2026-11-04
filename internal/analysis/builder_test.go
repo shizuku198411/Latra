@@ -167,7 +167,7 @@ func TestKnownCommandCoverage(t *testing.T) {
 		"workshop", "/snap/bin/workshopctl", "[", "echo", "exit", "printf", "read", "set", "true",
 		"add-apt-repository", "addgroup", "adduser", "cut", "dpkg-divert", "dpkg-query",
 		"eatmydata", "gpg", "jq", "ldconfig", "sed", "sleep", "tar", "update-alternatives", "which",
-		"corepack", "docker", "github-runner", "nvcc", "nvidia-smi", "rocminfo", "rustup",
+		"corepack", "docker", "dotnet", "github-runner", "nvcc", "nvidia-smi", "rocminfo", "rustup",
 	} {
 		if !analysis.IsKnownCommand(analysis.Value{Resolution: analysis.Resolved, Literal: command}) {
 			t.Errorf("%s should be covered by the official Workshop command definitions", command)

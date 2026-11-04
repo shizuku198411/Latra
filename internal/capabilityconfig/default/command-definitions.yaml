@@ -95,6 +95,10 @@ command-definitions:
     category: sdk-tool
     description: Docker container CLI.
 
+  dotnet:
+    category: sdk-tool
+    description: .NET SDK command-line interface.
+
   github-runner:
     category: sdk-tool
     description: GitHub Actions runner management command supplied by the SDK.
