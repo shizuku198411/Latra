@@ -35,6 +35,12 @@ actions:
 
   build: |
     mkdir -p build
-    go build -trimpath -o build/latra ./cmd/latra
+    version="$(git describe --tags --exact-match 2>/dev/null || printf 'dev')"
+    commit="$(git rev-parse --short=12 HEAD)"
+    build_date="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    ldflags="-X github.com/shizuku198411/Latra/internal/buildinfo.Version=$version"
+    ldflags="$ldflags -X github.com/shizuku198411/Latra/internal/buildinfo.Commit=$commit"
+    ldflags="$ldflags -X github.com/shizuku198411/Latra/internal/buildinfo.BuildDate=$build_date"
+    go build -trimpath -ldflags "$ldflags" -o build/latra ./cmd/latra
 
   latra: go run ./cmd/latra "$@"

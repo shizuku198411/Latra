@@ -26,6 +26,32 @@ Latra is an independent project and is not affiliated with or endorsed by Canoni
 
 ## Quick Start
 
+### Build and install
+
+Build Latra inside the Workshop environment and install the resulting binary
+on the host:
+
+```bash
+./scripts/install.sh
+```
+
+The installation script runs `workshop run -- build` before installing the
+binary.
+
+The installer places Latra in `~/.local/bin` by default. To use another
+directory, set `LATRA_INSTALL_DIR` for both installation and removal:
+
+```bash
+LATRA_INSTALL_DIR=/path/to/bin ./scripts/install.sh
+LATRA_INSTALL_DIR=/path/to/bin ./scripts/uninstall.sh
+```
+
+Remove the default installation with:
+
+```bash
+./scripts/uninstall.sh
+```
+
 Run Latra from the root of a Workshop project.
 
 ### Scan the project
