@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ import (
 
 const (
 	DefaultServerURL = "https://api.pkg.store"
-	DefaultCacheDir  = "/tmp/latra_cache"
+	DefaultCacheDir  = "/tmp/latra/cache"
 	maxArchiveBytes  = int64(256 << 20)
 )
 
@@ -226,7 +227,11 @@ func (c *Client) resolve(ctx context.Context, request source.StoreRequest) (reso
 	if download.Size > maxArchiveBytes {
 		return resolvedArchive{}, fmt.Errorf("SDK archive exceeds %d bytes", maxArchiveBytes)
 	}
-	return resolvedArchive{Name: request.Name, PackageID: best.ID, Channel: best.Result.Channel.Effective,
+	effectiveChannel := best.Result.Channel.Effective
+	if effectiveChannel == "" {
+		effectiveChannel = channel
+	}
+	return resolvedArchive{Name: request.Name, PackageID: best.ID, Channel: effectiveChannel,
 		Revision: best.Result.Revision.Revision, Digest: strings.ToLower(download.Digest), Size: download.Size}, nil
 }
 
@@ -267,41 +272,74 @@ func (c *Client) endpoint(parts ...string) string {
 }
 
 func (c *Client) materialize(ctx context.Context, archive resolvedArchive, limits sdk.Limits) (string, error) {
-	archiveDir := filepath.Join(c.cacheDir, "archives")
-	extractDir := filepath.Join(c.cacheDir, "sdks", archive.Digest)
-	archivePath := filepath.Join(archiveDir, archive.Digest+".sdk")
-	if info, err := os.Stat(extractDir); err == nil && info.IsDir() {
-		return extractDir, nil
+	if err := sdk.ValidateName(archive.Name); err != nil {
+		return "", fmt.Errorf("invalid SDK cache name: %w", err)
 	}
-	if err := os.MkdirAll(archiveDir, 0o700); err != nil {
+	if err := sdk.ValidateChannel(archive.Channel); err != nil {
+		return "", fmt.Errorf("invalid SDK cache channel: %w", err)
+	}
+	channelDir := filepath.Join(c.cacheDir, archive.Name, filepath.FromSlash(archive.Channel))
+	extractDir := filepath.Join(channelDir, strconv.Itoa(archive.Revision))
+	archivePath := extractDir + ".sdk"
+	if info, err := os.Stat(extractDir); err == nil && info.IsDir() {
+		if file, openErr := os.Open(archivePath); openErr == nil {
+			verifyErr := verifyArchive(file, archive)
+			file.Close()
+			if verifyErr == nil {
+				return extractDir, nil
+			}
+		}
+	}
+	if err := os.MkdirAll(channelDir, 0o700); err != nil {
 		return "", err
 	}
 	if err := c.download(ctx, archive, archivePath); err != nil {
 		return "", err
 	}
-	temporary, err := os.MkdirTemp(filepath.Join(c.cacheDir, "sdks"), ".extract-")
+	temporary, err := os.MkdirTemp(channelDir, ".extract-")
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			if err := os.MkdirAll(filepath.Join(c.cacheDir, "sdks"), 0o700); err != nil {
-				return "", err
-			}
-			temporary, err = os.MkdirTemp(filepath.Join(c.cacheDir, "sdks"), ".extract-")
-		}
-		if err != nil {
-			return "", err
-		}
+		return "", err
 	}
 	defer os.RemoveAll(temporary)
 	if err := extractArchive(archivePath, temporary, limits); err != nil {
 		return "", resolutionFailure(sdk.StateInvalidArtifact, "store-artifact-extraction-failed", "extract", err)
 	}
-	if err := os.Rename(temporary, extractDir); err != nil {
-		if info, statErr := os.Stat(extractDir); statErr == nil && info.IsDir() {
-			return extractDir, nil
-		}
+	if err := replaceExtractedCache(temporary, extractDir); err != nil {
 		return "", err
 	}
 	return extractDir, nil
+}
+
+func replaceExtractedCache(source, target string) error {
+	if _, err := os.Stat(target); errors.Is(err, os.ErrNotExist) {
+		return os.Rename(source, target)
+	} else if err != nil {
+		return err
+	}
+
+	placeholder, err := os.CreateTemp(filepath.Dir(target), ".stale-")
+	if err != nil {
+		return err
+	}
+	stale := placeholder.Name()
+	if err := placeholder.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(stale); err != nil {
+		return err
+	}
+	if err := os.Rename(target, stale); err != nil {
+		return err
+	}
+	if err := os.Rename(source, target); err != nil {
+		if _, statErr := os.Stat(target); statErr == nil {
+			_ = os.RemoveAll(stale)
+			return nil
+		}
+		_ = os.Rename(stale, target)
+		return err
+	}
+	return os.RemoveAll(stale)
 }
 
 func (c *Client) download(ctx context.Context, archive resolvedArchive, target string) error {

@@ -85,6 +85,85 @@ func TestResolveDownloadsExtractsAndAnalyzesStoreSDK(t *testing.T) {
 	}
 }
 
+func TestResolveReusesCacheAndRefreshesRevisionOrDigest(t *testing.T) {
+	cacheRoot := filepath.Join(t.TempDir(), "latra", "cache")
+	currentRevision := 42
+	currentArchive := testArchive(t, map[string]string{
+		"meta/sdk.yaml":        "name: rust\nbase: ubuntu@24.04\n",
+		"sdk/hooks/setup-base": "echo first\n",
+	})
+	downloads := 0
+	resolves := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v2/revisions/resolve", func(writer http.ResponseWriter, request *http.Request) {
+		resolves++
+		digest := sha3.Sum384(currentArchive)
+		writer.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(writer).Encode(map[string]any{"package-results": []any{
+			map[string]any{"instance-key": "latra-0", "status": "ok", "name": "rust", "id": "package-id", "result": map[string]any{
+				"channel": map[string]any{"effective-channel": "latest/stable"},
+				"revision": map[string]any{
+					"revision": currentRevision,
+					"download": map[string]any{"size": len(currentArchive), "sha3-384": hex.EncodeToString(digest[:])},
+				},
+			}},
+		}})
+	})
+	mux.HandleFunc("/api/v1/sdks/download/", func(writer http.ResponseWriter, request *http.Request) {
+		downloads++
+		writer.Write(currentArchive)
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client, err := NewClient(Config{BaseURL: server.URL, CacheDir: cacheRoot, Architecture: "amd64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := source.StoreRequest{Name: "rust", Channel: "latest/stable", Base: "ubuntu@24.04"}
+
+	first, err := client.Resolve(context.Background(), request, sdk.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRoot42 := filepath.Join(cacheRoot, "rust", "latest", "stable", "42")
+	if first.Root != wantRoot42 || downloads != 1 {
+		t.Fatalf("first resolve root=%q downloads=%d, want root=%q downloads=1", first.Root, downloads, wantRoot42)
+	}
+	second, err := client.Resolve(context.Background(), request, sdk.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Root != wantRoot42 || downloads != 1 || resolves != 2 {
+		t.Fatalf("cache reuse root=%q downloads=%d resolves=%d", second.Root, downloads, resolves)
+	}
+
+	currentRevision = 43
+	currentArchive = testArchive(t, map[string]string{
+		"meta/sdk.yaml":        "name: rust\nbase: ubuntu@24.04\n",
+		"sdk/hooks/setup-base": "echo second\n",
+	})
+	third, err := client.Resolve(context.Background(), request, sdk.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRoot43 := filepath.Join(cacheRoot, "rust", "latest", "stable", "43")
+	if third.Root != wantRoot43 || downloads != 2 || string(third.Hooks[0].Content) != "echo second\n" {
+		t.Fatalf("revision refresh root=%q downloads=%d hook=%q", third.Root, downloads, third.Hooks[0].Content)
+	}
+
+	currentArchive = testArchive(t, map[string]string{
+		"meta/sdk.yaml":        "name: rust\nbase: ubuntu@24.04\n",
+		"sdk/hooks/setup-base": "echo same-revision-new-digest\n",
+	})
+	fourth, err := client.Resolve(context.Background(), request, sdk.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fourth.Root != wantRoot43 || downloads != 3 || string(fourth.Hooks[0].Content) != "echo same-revision-new-digest\n" {
+		t.Fatalf("digest refresh root=%q downloads=%d hook=%q", fourth.Root, downloads, fourth.Hooks[0].Content)
+	}
+}
+
 func TestExtractArchiveRejectsTraversal(t *testing.T) {
 	archive := testArchive(t, map[string]string{"../outside": "unsafe"})
 	archivePath := filepath.Join(t.TempDir(), "unsafe.sdk")
