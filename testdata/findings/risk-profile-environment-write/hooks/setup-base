@@ -1,0 +1,3 @@
+cat <<EOF > /etc/profile.d/fixture.sh
+export PATH="${SDK}/bin:\$PATH"
+EOF
