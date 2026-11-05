@@ -78,6 +78,9 @@ func classifyPath(value Value, context HookContext, config *capabilityconfig.Con
 	if value.Resolution != Resolved && matchesKnownFragment(value, config.PathClasses[string(PathUnknownSensitiveCandidate)]) {
 		return PathUnknownSensitiveCandidate
 	}
+	if value.Resolution != Resolved && matchesKnownFragment(value, config.PathClasses[string(PathPersistence)]) {
+		return PathPersistence
+	}
 	if matchesExactOrPrefix(path, config.PathClasses[string(PathProject)]) {
 		return PathProject
 	}

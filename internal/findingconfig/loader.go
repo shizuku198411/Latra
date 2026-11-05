@@ -102,7 +102,8 @@ func validate(config *Config) error {
 		"sdk-unresolved": true, "sdk-diagnostic": true, "all-hooks-parsed": true,
 		"all-commands-known": true, "absence-capability": true, "archive-digest": true,
 		"complete-file-inventory": true, "read-only-health-check": true,
-		"relation-flow": true, "path-write": true,
+		"relation-flow": true, "path-write": true, "persistence-write": true,
+		"profile-environment-write": true,
 	}
 	for _, rule := range config.Rules {
 		if !identifierPattern.MatchString(rule.ID) || seen[rule.ID] {

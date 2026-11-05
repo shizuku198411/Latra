@@ -91,25 +91,25 @@ assurance, and analysis coverage:
 ```text
 Assessment
   Classification: expected-and-controlled
-  Review Priority: 25/100 (medium)
-  Risk: 25/100 (medium)
+  Review Priority: 10/100 (low)
+  Risk: 10/100 (low)
   Assurance: 76/100 (high)
   Coverage: 100/100 (sufficient)
   Key Risks:
-    risk.persistence-write: Persistent state or startup configuration is written [medium, score=25, occurrences=1]
+    risk.profile-environment-write: Shell environment profile is written during base setup [low, score=10, occurrences=1]
       sdk=go file=sdk/hooks/setup-base:1:11 hook=setup-base value="/etc/profile.d/go.sh"
   By SDK:
     go: expected-and-controlled
-      Review Priority: 25/100 (medium)
-      Risk: 25/100 (medium), Assurance: 76/100 (high), Coverage: 100/100 (sufficient)
+      Review Priority: 10/100 (low)
+      Risk: 10/100 (low), Assurance: 76/100 (high), Coverage: 100/100 (sufficient)
       Key Risks:
-        risk.persistence-write: Persistent state or startup configuration is written [medium, score=25, occurrences=1]
+        risk.profile-environment-write: Shell environment profile is written during base setup [low, score=10, occurrences=1]
           sdk=go file=sdk/hooks/setup-base:1:11 hook=setup-base value="/etc/profile.d/go.sh"
 ```
 
 This result indicates that Latra analyzed the available hook and command
 evidence with sufficient coverage. The SDK has strong observable assurance and
-one medium-risk behavior: it writes persistent startup configuration. The
+one low-risk behavior: it writes static environment configuration during base setup. The
 `expected-and-controlled` classification means the detected behavior is
 consistent with the observed controls, not that the SDK is guaranteed safe.
 

@@ -48,11 +48,27 @@ finding-rules:
     confidence: high
     weight: 25
     match:
-      type: capability
-      capabilities:
-        - persistence
+      type: persistence-write
     message: The hook writes or changes a location that can retain behavior across sessions or boots.
     remediation: Constrain persistence to documented SDK state and review restored behavior.
+
+  - id: risk.profile-environment-write
+    kind: risk
+    family: persistence
+    title: Shell environment profile is written during base setup
+    severity: low
+    confidence: high
+    weight: 10
+    match:
+      type: profile-environment-write
+      hook-names:
+        - setup-base
+      run-as-root: true
+      project-mounted: false
+      interfaces-active: false
+      state-mounted: false
+    message: Base setup writes statically resolved environment configuration under /etc/profile.d.
+    remediation: Keep the profile content declarative and avoid downloading or executing additional payloads from the profile.
 
   - id: risk.device-write
     kind: risk

@@ -9,10 +9,10 @@ import (
 
 func TestAssessmentKeepsRiskAndAssuranceIndependent(t *testing.T) {
 	t.Parallel()
-	item := analyzedSDK(t, "printf profile > /etc/profile.d/example.sh\n", sdk.HookSetupBase)
+	item := analyzedSDK(t, "printf 'export EXAMPLE=1' > /etc/profile.d/example.sh\n", sdk.HookSetupBase)
 	findings := finding.AnalyzeSDK(item)
 	assessment := finding.AssessSDK(item, findings)
-	if assessment.Risk.Score != 25 || assessment.Risk.Level != "medium" {
+	if assessment.Risk.Score != 10 || assessment.Risk.Level != "low" {
 		t.Errorf("risk = %#v", assessment.Risk)
 	}
 	if assessment.Assurance.Score == 0 {
@@ -20,6 +20,19 @@ func TestAssessmentKeepsRiskAndAssuranceIndependent(t *testing.T) {
 	}
 	if assessment.ReviewPriority.Score != assessment.Risk.Score {
 		t.Errorf("review priority = %#v, risk = %#v", assessment.ReviewPriority, assessment.Risk)
+	}
+}
+
+func TestProfileCalibrationPreservesUnknownRootCommandPriority(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "agy\nprintf 'export AGY=1' > /etc/profile.d/agy.sh\n", sdk.HookSetupBase)
+	assessment := finding.AssessSDK(item, finding.AnalyzeSDK(item))
+	if assessment.Risk.Score != 33 || assessment.Risk.Level != "medium" {
+		t.Fatalf("risk = %#v", assessment.Risk)
+	}
+	if assessment.ReviewPriority.Score != 33 {
+		t.Errorf("review priority = %#v", assessment.ReviewPriority)
 	}
 }
 

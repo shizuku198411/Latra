@@ -3,6 +3,7 @@ package finding
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -68,6 +69,10 @@ func evaluate(item sdk.SDK, rule findingconfig.Rule) []match {
 		return matchCapabilities(item, rule)
 	case "path-write":
 		return matchPathWrites(item, rule)
+	case "persistence-write":
+		return matchPersistenceWrites(item, rule, false)
+	case "profile-environment-write":
+		return matchPersistenceWrites(item, rule, true)
 	case "unknown-command":
 		return matchUnknownCommands(item, rule)
 	case "parse-status":
@@ -156,6 +161,184 @@ func matchPathWrites(item sdk.SDK, rule findingconfig.Rule) []match {
 		}
 	}
 	return matches
+}
+
+func matchPersistenceWrites(item sdk.SDK, rule findingconfig.Rule, safeProfileOnly bool) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if !hookMatches(hook, rule) || hook.Analysis == nil {
+			continue
+		}
+		operations := operationMap(hook.Analysis.Operations)
+		for _, capability := range hook.Analysis.Capabilities {
+			if capability.Kind != "persistence" {
+				continue
+			}
+			safeProfile := isSafeProfileEnvironmentWrite(hook, capability, operations, hook.Analysis.Relations)
+			if safeProfile != safeProfileOnly {
+				continue
+			}
+			location := capability.Location
+			matches = append(matches, match{hook: hook, key: capability.OperationID, confidence: confidenceFor(capability.Resolution), evidence: []Evidence{{
+				Type: "capability", ID: capability.Kind, OperationID: capability.OperationID,
+				Value: capability.Target.Literal, Resolution: capability.Resolution, Location: &location,
+			}}})
+		}
+	}
+	return matches
+}
+
+func isSafeProfileEnvironmentWrite(hook *sdk.Hook, capability analysis.Capability, operations map[string]analysis.Operation, relations []analysis.Relation) bool {
+	if hook.Name != sdk.HookSetupBase || capability.Resolution != analysis.Resolved || !isProfileEnvironmentPath(capability.Target.Literal) {
+		return false
+	}
+	writer, ok := operations[capability.OperationID]
+	if !ok {
+		return false
+	}
+	switch writer.Kind {
+	case analysis.OperationRedirectWrite:
+		return hasSafeRedirectSource(writer.ID, operations, relations)
+	case analysis.OperationCommand:
+		if filepath.Base(writer.Command.Literal) != "tee" {
+			return false
+		}
+		return hasSafePipelineSource(writer.ID, operations, relations)
+	default:
+		return false
+	}
+}
+
+func isProfileEnvironmentPath(value string) bool {
+	cleaned := filepath.Clean(value)
+	return filepath.Dir(cleaned) == "/etc/profile.d" && strings.HasSuffix(filepath.Base(cleaned), ".sh") && filepath.Base(cleaned) != ".sh"
+}
+
+func hasSafeRedirectSource(writerID string, operations map[string]analysis.Operation, relations []analysis.Relation) bool {
+	current := writerID
+	staticHeredoc := ""
+	for range 8 {
+		predecessor := sequencePredecessor(current, relations)
+		if predecessor == "" {
+			return false
+		}
+		operation, ok := operations[predecessor]
+		if !ok {
+			return false
+		}
+		if operation.Kind == analysis.OperationRedirectRead || operation.Kind == analysis.OperationRedirectWrite {
+			if operation.Name == "heredoc" {
+				if len(operation.Arguments) != 1 || operation.Arguments[0].Resolution != analysis.Resolved || containsExecutablePayload(operation.Arguments[0].Literal) {
+					return false
+				}
+				staticHeredoc = operation.Arguments[0].Literal
+			}
+			current = predecessor
+			continue
+		}
+		return isSafeProfileContentGenerator(operation, staticHeredoc)
+	}
+	return false
+}
+
+func hasSafePipelineSource(writerID string, operations map[string]analysis.Operation, relations []analysis.Relation) bool {
+	for _, relation := range relations {
+		if relation.Kind != analysis.RelationPipeline || relation.ToOperationID != writerID {
+			continue
+		}
+		return isSafeProfileContentGenerator(operations[relation.FromOperationID], "")
+	}
+	return false
+}
+
+func sequencePredecessor(operationID string, relations []analysis.Relation) string {
+	for _, relation := range relations {
+		if relation.Kind == analysis.RelationSequence && relation.ToOperationID == operationID {
+			return relation.FromOperationID
+		}
+	}
+	return ""
+}
+
+func isSafeProfileContentGenerator(operation analysis.Operation, staticHeredoc string) bool {
+	if operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved {
+		return false
+	}
+	switch filepath.Base(operation.Command.Literal) {
+	case "echo":
+		return resolvedArguments(operation.Arguments) && isEnvironmentProfileText(strings.Join(argumentLiterals(operation.Arguments), " "))
+	case "printf":
+		if !resolvedArguments(operation.Arguments) || len(operation.Arguments) == 0 {
+			return false
+		}
+		format := operation.Arguments[0].Literal
+		if isEnvironmentProfileText(format) {
+			return !containsExecutablePayload(strings.Join(argumentLiterals(operation.Arguments[1:]), " "))
+		}
+		if !strings.Contains(format, "%") || len(operation.Arguments) == 1 {
+			return false
+		}
+		for _, argument := range operation.Arguments[1:] {
+			if !isEnvironmentProfileText(argument.Literal) {
+				return false
+			}
+		}
+		return true
+	case "cat":
+		return staticHeredoc != "" && isEnvironmentProfileText(staticHeredoc)
+	default:
+		return false
+	}
+}
+
+var environmentAssignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+
+func isEnvironmentProfileText(value string) bool {
+	value = strings.ReplaceAll(value, `\n`, "\n")
+	found := false
+	for _, line := range strings.Split(value, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, "export ") {
+			return false
+		}
+		assignment := strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		if !environmentAssignment.MatchString(assignment) || containsExecutablePayload(assignment) || strings.ContainsAny(assignment, ";|&`") || strings.Contains(assignment, "$(") {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+func resolvedArguments(arguments []analysis.Value) bool {
+	for _, argument := range arguments {
+		if argument.Resolution != analysis.Resolved {
+			return false
+		}
+	}
+	return true
+}
+
+func argumentLiterals(arguments []analysis.Value) []string {
+	values := make([]string, 0, len(arguments))
+	for _, argument := range arguments {
+		values = append(values, argument.Literal)
+	}
+	return values
+}
+
+func containsExecutablePayload(value string) bool {
+	lower := strings.ToLower(value)
+	for _, marker := range []string{"curl ", "wget ", "bash -c", "sh -c", "| bash", "| sh", "source ", "`curl", "`wget", "$(curl", "$(wget"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func matchUnknownCommands(item sdk.SDK, rule findingconfig.Rule) []match {

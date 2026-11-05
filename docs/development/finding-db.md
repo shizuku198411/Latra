@@ -47,6 +47,8 @@ Risk rules require `severity`; assurance rules require `strength`. All rules req
 | --- | --- |
 | `capability` | One matching capability occurrence, optionally constrained by hook and root context. |
 | `path-write` | An operation output classified into one of the configured path classes. |
+| `persistence-write` | A persistence capability except a statically controlled `setup-base` write under `/etc/profile.d/*.sh`. |
+| `profile-environment-write` | A fully resolved, statically controlled `setup-base` environment-profile write. |
 | `unknown-command` | A resolved command not covered by the command database. |
 | `parse-status` | A hook parser status such as `Failed` or `Recovered`. |
 | `sdk-unresolved` | A non-resolved SDK state. |
@@ -102,6 +104,18 @@ match:
 `relation-kinds` follows explicit operation-graph edges. `same-operation: true` additionally matches commands such as `curl -F file=@.env`, where the file input and external send are capabilities of one operation. When command and capability sink constraints are both present, both must match.
 
 Flow evidence records the source capability and the sink, including both operation IDs, values, resolutions, and source locations. Relation resolution can lower finding confidence when substitution or variable propagation is not fully resolved.
+
+## Profile environment calibration
+
+The paired `persistence-write` and `profile-environment-write` matchers are mutually exclusive. A write is assigned to the low-severity profile rule only when all of the following are established:
+
+- the hook is `setup-base` with its expected Workshop context;
+- the target is fully resolved and its normalized path is `/etc/profile.d/<name>.sh`;
+- content comes from resolved `echo` or `printf` arguments, or a resolved static heredoc, and contains only declarative `export NAME=...` environment assignments, comments, and blank lines;
+- the content does not contain a recognized download or shell-execution payload;
+- a `tee` write receives the same kind of static generator through a pipeline.
+
+Remote download output, unresolved content or paths, arbitrary script statements, non-static file input, another lifecycle hook, and other persistence locations remain under the generic medium-severity persistence rule. This is an allowlisted calibration, not a general trust decision for profile writes.
 
 ## Adding a rule
 

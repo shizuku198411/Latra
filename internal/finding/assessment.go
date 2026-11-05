@@ -455,4 +455,4 @@ func levelRank(level string) int {
 	}
 }
 
-func rounded(value float64) int { return int(math.Round(value)) }
+func rounded(value float64) int { return int(math.Round(value + 1e-9)) }

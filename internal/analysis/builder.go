@@ -173,13 +173,22 @@ func (b *builder) redirect(redirect *syntax.Redirect) Operation {
 	value := b.value(redirect.Word)
 	kind := OperationRedirectWrite
 	referenceKind := "file-write"
+	heredoc := false
 	switch redirect.Op {
-	case syntax.RdrIn, syntax.RdrInOut, syntax.DplIn, syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
+	case syntax.RdrIn, syntax.RdrInOut, syntax.DplIn:
 		kind = OperationRedirectRead
 		referenceKind = "file-read"
+	case syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
+		kind = OperationRedirectRead
+		heredoc = true
+		value = b.value(redirect.Hdoc)
 	}
 	operation := Operation{Kind: kind, Arguments: []Value{value}, Resolution: value.Resolution,
 		Location: shell.LocationOf(b.sourceName, redirect)}
+	if heredoc {
+		operation.Name = "heredoc"
+		return operation
+	}
 	reference := DataReference{Kind: referenceKind, Value: value}
 	if kind == OperationRedirectRead {
 		operation.Inputs = []DataReference{reference}

