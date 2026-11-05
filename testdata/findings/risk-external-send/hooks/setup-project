@@ -1,0 +1,1 @@
+curl -d fixture https://example.invalid/upload

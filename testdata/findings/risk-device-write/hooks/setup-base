@@ -1,0 +1,1 @@
+printf 'fixture\n' > /sys/kernel/latra-fixture
