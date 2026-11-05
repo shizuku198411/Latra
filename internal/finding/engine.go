@@ -258,33 +258,45 @@ func matchRelationFlows(item sdk.SDK, rule findingconfig.Rule) []match {
 			continue
 		}
 		operations := operationMap(hook.Analysis.Operations)
-		capabilities := capabilitiesByOperation(hook.Analysis.Capabilities)
-		for sourceID, names := range capabilities {
-			if !contains(names, rule.Matcher.SourceCapability) {
-				continue
-			}
-			for _, sinkID := range reachableSinks(sourceID, hook.Analysis.Relations, rule.Matcher.RelationKinds) {
-				sink, ok := operations[sinkID]
-				if !ok || !contains(rule.Matcher.SinkCommands, filepath.Base(sink.Command.Literal)) {
+		capabilities := capabilityOccurrencesByOperation(hook.Analysis.Capabilities)
+		for sourceID, occurrences := range capabilities {
+			for _, sourceCapability := range occurrences {
+				if sourceCapability.Kind != rule.Matcher.SourceCapability {
 					continue
 				}
-				source := operations[sourceID]
-				fromLocation, toLocation := source.Location, sink.Location
-				resolution := combinedResolution(source.Resolution, sink.Resolution)
-				matches = append(matches, match{hook: hook, key: sinkID, confidence: confidenceFor(resolution), evidence: []Evidence{
-					{Type: "capability", ID: rule.Matcher.SourceCapability, OperationID: sourceID, Resolution: source.Resolution, Location: &fromLocation},
-					{Type: "data-flow", ID: "operation-graph", FromOperationID: sourceID, ToOperationID: sinkID, Value: "remote-content", Resolution: resolution, Location: &toLocation},
-				}})
+				if rule.Matcher.SameOperation {
+					matches = append(matches, sameOperationFlow(hook, rule, sourceCapability, capabilities[sourceID])...)
+				}
+				for _, reachable := range reachableSinks(sourceID, sourceCapability.Resolution, hook.Analysis.Relations, rule.Matcher.RelationKinds) {
+					sink, ok := operations[reachable.id]
+					if !ok || !sinkCommandMatches(sink, rule.Matcher.SinkCommands) {
+						continue
+					}
+					sinks := matchingSinkCapabilities(capabilities[reachable.id], rule.Matcher.SinkCapability)
+					if rule.Matcher.SinkCapability != "" && len(sinks) == 0 {
+						continue
+					}
+					if rule.Matcher.SinkCapability == "" {
+						sinks = []analysis.Capability{{OperationID: reachable.id, Operation: sink.Kind, Resolution: sink.Resolution, Location: sink.Location}}
+					}
+					for _, sinkCapability := range sinks {
+						matches = append(matches, flowMatch(hook, rule, sourceCapability, sinkCapability, reachable.resolution))
+					}
+				}
 			}
 		}
 	}
 	return matches
 }
 
-func reachableSinks(sourceID string, relations []analysis.Relation, flowKinds []string) []string {
-	seen := map[string]bool{sourceID: true}
+type reachableOperation struct {
+	id         string
+	resolution analysis.Resolution
+}
+
+func reachableSinks(sourceID string, sourceResolution analysis.Resolution, relations []analysis.Relation, flowKinds []string) []reachableOperation {
+	best := map[string]analysis.Resolution{sourceID: sourceResolution}
 	queue := []string{sourceID}
-	var reachable []string
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
@@ -297,16 +309,81 @@ func reachableSinks(sourceID string, relations []analysis.Relation, flowKinds []
 			case contains(flowKinds, string(relation.Kind)) && relation.FromOperationID == current:
 				next = relation.ToOperationID
 			}
-			if next == "" || seen[next] {
+			if next == "" {
 				continue
 			}
-			seen[next] = true
+			resolution := combinedResolution(best[current], relation.Resolution)
+			previous, exists := best[next]
+			if exists && resolutionRank(previous) >= resolutionRank(resolution) {
+				continue
+			}
+			best[next] = resolution
 			queue = append(queue, next)
-			reachable = append(reachable, next)
 		}
 	}
-	sort.Strings(reachable)
+	reachable := make([]reachableOperation, 0, len(best)-1)
+	for id, resolution := range best {
+		if id != sourceID {
+			reachable = append(reachable, reachableOperation{id: id, resolution: resolution})
+		}
+	}
+	sort.Slice(reachable, func(i, j int) bool { return reachable[i].id < reachable[j].id })
 	return reachable
+}
+
+func sameOperationFlow(hook *sdk.Hook, rule findingconfig.Rule, source analysis.Capability, capabilities []analysis.Capability) []match {
+	var matches []match
+	for _, sink := range matchingSinkCapabilities(capabilities, rule.Matcher.SinkCapability) {
+		if sink.OperationID == "" || sink.OperationID != source.OperationID || sink.Kind == source.Kind {
+			continue
+		}
+		matches = append(matches, flowMatch(hook, rule, source, sink, combinedResolution(source.Resolution, sink.Resolution)))
+	}
+	return matches
+}
+
+func flowMatch(hook *sdk.Hook, rule findingconfig.Rule, source, sink analysis.Capability, relationResolution analysis.Resolution) match {
+	resolution := combinedResolution(combinedResolution(source.Resolution, sink.Resolution), relationResolution)
+	fromLocation, toLocation := source.Location, sink.Location
+	return match{hook: hook, key: source.OperationID + "->" + sink.OperationID, confidence: confidenceFor(resolution), evidence: []Evidence{
+		{Type: "capability", ID: source.Kind, OperationID: source.OperationID, Value: source.Target.Literal, Resolution: source.Resolution, Location: &fromLocation},
+		{Type: "data-flow", ID: sinkEvidenceID(rule), OperationID: sink.OperationID, FromOperationID: source.OperationID, ToOperationID: sink.OperationID, Value: sink.Target.Literal, Resolution: resolution, Location: &toLocation},
+	}}
+}
+
+func sinkEvidenceID(rule findingconfig.Rule) string {
+	if rule.Matcher.SinkCapability != "" {
+		return rule.Matcher.SinkCapability
+	}
+	return "operation-graph"
+}
+
+func sinkCommandMatches(operation analysis.Operation, commands []string) bool {
+	return len(commands) == 0 || contains(commands, filepath.Base(operation.Command.Literal))
+}
+
+func matchingSinkCapabilities(capabilities []analysis.Capability, kind string) []analysis.Capability {
+	if kind == "" {
+		return nil
+	}
+	var matches []analysis.Capability
+	for _, capability := range capabilities {
+		if capability.Kind == kind {
+			matches = append(matches, capability)
+		}
+	}
+	return matches
+}
+
+func resolutionRank(resolution analysis.Resolution) int {
+	switch resolution {
+	case analysis.Resolved:
+		return 2
+	case analysis.PartiallyResolved:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func combinedResolution(left, right analysis.Resolution) analysis.Resolution {
@@ -466,10 +543,10 @@ func operationMap(operations []analysis.Operation) map[string]analysis.Operation
 	return result
 }
 
-func capabilitiesByOperation(capabilities []analysis.Capability) map[string][]string {
-	result := make(map[string][]string)
+func capabilityOccurrencesByOperation(capabilities []analysis.Capability) map[string][]analysis.Capability {
+	result := make(map[string][]analysis.Capability)
 	for _, capability := range capabilities {
-		result[capability.OperationID] = append(result[capability.OperationID], capability.Kind)
+		result[capability.OperationID] = append(result[capability.OperationID], capability)
 	}
 	return result
 }

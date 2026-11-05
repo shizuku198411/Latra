@@ -90,7 +90,7 @@ func decode(content []byte) (*Config, error) {
 var identifierPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*$`)
 
 func validate(config *Config) error {
-	if config.SchemaVersion != "2" || strings.TrimSpace(config.ContentVersion) == "" {
+	if config.SchemaVersion != "3" || strings.TrimSpace(config.ContentVersion) == "" {
 		return fmt.Errorf("unsupported or incomplete finding configuration version %q", config.SchemaVersion)
 	}
 	if len(config.Rules) == 0 {
@@ -129,6 +129,34 @@ func validate(config *Config) error {
 		}
 		if err := validateMatcherContext(rule); err != nil {
 			return err
+		}
+		if err := validateRelationMatcher(rule); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRelationMatcher(rule Rule) error {
+	matcher := rule.Matcher
+	if matcher.Type != "relation-flow" {
+		if matcher.SourceCapability != "" || matcher.SinkCapability != "" || len(matcher.SinkCommands) > 0 || len(matcher.RelationKinds) > 0 || matcher.SameOperation {
+			return fmt.Errorf("rule %q applies flow fields to matcher %q", rule.ID, matcher.Type)
+		}
+		return nil
+	}
+	if matcher.SourceCapability == "" {
+		return fmt.Errorf("rule %q has no relation-flow source capability", rule.ID)
+	}
+	if matcher.SinkCapability == "" && len(matcher.SinkCommands) == 0 {
+		return fmt.Errorf("rule %q has no relation-flow sink", rule.ID)
+	}
+	if len(matcher.RelationKinds) == 0 && !matcher.SameOperation {
+		return fmt.Errorf("rule %q has no relation kinds or same-operation flow", rule.ID)
+	}
+	for _, kind := range matcher.RelationKinds {
+		if !contains([]string{"pipeline", "substitution-flow", "variable-flow"}, kind) {
+			return fmt.Errorf("rule %q has invalid relation kind %q", rule.ID, kind)
 		}
 	}
 	return nil

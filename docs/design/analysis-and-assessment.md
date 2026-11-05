@@ -147,6 +147,14 @@ Sensitive file reads are classified using the embedded path database. Workshop r
 
 File inputs are extracted from known command operands, input redirections, `source`/`.` operations, and command-specific option values such as curl's `@file` syntax. The emitted capability preserves the operation ID, target value, resolution, and source location. Hook context remains available through the enclosing analysis result.
 
+### Sensitive-data flow
+
+Project-secret exfiltration is not inferred from a sensitive read or network command in isolation. The finding engine requires `project-sensitive-file-read` to reach `external-send` through a pipeline, command-substitution containment, or variable-flow edge. It also handles a same-operation file upload where both capabilities belong to one command.
+
+The matcher requires a context in which the project is mounted and interfaces are active. A disconnected sensitive read and external send do not form a finding. Evidence contains the source path and operation as well as the sink value and operation, so assessment highlights expose both ends of the flow.
+
+The combined resolution is the least certain resolution across the source, traversed relations, and sink. This lowers confidence for partially resolved or unknown propagation without discarding the observed flow. A confirmed project-secret exfiltration finding is `critical`; the assessment model therefore applies the existing critical risk floor of 80 even when the family aggregation would otherwise be lower.
+
 ## 5. Finding generation
 
 Finding definitions are embedded from `internal/findingconfig/default/*.yaml`. The database has an independent schema version and content version so that rule changes can be identified in reports.

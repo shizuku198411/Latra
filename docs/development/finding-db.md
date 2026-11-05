@@ -81,6 +81,28 @@ All configured fields use AND semantics. Omitted fields do not constrain the mat
 
 Context fields are supported by hook-level matchers such as `capability`, `path-write`, `unknown-command`, `parse-status`, `relation-flow`, `read-only-health-check`, and hook-scoped `absence-capability`. SDK-level matchers reject hook context fields during configuration validation.
 
+## Relation-flow matchers
+
+A relation-flow matcher requires `source-capability` and at least one sink constraint. `sink-commands` matches normalized command names. `sink-capability` matches an observed sink behavior and is preferred when several commands implement the same behavior.
+
+```yaml
+match:
+  type: relation-flow
+  relation-kinds:
+    - pipeline
+    - substitution-flow
+    - variable-flow
+  source-capability: project-sensitive-file-read
+  sink-capability: external-send
+  same-operation: true
+  project-mounted: true
+  interfaces-active: true
+```
+
+`relation-kinds` follows explicit operation-graph edges. `same-operation: true` additionally matches commands such as `curl -F file=@.env`, where the file input and external send are capabilities of one operation. When command and capability sink constraints are both present, both must match.
+
+Flow evidence records the source capability and the sink, including both operation IDs, values, resolutions, and source locations. Relation resolution can lower finding confidence when substitution or variable propagation is not fully resolved.
+
 ## Adding a rule
 
 1. Select the closest category file under `internal/findingconfig/default/`.

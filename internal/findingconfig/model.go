@@ -37,6 +37,8 @@ type Matcher struct {
 	DiagnosticMessageContains []string `yaml:"diagnostic-message-contains,omitempty"`
 	RelationKinds             []string `yaml:"relation-kinds,omitempty"`
 	SourceCapability          string   `yaml:"source-capability,omitempty"`
+	SinkCapability            string   `yaml:"sink-capability,omitempty"`
 	SinkCommands              []string `yaml:"sink-commands,omitempty"`
+	SameOperation             bool     `yaml:"same-operation,omitempty"`
 	PathClasses               []string `yaml:"path-classes,omitempty"`
 }

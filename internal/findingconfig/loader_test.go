@@ -12,7 +12,7 @@ func TestDefaultIsValidAndSplitAcrossKinds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.SchemaVersion != "2" || config.ContentVersion == "" {
+	if config.SchemaVersion != "3" || config.ContentVersion == "" {
 		t.Fatalf("versions = %q, %q", config.SchemaVersion, config.ContentVersion)
 	}
 	kinds := map[string]int{}
@@ -26,7 +26,7 @@ func TestDefaultIsValidAndSplitAcrossKinds(t *testing.T) {
 
 func TestParseRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
-	_, err := findingconfig.Parse([]byte("schema-version: '2'\ncontent-version: test\nunknown: true\n"))
+	_, err := findingconfig.Parse([]byte("schema-version: '3'\ncontent-version: test\nunknown: true\n"))
 	if err == nil {
 		t.Fatal("expected strict decoding error")
 	}
@@ -35,7 +35,7 @@ func TestParseRejectsUnknownFields(t *testing.T) {
 func TestParseAcceptsHookContextConstraints(t *testing.T) {
 	t.Parallel()
 	config, err := findingconfig.Parse([]byte(`
-schema-version: "2"
+schema-version: "3"
 content-version: test
 finding-rules:
   - id: risk.context-test
@@ -70,7 +70,7 @@ finding-rules:
 func TestParseRejectsHookContextOnSDKMatcher(t *testing.T) {
 	t.Parallel()
 	_, err := findingconfig.Parse([]byte(`
-schema-version: "2"
+schema-version: "3"
 content-version: test
 finding-rules:
   - id: risk.invalid-context
@@ -87,5 +87,35 @@ finding-rules:
 `))
 	if err == nil {
 		t.Fatal("expected SDK-level matcher context to be rejected")
+	}
+}
+
+func TestParseValidatesRelationFlowSinks(t *testing.T) {
+	t.Parallel()
+
+	for _, matcher := range []string{
+		"source-capability: project-sensitive-file-read\n      relation-kinds: [pipeline]",
+		"source-capability: project-sensitive-file-read\n      sink-capability: external-send",
+		"source-capability: project-sensitive-file-read\n      sink-capability: external-send\n      relation-kinds: [unsupported]",
+	} {
+		_, err := findingconfig.Parse([]byte(`
+schema-version: "3"
+content-version: test
+finding-rules:
+  - id: risk.invalid-flow
+    kind: risk
+    family: data-exposure
+    title: Invalid flow
+    severity: critical
+    confidence: high
+    weight: 90
+    match:
+      type: relation-flow
+      ` + matcher + `
+    message: Invalid flow matcher.
+`))
+		if err == nil {
+			t.Fatalf("expected invalid relation matcher to be rejected: %s", matcher)
+		}
 	}
 }
