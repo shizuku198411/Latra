@@ -229,10 +229,14 @@ func hasSafeRedirectSource(writerID string, operations map[string]analysis.Opera
 		}
 		if operation.Kind == analysis.OperationRedirectRead || operation.Kind == analysis.OperationRedirectWrite {
 			if operation.Name == "heredoc" {
-				if len(operation.Arguments) != 1 || operation.Arguments[0].Resolution != analysis.Resolved || containsExecutablePayload(operation.Arguments[0].Literal) {
+				if len(operation.Arguments) != 1 {
 					return false
 				}
-				staticHeredoc = operation.Arguments[0].Literal
+				content, safe := resolvedProfileTemplate(operation.Arguments[0])
+				if !safe || containsExecutablePayload(content) {
+					return false
+				}
+				staticHeredoc = content
 			}
 			current = predecessor
 			continue
@@ -240,6 +244,30 @@ func hasSafeRedirectSource(writerID string, operations map[string]analysis.Opera
 		return isSafeProfileContentGenerator(operation, staticHeredoc)
 	}
 	return false
+}
+
+func resolvedProfileTemplate(value analysis.Value) (string, bool) {
+	if value.Resolution == analysis.Resolved {
+		return value.Literal, true
+	}
+	if len(value.Parts) == 0 {
+		return "", false
+	}
+	var rendered strings.Builder
+	for _, part := range value.Parts {
+		switch part.Kind {
+		case analysis.PartLiteral, analysis.PartQuotedLiteral:
+			rendered.WriteString(part.Text)
+		case analysis.PartVariableReference:
+			if part.Name != "SDK" {
+				return "", false
+			}
+			rendered.WriteString("${SDK}")
+		default:
+			return "", false
+		}
+	}
+	return rendered.String(), true
 }
 
 func hasSafePipelineSource(writerID string, operations map[string]analysis.Operation, relations []analysis.Relation) bool {

