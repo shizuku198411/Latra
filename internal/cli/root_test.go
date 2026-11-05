@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/shizuku198411/Latra/internal/cli"
+	"github.com/shizuku198411/Latra/internal/sdk"
+	"github.com/shizuku198411/Latra/internal/sdkcache"
 )
 
 func runCLI(args []string, stdout, stderr *bytes.Buffer) int {
@@ -183,7 +185,7 @@ func TestRunScanJSONToStandardOutput(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout.String())
 	}
-	if document.SchemaVersion != "2" || document.Summary.SDKs.Count != 5 || len(document.SDKs) != 0 {
+	if document.SchemaVersion != "3" || document.Summary.SDKs.Count != 5 || len(document.SDKs) != 0 {
 		t.Errorf("document = %#v", document)
 	}
 	if stderr.Len() != 0 {
@@ -592,6 +594,29 @@ func TestRunFilePrintsTextAndDescribesBinary(t *testing.T) {
 	for _, want := range []string{"Binary file", "Type: ELF 64-bit LSB", "Size: 7 bytes", "SHA3-384:"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Errorf("binary output does not contain %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestRunFileDescribesSkippedCacheContent(t *testing.T) {
+	t.Parallel()
+
+	cache := createCachedSDK(t, "rust", "latest/stable", "54")
+	if err := sdkcache.WriteManifest(cache, []sdk.File{{
+		Path: "bin/model", Type: sdk.FileRegular, Mode: 0o644, Size: 4096,
+		Digest: "sha3-384:abcdef", Skipped: true, SkipReason: "size-limit",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	cacheRoot := filepath.Clean(filepath.Join(cache, "..", "..", "..", ".."))
+	var stdout, stderr bytes.Buffer
+	code := runCLIWithCache([]string{"file", "rust", "bin/model", "--channel", "latest/stable"}, cacheRoot, &stdout, &stderr)
+	if code != 0 || stderr.Len() != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{"File content not extracted", "Reason: size-limit", "Type: regular", "Size: 4096 bytes", "SHA3-384: abcdef", "Channel: latest/stable", "Revision: 54"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("output does not contain %q:\n%s", want, stdout.String())
 		}
 	}
 }

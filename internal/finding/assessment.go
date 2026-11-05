@@ -48,6 +48,7 @@ type FileCoverage struct {
 	Inventoried     int `json:"inventoried"`
 	ContentAnalyzed int `json:"contentAnalyzed"`
 	BinaryOnly      int `json:"binaryOnly"`
+	ContentSkipped  int `json:"contentSkipped"`
 }
 
 type Coverage struct {
@@ -290,6 +291,10 @@ func familyCap(kind Kind, family string) int {
 func coverageForSDK(item sdk.SDK) Coverage {
 	coverage := Coverage{Files: FileCoverage{Inventoried: len(item.Files)}}
 	for _, file := range item.Files {
+		if file.Skipped {
+			coverage.Files.ContentSkipped++
+			continue
+		}
 		if file.Type != sdk.FileRegular {
 			continue
 		}
@@ -370,6 +375,7 @@ func addCoverage(target *Coverage, value Coverage) {
 	target.Files.Inventoried += value.Files.Inventoried
 	target.Files.ContentAnalyzed += value.Files.ContentAnalyzed
 	target.Files.BinaryOnly += value.Files.BinaryOnly
+	target.Files.ContentSkipped += value.Files.ContentSkipped
 }
 
 func finalizeAssessment(classification *string, priority *Score, risk, assurance ScoredAxis, coverage Coverage) {
@@ -449,4 +455,4 @@ func levelRank(level string) int {
 	}
 }
 
-func rounded(value float64) int { return int(math.Round(value)) }
+func rounded(value float64) int { return int(math.Round(value + 1e-9)) }

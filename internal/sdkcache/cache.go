@@ -251,7 +251,7 @@ func selectChannel(candidates []Entry, requested string) []Entry {
 // OpenFile safely opens a regular file relative to a selected SDK root.
 func OpenFile(entry Entry, requestedPath string) (io.ReadCloser, fs.FileInfo, error) {
 	clean := path.Clean(strings.ReplaceAll(requestedPath, "\\", "/"))
-	if requestedPath == "" || clean == "." || path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
+	if requestedPath == "" || clean == "." || clean == ManifestPath || path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
 		return nil, nil, fmt.Errorf("unsafe SDK file path %q", requestedPath)
 	}
 	var roots []*os.Root
@@ -278,6 +278,15 @@ func OpenFile(entry Entry, requestedPath string) (io.ReadCloser, fs.FileInfo, er
 	file, err := root.Open(clean)
 	if err != nil {
 		closeRoots(roots)
+		if errors.Is(err, fs.ErrNotExist) {
+			skipped, manifestErr := skippedFile(entry, clean)
+			if manifestErr != nil {
+				return nil, nil, manifestErr
+			}
+			if skipped != nil {
+				return nil, nil, &ContentSkippedError{File: *skipped}
+			}
+		}
 		return nil, nil, err
 	}
 	info, err := file.Stat()

@@ -11,7 +11,7 @@ func TestDefaultCatalogContainsDirectConditionalAndPathAssociations(t *testing.T
 	t.Parallel()
 
 	catalog := knowledge.Default()
-	if catalog.SchemaVersion != "1" || catalog.DatabaseSchema != "1" || catalog.Summary.Capabilities == 0 || catalog.Summary.Commands == 0 || catalog.Summary.Rules == 0 {
+	if catalog.SchemaVersion != "1" || catalog.DatabaseSchema != "2" || catalog.Summary.Capabilities == 0 || catalog.Summary.Commands == 0 || catalog.Summary.Rules == 0 {
 		t.Fatalf("catalog metadata = %#v", catalog)
 	}
 	assertAssociation(t, catalog, "curl", "network-access", "direct")

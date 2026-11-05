@@ -3,6 +3,7 @@ package finding
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -68,6 +69,10 @@ func evaluate(item sdk.SDK, rule findingconfig.Rule) []match {
 		return matchCapabilities(item, rule)
 	case "path-write":
 		return matchPathWrites(item, rule)
+	case "persistence-write":
+		return matchPersistenceWrites(item, rule, false)
+	case "profile-environment-write":
+		return matchPersistenceWrites(item, rule, true)
 	case "unknown-command":
 		return matchUnknownCommands(item, rule)
 	case "parse-status":
@@ -158,6 +163,212 @@ func matchPathWrites(item sdk.SDK, rule findingconfig.Rule) []match {
 	return matches
 }
 
+func matchPersistenceWrites(item sdk.SDK, rule findingconfig.Rule, safeProfileOnly bool) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if !hookMatches(hook, rule) || hook.Analysis == nil {
+			continue
+		}
+		operations := operationMap(hook.Analysis.Operations)
+		for _, capability := range hook.Analysis.Capabilities {
+			if capability.Kind != "persistence" {
+				continue
+			}
+			safeProfile := isSafeProfileEnvironmentWrite(hook, capability, operations, hook.Analysis.Relations)
+			if safeProfile != safeProfileOnly {
+				continue
+			}
+			location := capability.Location
+			matches = append(matches, match{hook: hook, key: capability.OperationID, confidence: confidenceFor(capability.Resolution), evidence: []Evidence{{
+				Type: "capability", ID: capability.Kind, OperationID: capability.OperationID,
+				Value: capability.Target.Literal, Resolution: capability.Resolution, Location: &location,
+			}}})
+		}
+	}
+	return matches
+}
+
+func isSafeProfileEnvironmentWrite(hook *sdk.Hook, capability analysis.Capability, operations map[string]analysis.Operation, relations []analysis.Relation) bool {
+	if hook.Name != sdk.HookSetupBase || capability.Resolution != analysis.Resolved || !isProfileEnvironmentPath(capability.Target.Literal) {
+		return false
+	}
+	writer, ok := operations[capability.OperationID]
+	if !ok {
+		return false
+	}
+	switch writer.Kind {
+	case analysis.OperationRedirectWrite:
+		return hasSafeRedirectSource(writer.ID, operations, relations)
+	case analysis.OperationCommand:
+		if filepath.Base(writer.Command.Literal) != "tee" {
+			return false
+		}
+		return hasSafePipelineSource(writer.ID, operations, relations)
+	default:
+		return false
+	}
+}
+
+func isProfileEnvironmentPath(value string) bool {
+	cleaned := filepath.Clean(value)
+	return filepath.Dir(cleaned) == "/etc/profile.d" && strings.HasSuffix(filepath.Base(cleaned), ".sh") && filepath.Base(cleaned) != ".sh"
+}
+
+func hasSafeRedirectSource(writerID string, operations map[string]analysis.Operation, relations []analysis.Relation) bool {
+	current := writerID
+	staticHeredoc := ""
+	for range 8 {
+		predecessor := sequencePredecessor(current, relations)
+		if predecessor == "" {
+			return false
+		}
+		operation, ok := operations[predecessor]
+		if !ok {
+			return false
+		}
+		if operation.Kind == analysis.OperationRedirectRead || operation.Kind == analysis.OperationRedirectWrite {
+			if operation.Name == "heredoc" {
+				if len(operation.Arguments) != 1 {
+					return false
+				}
+				content, safe := resolvedProfileTemplate(operation.Arguments[0])
+				if !safe || containsExecutablePayload(content) {
+					return false
+				}
+				staticHeredoc = content
+			}
+			current = predecessor
+			continue
+		}
+		return isSafeProfileContentGenerator(operation, staticHeredoc)
+	}
+	return false
+}
+
+func resolvedProfileTemplate(value analysis.Value) (string, bool) {
+	if value.Resolution == analysis.Resolved {
+		return value.Literal, true
+	}
+	if len(value.Parts) == 0 {
+		return "", false
+	}
+	var rendered strings.Builder
+	for _, part := range value.Parts {
+		switch part.Kind {
+		case analysis.PartLiteral, analysis.PartQuotedLiteral:
+			rendered.WriteString(part.Text)
+		case analysis.PartVariableReference:
+			if part.Name != "SDK" {
+				return "", false
+			}
+			rendered.WriteString("${SDK}")
+		default:
+			return "", false
+		}
+	}
+	return rendered.String(), true
+}
+
+func hasSafePipelineSource(writerID string, operations map[string]analysis.Operation, relations []analysis.Relation) bool {
+	for _, relation := range relations {
+		if relation.Kind != analysis.RelationPipeline || relation.ToOperationID != writerID {
+			continue
+		}
+		return isSafeProfileContentGenerator(operations[relation.FromOperationID], "")
+	}
+	return false
+}
+
+func sequencePredecessor(operationID string, relations []analysis.Relation) string {
+	for _, relation := range relations {
+		if relation.Kind == analysis.RelationSequence && relation.ToOperationID == operationID {
+			return relation.FromOperationID
+		}
+	}
+	return ""
+}
+
+func isSafeProfileContentGenerator(operation analysis.Operation, staticHeredoc string) bool {
+	if operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved {
+		return false
+	}
+	switch filepath.Base(operation.Command.Literal) {
+	case "echo":
+		return resolvedArguments(operation.Arguments) && isEnvironmentProfileText(strings.Join(argumentLiterals(operation.Arguments), " "))
+	case "printf":
+		if !resolvedArguments(operation.Arguments) || len(operation.Arguments) == 0 {
+			return false
+		}
+		format := operation.Arguments[0].Literal
+		if isEnvironmentProfileText(format) {
+			return !containsExecutablePayload(strings.Join(argumentLiterals(operation.Arguments[1:]), " "))
+		}
+		if !strings.Contains(format, "%") || len(operation.Arguments) == 1 {
+			return false
+		}
+		for _, argument := range operation.Arguments[1:] {
+			if !isEnvironmentProfileText(argument.Literal) {
+				return false
+			}
+		}
+		return true
+	case "cat":
+		return staticHeredoc != "" && isEnvironmentProfileText(staticHeredoc)
+	default:
+		return false
+	}
+}
+
+var environmentAssignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+
+func isEnvironmentProfileText(value string) bool {
+	value = strings.ReplaceAll(value, `\n`, "\n")
+	found := false
+	for _, line := range strings.Split(value, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, "export ") {
+			return false
+		}
+		assignment := strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		if !environmentAssignment.MatchString(assignment) || containsExecutablePayload(assignment) || strings.ContainsAny(assignment, ";|&`") || strings.Contains(assignment, "$(") {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+func resolvedArguments(arguments []analysis.Value) bool {
+	for _, argument := range arguments {
+		if argument.Resolution != analysis.Resolved {
+			return false
+		}
+	}
+	return true
+}
+
+func argumentLiterals(arguments []analysis.Value) []string {
+	values := make([]string, 0, len(arguments))
+	for _, argument := range arguments {
+		values = append(values, argument.Literal)
+	}
+	return values
+}
+
+func containsExecutablePayload(value string) bool {
+	lower := strings.ToLower(value)
+	for _, marker := range []string{"curl ", "wget ", "bash -c", "sh -c", "| bash", "| sh", "source ", "`curl", "`wget", "$(curl", "$(wget"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func matchUnknownCommands(item sdk.SDK, rule findingconfig.Rule) []match {
 	var matches []match
 	for index := range item.Hooks {
@@ -180,7 +391,7 @@ func matchParseStatuses(item sdk.SDK, rule findingconfig.Rule) []match {
 	var matches []match
 	for index := range item.Hooks {
 		hook := &item.Hooks[index]
-		if hook.Parse == nil || !contains(rule.Matcher.ParseStatuses, string(hook.Parse.Status)) {
+		if !hookMatches(hook, rule) || hook.Parse == nil || !contains(rule.Matcher.ParseStatuses, string(hook.Parse.Status)) {
 			continue
 		}
 		location := shell.Location{Path: hook.Path}
@@ -194,6 +405,22 @@ func matchParseStatuses(item sdk.SDK, rule findingconfig.Rule) []match {
 
 func matchAbsence(item sdk.SDK, rule findingconfig.Rule) []match {
 	if len(rule.Matcher.Capabilities) > 0 {
+		if hasHookSelector(rule.Matcher) {
+			var matches []match
+			for index := range item.Hooks {
+				hook := &item.Hooks[index]
+				if !hookMatches(hook, rule) || hook.Analysis == nil || hook.Parse == nil || hook.Parse.Status != shell.StatusParsed || hook.Parse.Recovered || hookHasUnknownCommand(*hook) {
+					continue
+				}
+				if hasCapability(hook.Analysis.Capabilities, rule.Matcher.Capabilities) {
+					continue
+				}
+				matches = append(matches, match{hook: hook, key: string(hook.Name), evidence: []Evidence{{
+					Type: "context", ID: "capability-absent", Value: strings.Join(rule.Matcher.Capabilities, ","), Resolution: analysis.Resolved,
+				}}})
+			}
+			return matches
+		}
 		if !completeAnalysis(item) || hasUnknownCommand(item) || hasAnyCapability(item, rule.Matcher.Capabilities) {
 			return nil
 		}
@@ -242,33 +469,45 @@ func matchRelationFlows(item sdk.SDK, rule findingconfig.Rule) []match {
 			continue
 		}
 		operations := operationMap(hook.Analysis.Operations)
-		capabilities := capabilitiesByOperation(hook.Analysis.Capabilities)
-		for sourceID, names := range capabilities {
-			if !contains(names, rule.Matcher.SourceCapability) {
-				continue
-			}
-			for _, sinkID := range reachableSinks(sourceID, hook.Analysis.Relations, rule.Matcher.RelationKinds) {
-				sink, ok := operations[sinkID]
-				if !ok || !contains(rule.Matcher.SinkCommands, filepath.Base(sink.Command.Literal)) {
+		capabilities := capabilityOccurrencesByOperation(hook.Analysis.Capabilities)
+		for sourceID, occurrences := range capabilities {
+			for _, sourceCapability := range occurrences {
+				if sourceCapability.Kind != rule.Matcher.SourceCapability {
 					continue
 				}
-				source := operations[sourceID]
-				fromLocation, toLocation := source.Location, sink.Location
-				resolution := combinedResolution(source.Resolution, sink.Resolution)
-				matches = append(matches, match{hook: hook, key: sinkID, confidence: confidenceFor(resolution), evidence: []Evidence{
-					{Type: "capability", ID: rule.Matcher.SourceCapability, OperationID: sourceID, Resolution: source.Resolution, Location: &fromLocation},
-					{Type: "data-flow", ID: "operation-graph", FromOperationID: sourceID, ToOperationID: sinkID, Value: "remote-content", Resolution: resolution, Location: &toLocation},
-				}})
+				if rule.Matcher.SameOperation {
+					matches = append(matches, sameOperationFlow(hook, rule, sourceCapability, capabilities[sourceID])...)
+				}
+				for _, reachable := range reachableSinks(sourceID, sourceCapability.Resolution, hook.Analysis.Relations, rule.Matcher.RelationKinds) {
+					sink, ok := operations[reachable.id]
+					if !ok || !sinkCommandMatches(sink, rule.Matcher.SinkCommands) {
+						continue
+					}
+					sinks := matchingSinkCapabilities(capabilities[reachable.id], rule.Matcher.SinkCapability)
+					if rule.Matcher.SinkCapability != "" && len(sinks) == 0 {
+						continue
+					}
+					if rule.Matcher.SinkCapability == "" {
+						sinks = []analysis.Capability{{OperationID: reachable.id, Operation: sink.Kind, Resolution: sink.Resolution, Location: sink.Location}}
+					}
+					for _, sinkCapability := range sinks {
+						matches = append(matches, flowMatch(hook, rule, sourceCapability, sinkCapability, reachable.resolution))
+					}
+				}
 			}
 		}
 	}
 	return matches
 }
 
-func reachableSinks(sourceID string, relations []analysis.Relation, flowKinds []string) []string {
-	seen := map[string]bool{sourceID: true}
+type reachableOperation struct {
+	id         string
+	resolution analysis.Resolution
+}
+
+func reachableSinks(sourceID string, sourceResolution analysis.Resolution, relations []analysis.Relation, flowKinds []string) []reachableOperation {
+	best := map[string]analysis.Resolution{sourceID: sourceResolution}
 	queue := []string{sourceID}
-	var reachable []string
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
@@ -281,16 +520,81 @@ func reachableSinks(sourceID string, relations []analysis.Relation, flowKinds []
 			case contains(flowKinds, string(relation.Kind)) && relation.FromOperationID == current:
 				next = relation.ToOperationID
 			}
-			if next == "" || seen[next] {
+			if next == "" {
 				continue
 			}
-			seen[next] = true
+			resolution := combinedResolution(best[current], relation.Resolution)
+			previous, exists := best[next]
+			if exists && resolutionRank(previous) >= resolutionRank(resolution) {
+				continue
+			}
+			best[next] = resolution
 			queue = append(queue, next)
-			reachable = append(reachable, next)
 		}
 	}
-	sort.Strings(reachable)
+	reachable := make([]reachableOperation, 0, len(best)-1)
+	for id, resolution := range best {
+		if id != sourceID {
+			reachable = append(reachable, reachableOperation{id: id, resolution: resolution})
+		}
+	}
+	sort.Slice(reachable, func(i, j int) bool { return reachable[i].id < reachable[j].id })
 	return reachable
+}
+
+func sameOperationFlow(hook *sdk.Hook, rule findingconfig.Rule, source analysis.Capability, capabilities []analysis.Capability) []match {
+	var matches []match
+	for _, sink := range matchingSinkCapabilities(capabilities, rule.Matcher.SinkCapability) {
+		if sink.OperationID == "" || sink.OperationID != source.OperationID || sink.Kind == source.Kind {
+			continue
+		}
+		matches = append(matches, flowMatch(hook, rule, source, sink, combinedResolution(source.Resolution, sink.Resolution)))
+	}
+	return matches
+}
+
+func flowMatch(hook *sdk.Hook, rule findingconfig.Rule, source, sink analysis.Capability, relationResolution analysis.Resolution) match {
+	resolution := combinedResolution(combinedResolution(source.Resolution, sink.Resolution), relationResolution)
+	fromLocation, toLocation := source.Location, sink.Location
+	return match{hook: hook, key: source.OperationID + "->" + sink.OperationID, confidence: confidenceFor(resolution), evidence: []Evidence{
+		{Type: "capability", ID: source.Kind, OperationID: source.OperationID, Value: source.Target.Literal, Resolution: source.Resolution, Location: &fromLocation},
+		{Type: "data-flow", ID: sinkEvidenceID(rule), OperationID: sink.OperationID, FromOperationID: source.OperationID, ToOperationID: sink.OperationID, Value: sink.Target.Literal, Resolution: resolution, Location: &toLocation},
+	}}
+}
+
+func sinkEvidenceID(rule findingconfig.Rule) string {
+	if rule.Matcher.SinkCapability != "" {
+		return rule.Matcher.SinkCapability
+	}
+	return "operation-graph"
+}
+
+func sinkCommandMatches(operation analysis.Operation, commands []string) bool {
+	return len(commands) == 0 || contains(commands, filepath.Base(operation.Command.Literal))
+}
+
+func matchingSinkCapabilities(capabilities []analysis.Capability, kind string) []analysis.Capability {
+	if kind == "" {
+		return nil
+	}
+	var matches []analysis.Capability
+	for _, capability := range capabilities {
+		if capability.Kind == kind {
+			matches = append(matches, capability)
+		}
+	}
+	return matches
+}
+
+func resolutionRank(resolution analysis.Resolution) int {
+	switch resolution {
+	case analysis.Resolved:
+		return 2
+	case analysis.PartiallyResolved:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func combinedResolution(left, right analysis.Resolution) analysis.Resolution {
@@ -307,10 +611,30 @@ func hookMatches(hook *sdk.Hook, rule findingconfig.Rule) bool {
 	if len(rule.Matcher.HookNames) > 0 && !contains(rule.Matcher.HookNames, string(hook.Name)) {
 		return false
 	}
-	if rule.Matcher.RunAsRoot != nil {
-		return hook.Analysis != nil && hook.Analysis.Context.RunAsRoot == *rule.Matcher.RunAsRoot
+	if !hasContextSelector(rule.Matcher) {
+		return true
 	}
-	return true
+	if hook.Analysis == nil {
+		return false
+	}
+	context := hook.Analysis.Context
+	return matchesBool(rule.Matcher.RunAsRoot, context.RunAsRoot) &&
+		matchesBool(rule.Matcher.ProjectMounted, context.ProjectMounted) &&
+		matchesBool(rule.Matcher.InterfacesActive, context.InterfacesActive) &&
+		matchesBool(rule.Matcher.StateMounted, context.StateMounted) &&
+		matchesBool(rule.Matcher.ContextDependent, context.ContextDependent)
+}
+
+func hasHookSelector(matcher findingconfig.Matcher) bool {
+	return len(matcher.HookNames) > 0 || hasContextSelector(matcher)
+}
+
+func hasContextSelector(matcher findingconfig.Matcher) bool {
+	return matcher.RunAsRoot != nil || matcher.ProjectMounted != nil || matcher.InterfacesActive != nil || matcher.StateMounted != nil || matcher.ContextDependent != nil
+}
+
+func matchesBool(expected *bool, actual bool) bool {
+	return expected == nil || *expected == actual
 }
 
 func allHooksParsed(item sdk.SDK) bool {
@@ -337,6 +661,9 @@ func hasDiagnostic(item sdk.SDK, code string) bool {
 
 func hasResourceLimitDiagnostic(item sdk.SDK) bool {
 	for _, diagnostic := range item.Diagnostics {
+		if diagnostic.Severity != sdk.SeverityError {
+			continue
+		}
 		if diagnostic.Code == "resource-limit" || containsAnySubstring(diagnostic.Message, []string{"resource-limit", "limit exceeded", "SDK archive exceeds"}) {
 			return true
 		}
@@ -427,10 +754,10 @@ func operationMap(operations []analysis.Operation) map[string]analysis.Operation
 	return result
 }
 
-func capabilitiesByOperation(capabilities []analysis.Capability) map[string][]string {
-	result := make(map[string][]string)
+func capabilityOccurrencesByOperation(capabilities []analysis.Capability) map[string][]analysis.Capability {
+	result := make(map[string][]analysis.Capability)
 	for _, capability := range capabilities {
-		result[capability.OperationID] = append(result[capability.OperationID], capability.Kind)
+		result[capability.OperationID] = append(result[capability.OperationID], capability)
 	}
 	return result
 }

@@ -1,0 +1,21 @@
+finding-rules:
+  - id: risk.project-secret-exfiltration
+    kind: risk
+    family: data-exposure
+    title: Project-sensitive data flows to an external endpoint
+    severity: critical
+    confidence: high
+    weight: 90
+    match:
+      type: relation-flow
+      relation-kinds:
+        - pipeline
+        - substitution-flow
+        - variable-flow
+      source-capability: project-sensitive-file-read
+      sink-capability: external-send
+      same-operation: true
+      project-mounted: true
+      interfaces-active: true
+    message: Data read from a sensitive file in the mounted project flows to an external endpoint.
+    remediation: Remove the transfer or restrict it to explicitly approved data and endpoints without exposing repository secrets.

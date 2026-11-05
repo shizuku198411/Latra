@@ -220,7 +220,11 @@ func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessme
 		formatSummaryItems(summary.SDKs.SDKNames.Unresolved)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(writer, "  Files: %d\n", summary.Files.Count); err != nil {
+	filesLabel := fmt.Sprintf("  Files: %d", summary.Files.Count)
+	if summary.Files.ContentSkipped > 0 {
+		filesLabel += fmt.Sprintf(" (%d content skipped)", summary.Files.ContentSkipped)
+	}
+	if _, err := fmt.Fprintln(writer, filesLabel); err != nil {
 		return err
 	}
 	for _, item := range summary.Files.BySDK {
@@ -233,8 +237,27 @@ func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessme
 		if omitted > 0 {
 			formatted += fmt.Sprintf(", ... and more files (%d)", omitted)
 		}
-		if _, err := fmt.Fprintf(writer, "    %s (%d): %s\n", item.SDKName, item.Count, formatted); err != nil {
+		itemLabel := fmt.Sprintf("%s (%d", item.SDKName, item.Count)
+		if item.ContentSkipped > 0 {
+			itemLabel += fmt.Sprintf(", %d content skipped", item.ContentSkipped)
+		}
+		itemLabel += ")"
+		if _, err := fmt.Fprintf(writer, "    %s: %s\n", itemLabel, formatted); err != nil {
 			return err
+		}
+		if item.ContentSkipped > 0 {
+			skipped := item.SkippedFiles
+			omittedSkipped := 0
+			if compactFiles && len(skipped) > 5 {
+				skipped, omittedSkipped = skipped[:5], len(skipped)-5
+			}
+			formattedSkipped := formatSkippedFiles(skipped)
+			if omittedSkipped > 0 {
+				formattedSkipped += fmt.Sprintf(", ... and more skipped files (%d)", omittedSkipped)
+			}
+			if _, err := fmt.Fprintf(writer, "      Content skipped: %s\n", formattedSkipped); err != nil {
+				return err
+			}
 		}
 	}
 	if _, err := fmt.Fprintf(writer, "  Hooks: %d\n", summary.Hooks.Count); err != nil {
@@ -358,6 +381,14 @@ func formatSummaryItems(items []string) string {
 	return strings.Join(items, ", ")
 }
 
+func formatSkippedFiles(files []SkippedFileSummary) string {
+	formatted := make([]string, 0, len(files))
+	for _, file := range files {
+		formatted = append(formatted, fmt.Sprintf("%s (%s, %d bytes)", file.FilePath, file.Reason, file.Size))
+	}
+	return strings.Join(formatted, ", ")
+}
+
 func writeSDK(writer io.Writer, item SDK) error {
 	if _, err := fmt.Fprintf(writer, "  %s\n    Source: %s\n    State: %s\n", item.Name, item.Source, item.State); err != nil {
 		return err
@@ -399,6 +430,11 @@ func writeSDK(writer io.Writer, item SDK) error {
 		}
 		if file.Digest != "" {
 			if _, err := fmt.Fprintf(writer, " %s", file.Digest); err != nil {
+				return err
+			}
+		}
+		if file.ContentStatus == "skipped" {
+			if _, err := fmt.Fprintf(writer, " content=skipped reason=%s", file.SkipReason); err != nil {
 				return err
 			}
 		}

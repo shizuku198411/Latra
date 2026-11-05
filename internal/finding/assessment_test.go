@@ -9,10 +9,10 @@ import (
 
 func TestAssessmentKeepsRiskAndAssuranceIndependent(t *testing.T) {
 	t.Parallel()
-	item := analyzedSDK(t, "printf profile > /etc/profile.d/example.sh\n", sdk.HookSetupBase)
+	item := analyzedSDK(t, "printf 'export EXAMPLE=1' > /etc/profile.d/example.sh\n", sdk.HookSetupBase)
 	findings := finding.AnalyzeSDK(item)
 	assessment := finding.AssessSDK(item, findings)
-	if assessment.Risk.Score != 25 || assessment.Risk.Level != "medium" {
+	if assessment.Risk.Score != 10 || assessment.Risk.Level != "low" {
 		t.Errorf("risk = %#v", assessment.Risk)
 	}
 	if assessment.Assurance.Score == 0 {
@@ -20,6 +20,19 @@ func TestAssessmentKeepsRiskAndAssuranceIndependent(t *testing.T) {
 	}
 	if assessment.ReviewPriority.Score != assessment.Risk.Score {
 		t.Errorf("review priority = %#v, risk = %#v", assessment.ReviewPriority, assessment.Risk)
+	}
+}
+
+func TestProfileCalibrationPreservesUnknownRootCommandPriority(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "agy\nprintf 'export AGY=1' > /etc/profile.d/agy.sh\n", sdk.HookSetupBase)
+	assessment := finding.AssessSDK(item, finding.AnalyzeSDK(item))
+	if assessment.Risk.Score != 33 || assessment.Risk.Level != "medium" {
+		t.Fatalf("risk = %#v", assessment.Risk)
+	}
+	if assessment.ReviewPriority.Score != 33 {
+		t.Errorf("review priority = %#v", assessment.ReviewPriority)
 	}
 }
 
@@ -46,6 +59,27 @@ func TestCoveragePenaltyRaisesReviewPriority(t *testing.T) {
 	}
 	if assessment.ReviewPriority.Score != 40 || assessment.Classification != "insufficient-evidence" {
 		t.Fatalf("assessment = %#v", assessment)
+	}
+}
+
+func TestSkippedNonRequiredContentDoesNotInvalidateCoverage(t *testing.T) {
+	t.Parallel()
+	item := analyzedSDK(t, "printf ok\n", sdk.HookSetupProject)
+	item.Files = append(item.Files, sdk.File{
+		Path: "bin/model", Type: sdk.FileRegular, Size: 1024, Digest: "sha3-384:fixture",
+		Skipped: true, SkipReason: "size-limit",
+	})
+	item.Diagnostics = append(item.Diagnostics, sdk.Diagnostic{
+		Code: "file-content-skipped", Severity: sdk.SeverityWarning, Phase: "inventory",
+		Message: "1 non-essential file content was skipped due to resource limits",
+	})
+
+	assessment := finding.AssessSDK(item, finding.AnalyzeSDK(item))
+	if assessment.Coverage.Level != "sufficient" || assessment.Coverage.Score != 100 {
+		t.Fatalf("coverage = %#v", assessment.Coverage)
+	}
+	if assessment.Coverage.Files.ContentSkipped != 1 {
+		t.Fatalf("file coverage = %#v", assessment.Coverage.Files)
 	}
 }
 

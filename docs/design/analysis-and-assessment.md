@@ -143,6 +143,18 @@ Capability definitions are embedded from `capabilityconfig/default/*.yaml` at bu
 
 A capability is **not** a finding, severity, or maliciousness judgment. Contextual finding rules decide whether the observed fact contributes risk or assurance. This separation allows the command database to describe behavior without baking policy into command recognition.
 
+Sensitive file reads are classified using the embedded path database. Workshop runs `setup-project` with `/project` as its working directory, so its relative sensitive paths are project-sensitive. Other hooks start in the SDK hook directory even when the project is mounted; they require an absolute `/project` path, or a later resolved working-directory model, before Latra classifies the read as project-sensitive. User and system sensitive paths remain separate classes, while unresolved values with a recognizable sensitive suffix are retained as lower-confidence candidates. Template names such as `.env.example`, `.env.sample`, and `.env.template` are excluded before positive matching.
+
+File inputs are extracted from known command operands, input redirections, `source`/`.` operations, and command-specific option values such as curl's `@file` syntax. The emitted capability preserves the operation ID, target value, resolution, and source location. Hook context remains available through the enclosing analysis result.
+
+### Sensitive-data flow
+
+Project-secret exfiltration is not inferred from a sensitive read or network command in isolation. The finding engine requires `project-sensitive-file-read` to reach `external-send` through a pipeline, command-substitution containment, or variable-flow edge. It also handles a same-operation file upload where both capabilities belong to one command.
+
+The matcher requires a context in which the project is mounted and interfaces are active. A disconnected sensitive read and external send do not form a finding. Evidence contains the source path and operation as well as the sink value and operation, so assessment highlights expose both ends of the flow.
+
+The combined resolution is the least certain resolution across the source, traversed relations, and sink. This lowers confidence for partially resolved or unknown propagation without discarding the observed flow. A confirmed project-secret exfiltration finding is `critical`; the assessment model therefore applies the existing critical risk floor of 80 even when the family aggregation would otherwise be lower.
+
 ## 5. Finding generation
 
 Finding definitions are embedded from `internal/findingconfig/default/*.yaml`. The database has an independent schema version and content version so that rule changes can be identified in reports.
@@ -156,6 +168,8 @@ Each rule defines:
 - confidence and weight;
 - a matcher and optional hook context;
 - explanatory text, remediation, limitations, and protected risks;
+
+Hook-level rules may constrain `run-as-root`, `project-mounted`, `interfaces-active`, `state-mounted`, and `context-dependent`. Configured context fields use AND semantics. If required hook context is unavailable, the rule does not match; Latra does not infer a positive contextual finding from the hook name alone.
 
 ### Matcher types
 
@@ -309,15 +323,16 @@ coverage_score = round(0.6 * hook_score + 0.4 * command_score)
 
 Coverage is `sufficient` only when its score is at least `80` and no hook failed to parse. Otherwise it is `insufficient`.
 
-An unresolved SDK or a resource-limit diagnostic forces coverage to `0` and `insufficient`, because the inventory cannot be considered complete.
+An unresolved SDK or a resource limit affecting metadata, a standard hook, archive integrity, or complete archive traversal forces coverage to `0` and `insufficient`. Skipping only non-essential file content does not invalidate hook and command coverage.
 
 File counts are reported as transparency metadata:
 
 - inventoried entries;
 - text files whose content was available for analysis;
 - binary files represented only by metadata and digest.
+- files whose content was skipped while path, size, and digest remained inventoried.
 
-They are not a numeric term in the coverage formula. This avoids penalizing SDKs merely for containing many bundled binaries, while resource-limit failures still make the assessment incomplete.
+They are not a numeric term in the coverage formula. This avoids penalizing SDKs merely for containing many bundled binaries. A resource-limit failure affecting required analysis inputs still makes the assessment incomplete, while an explicit non-essential content skip remains visible without forcing coverage to zero.
 
 ## 8. Review priority and classification
 
@@ -351,7 +366,7 @@ This ordering is intentional:
 
 Latra calculates the same assessment for each SDK and for the entire scanned project.
 
-The project score is not an average of SDK scores. All project findings are aggregated by family using the same formulas, and coverage counters are combined before coverage is recalculated. If any SDK is unresolved or resource-limited, project coverage is incomplete.
+The project score is not an average of SDK scores. All project findings are aggregated by family using the same formulas, and coverage counters are combined before coverage is recalculated. If any SDK is unresolved or a required analysis input is resource-limited, project coverage is incomplete.
 
 This prevents a large number of low-risk SDKs from averaging away one high-risk SDK.
 
@@ -374,6 +389,8 @@ project risk     = D(82.20, 25)                = 86.65 -> 87
 Review Priority is at least `87`, and the project is `high-priority-review`. Assurance findings may still be high, but do not reduce this value.
 
 For a fully analyzed SDK with only one medium persistence finding of weight `25`, risk is `25`. If assurance is at least `60` and coverage is sufficient, the classification is `expected-and-controlled`, while the persistence finding remains visible for review.
+
+A statically controlled `setup-base` write to a fully resolved `/etc/profile.d/*.sh` target is represented by `risk.profile-environment-write` with low severity and weight `10`. Low-risk content is restricted to declarative `export NAME=...` assignments, comments, and blank lines. A heredoc template may contain the Workshop-provided `SDK` variable because Workshop supplies it to every SDK hook; arbitrary variables and expansions remain unresolved. The generic medium persistence rule excludes the calibrated occurrence, so it is not counted twice. Remote content, unresolved non-Workshop values, arbitrary script statements, non-static file input, other hooks, `/etc/profile`, shell rc files, cron, and systemd paths remain generic persistence risk. Heredoc content is preserved as an operation value so this decision remains evidence-based.
 
 ## 10. Key Risks
 

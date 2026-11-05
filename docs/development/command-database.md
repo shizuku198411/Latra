@@ -25,7 +25,7 @@ Prefer an existing fragment. Add a new fragment only for a stable functional are
 ## General rules
 
 - YAML is decoded strictly. Unknown field names fail validation.
-- `schema-version` is currently `"1"` and is declared only in `capabilities.yaml`.
+- `schema-version` is currently `"2"` and is declared only in `capabilities.yaml`.
 - Rule IDs are globally unique across every fragment.
 - IDs, capability names, and categories use lowercase letters and digits separated by `.` or `-`.
 - Referenced capabilities and path classes must already be defined somewhere in the merged database.
@@ -347,6 +347,12 @@ Path classes accept these match fields:
 - `contains`
 - `case-insensitive-contains`
 - `suffixes`
+- `basenames`
+- `basename-prefixes`
+- `excluded-exact`
+- `excluded-basenames`
+
+Exclusions are evaluated before positive path matches. They are useful for removing documented templates such as `.env.example` from a broader `.env.*` class.
 
 Define the class in `path-classes.yaml`:
 
@@ -365,12 +371,30 @@ path-capabilities:
     read:
       id: path.example.read
       capability: example-behavior
+      additional-capabilities:
+        - project-read
     write:
       id: path.example.write
       capability: example-behavior
 ```
 
 A path capability requires at least one of `read` or `write`.
+`additional-capabilities` emits multiple factual capabilities from the same classified path access while preserving one rule ID.
+
+For command options whose value embeds a file path after a marker, set `path-marker` on the option operand. For example, curl accepts `--data-binary @file` and `--form name=@file`:
+
+```yaml
+option-operands:
+  - options:
+      - name: --data-binary
+        value-styles:
+          - next
+          - equals
+    access: read
+    path-marker: "@"
+```
+
+The rule is ignored when the option value does not contain the marker.
 
 ## Validate a change
 

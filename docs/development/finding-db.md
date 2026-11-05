@@ -47,6 +47,8 @@ Risk rules require `severity`; assurance rules require `strength`. All rules req
 | --- | --- |
 | `capability` | One matching capability occurrence, optionally constrained by hook and root context. |
 | `path-write` | An operation output classified into one of the configured path classes. |
+| `persistence-write` | A persistence capability except a statically controlled `setup-base` write under `/etc/profile.d/*.sh`. |
+| `profile-environment-write` | A fully resolved, statically controlled `setup-base` environment-profile write. |
 | `unknown-command` | A resolved command not covered by the command database. |
 | `parse-status` | A hook parser status such as `Failed` or `Recovered`. |
 | `sdk-unresolved` | A non-resolved SDK state. |
@@ -59,6 +61,63 @@ Risk rules require `severity`; assurance rules require `strength`. All rules req
 | `complete-file-inventory` | A resolved SDK without a resource-limit diagnostic. |
 | `read-only-health-check` | A parsed, known-command health check without detected mutation capabilities. |
 
+## Hook context constraints
+
+Hook-level matchers can narrow a rule with any combination of the following fields:
+
+```yaml
+match:
+  type: capability
+  capabilities:
+    - project-write
+  hook-names:
+    - check-health
+  run-as-root: true
+  project-mounted: true
+  interfaces-active: true
+  state-mounted: false
+  context-dependent: false
+```
+
+All configured fields use AND semantics. Omitted fields do not constrain the match. If a rule requires execution context but hook analysis did not produce that context, the rule does not match; Latra does not infer a positive match from the hook name alone.
+
+Context fields are supported by hook-level matchers such as `capability`, `path-write`, `unknown-command`, `parse-status`, `relation-flow`, `read-only-health-check`, and hook-scoped `absence-capability`. SDK-level matchers reject hook context fields during configuration validation.
+
+## Relation-flow matchers
+
+A relation-flow matcher requires `source-capability` and at least one sink constraint. `sink-commands` matches normalized command names. `sink-capability` matches an observed sink behavior and is preferred when several commands implement the same behavior.
+
+```yaml
+match:
+  type: relation-flow
+  relation-kinds:
+    - pipeline
+    - substitution-flow
+    - variable-flow
+  source-capability: project-sensitive-file-read
+  sink-capability: external-send
+  same-operation: true
+  project-mounted: true
+  interfaces-active: true
+```
+
+`relation-kinds` follows explicit operation-graph edges. `same-operation: true` additionally matches commands such as `curl -F file=@.env`, where the file input and external send are capabilities of one operation. When command and capability sink constraints are both present, both must match.
+
+Flow evidence records the source capability and the sink, including both operation IDs, values, resolutions, and source locations. Relation resolution can lower finding confidence when substitution or variable propagation is not fully resolved.
+
+## Profile environment calibration
+
+The paired `persistence-write` and `profile-environment-write` matchers are mutually exclusive. A write is assigned to the low-severity profile rule only when all of the following are established:
+
+- the hook is `setup-base` with its expected Workshop context;
+- the target is fully resolved and its normalized path is `/etc/profile.d/<name>.sh`;
+- content comes from resolved `echo` or `printf` arguments, or a static heredoc, and contains only declarative `export NAME=...` environment assignments, comments, and blank lines;
+- heredoc templates may reference the Workshop-provided `SDK` variable; other unresolved variables and expansions are rejected;
+- the content does not contain a recognized download or shell-execution payload;
+- a `tee` write receives the same kind of static generator through a pipeline.
+
+Remote download output, unresolved non-Workshop variables or paths, command substitution, arbitrary script statements, non-static file input, another lifecycle hook, and other persistence locations remain under the generic medium-severity persistence rule. This is an allowlisted calibration, not a general trust decision for profile writes.
+
 ## Adding a rule
 
 1. Select the closest category file under `internal/findingconfig/default/`.
@@ -69,4 +128,4 @@ Risk rules require `severity`; assurance rules require `strength`. All rules req
 6. Run `workshop run -- format`, `workshop run -- check`, and `workshop run -- test`.
 7. Review the normal SDK corpus for frequency and false positives.
 
-Adding a rule or changing its weight requires updating `content-version` in `schema.yaml`. Changing the YAML structure requires a finding database `schema-version` change. Report structure changes are versioned separately by the report `schemaVersion`.
+Adding a rule, changing matcher behavior, or changing a weight requires updating `content-version` in `schema.yaml`. Changing the YAML structure requires a finding database `schema-version` change. Report structure changes are versioned separately by the report `schemaVersion`.

@@ -287,6 +287,58 @@ func TestWriteTextSummaryCompactsNonHookFiles(t *testing.T) {
 	}
 }
 
+func TestReportIncludesSkippedFileStatusAndSummary(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	result.SDKs[0].Files = append(result.SDKs[0].Files, sdk.File{
+		Path: "bin/model", Type: sdk.FileRegular, Mode: 0o644, Size: 4096,
+		Digest: "sha3-384:skipped", Skipped: true, SkipReason: "size-limit",
+	})
+	result.SDKs[0].Diagnostics = append(result.SDKs[0].Diagnostics, sdk.Diagnostic{
+		Code: "file-content-skipped", Severity: sdk.SeverityWarning, Phase: "inventory",
+		Message: "1 non-essential file content was skipped due to resource limits",
+	})
+
+	document := report.NewDocument(result)
+	if document.Summary.Files.ContentSkipped != 1 || document.Summary.Files.BySDK[0].ContentSkipped != 1 {
+		t.Fatalf("file summary = %#v", document.Summary.Files)
+	}
+	if len(document.Summary.Files.BySDK[0].SkippedFiles) != 1 || document.Summary.Files.BySDK[0].SkippedFiles[0].FilePath != "bin/model" {
+		t.Fatalf("skipped summary = %#v", document.Summary.Files.BySDK[0].SkippedFiles)
+	}
+	var skipped *report.File
+	for index := range document.SDKs[0].Files {
+		if document.SDKs[0].Files[index].Path == "bin/model" {
+			skipped = &document.SDKs[0].Files[index]
+		}
+	}
+	if skipped == nil || skipped.ContentStatus != "skipped" || skipped.SkipReason != "size-limit" || skipped.Content == nil || *skipped.Content != "sha3-384:skipped" {
+		t.Fatalf("skipped file = %#v", skipped)
+	}
+	if document.Assessment.Coverage.Level != "sufficient" || document.Assessment.Coverage.Files.ContentSkipped != 1 {
+		t.Fatalf("coverage = %#v", document.Assessment.Coverage)
+	}
+
+	var compact bytes.Buffer
+	if err := report.WriteTextSummary(&compact, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Files: 2 (1 content skipped)", "example (2, 1 content skipped)", "Content skipped: bin/model (size-limit, 4096 bytes)"} {
+		if !strings.Contains(compact.String(), want) {
+			t.Errorf("compact text does not contain %q:\n%s", want, compact.String())
+		}
+	}
+
+	var verbose bytes.Buffer
+	if err := report.WriteText(&verbose, result); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(verbose.String(), "content=skipped reason=size-limit") {
+		t.Errorf("verbose text does not show skipped status:\n%s", verbose.String())
+	}
+}
+
 func TestDocumentSummaryGroupsUnknownCommandsBySDKAndFile(t *testing.T) {
 	t.Parallel()
 

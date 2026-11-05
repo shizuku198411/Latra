@@ -14,7 +14,7 @@ func TestEmbeddedDefaultIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.SchemaVersion != "1" {
+	if config.SchemaVersion != "2" {
 		t.Errorf("schema version = %q", config.SchemaVersion)
 	}
 	if len(config.CommandRules) == 0 || len(config.OperationRules) == 0 || len(config.PathClasses) == 0 {
@@ -67,7 +67,7 @@ func TestEmbeddedDefaultFragmentLayout(t *testing.T) {
 func TestParseRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 
-	_, err := capabilityconfig.Parse([]byte("schema-version: \"1\"\nunknown-field: true\n"))
+	_, err := capabilityconfig.Parse([]byte("schema-version: \"2\"\nunknown-field: true\n"))
 	if err == nil {
 		t.Fatal("expected unknown field error")
 	}
@@ -77,7 +77,7 @@ func TestParseRejectsDuplicateRuleIDs(t *testing.T) {
 	t.Parallel()
 
 	_, err := capabilityconfig.Parse([]byte(`
-schema-version: "1"
+schema-version: "2"
 command-rules:
   - id: duplicate.rule
     commands: [one]
@@ -95,7 +95,7 @@ func TestParseRejectsUnknownPathClassReference(t *testing.T) {
 	t.Parallel()
 
 	_, err := capabilityconfig.Parse([]byte(`
-schema-version: "1"
+schema-version: "2"
 path-capabilities:
   missing:
     read: {id: path.missing.read, capability: project-read}
@@ -109,7 +109,7 @@ func TestParseRejectsUndefinedCapability(t *testing.T) {
 	t.Parallel()
 
 	_, err := capabilityconfig.Parse([]byte(`
-schema-version: "1"
+schema-version: "2"
 capability-definitions:
   known:
     description: Known behavior.
@@ -123,11 +123,34 @@ command-rules:
 	}
 }
 
+func TestParseRejectsUndefinedAdditionalPathCapability(t *testing.T) {
+	t.Parallel()
+
+	_, err := capabilityconfig.Parse([]byte(`
+schema-version: "2"
+capability-definitions:
+  known:
+    description: Known behavior.
+path-classes:
+  fixture:
+    exact: [fixture]
+path-capabilities:
+  fixture:
+    read:
+      id: path.fixture.read
+      capability: known
+      additional-capabilities: [missing]
+`))
+	if err == nil {
+		t.Fatal("expected undefined additional capability error")
+	}
+}
+
 func TestParseRejectsInvalidOperandSelector(t *testing.T) {
 	t.Parallel()
 
 	_, err := capabilityconfig.Parse([]byte(`
-schema-version: "1"
+schema-version: "2"
 capability-definitions:
   project-read:
     description: Reads project data.
@@ -147,7 +170,7 @@ func TestParseRejectsInvalidOptionValueStyle(t *testing.T) {
 	t.Parallel()
 
 	_, err := capabilityconfig.Parse([]byte(`
-schema-version: "1"
+schema-version: "2"
 capability-definitions:
   external-send:
     description: Sends data externally.
@@ -168,7 +191,7 @@ func TestParseRejectsContradictoryCommandMatch(t *testing.T) {
 	t.Parallel()
 
 	_, err := capabilityconfig.Parse([]byte(`
-schema-version: "1"
+schema-version: "2"
 capability-definitions:
   network-access:
     description: Uses a network endpoint.
@@ -189,7 +212,7 @@ func TestParseRejectsShortFlagOutsideDeclaredSet(t *testing.T) {
 	t.Parallel()
 
 	_, err := capabilityconfig.Parse([]byte(`
-schema-version: "1"
+schema-version: "2"
 capability-definitions:
   network-download:
     description: Downloads remote content.
@@ -210,7 +233,7 @@ func TestParseRejectsUnknownArgumentClass(t *testing.T) {
 	t.Parallel()
 
 	_, err := capabilityconfig.Parse([]byte(`
-schema-version: "1"
+schema-version: "2"
 capability-definitions:
   network-access:
     description: Accesses a network endpoint.

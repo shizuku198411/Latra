@@ -28,11 +28,17 @@ type Matcher struct {
 	Capabilities              []string `yaml:"capabilities,omitempty"`
 	HookNames                 []string `yaml:"hook-names,omitempty"`
 	RunAsRoot                 *bool    `yaml:"run-as-root,omitempty"`
+	ProjectMounted            *bool    `yaml:"project-mounted,omitempty"`
+	InterfacesActive          *bool    `yaml:"interfaces-active,omitempty"`
+	StateMounted              *bool    `yaml:"state-mounted,omitempty"`
+	ContextDependent          *bool    `yaml:"context-dependent,omitempty"`
 	ParseStatuses             []string `yaml:"parse-statuses,omitempty"`
 	DiagnosticCodes           []string `yaml:"diagnostic-codes,omitempty"`
 	DiagnosticMessageContains []string `yaml:"diagnostic-message-contains,omitempty"`
 	RelationKinds             []string `yaml:"relation-kinds,omitempty"`
 	SourceCapability          string   `yaml:"source-capability,omitempty"`
+	SinkCapability            string   `yaml:"sink-capability,omitempty"`
 	SinkCommands              []string `yaml:"sink-commands,omitempty"`
+	SameOperation             bool     `yaml:"same-operation,omitempty"`
 	PathClasses               []string `yaml:"path-classes,omitempty"`
 }

@@ -144,7 +144,7 @@ func mergeConfig(target, fragment *Config, source string) error {
 var identifierPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*$`)
 
 func validate(config *Config) error {
-	if config.SchemaVersion != "1" {
+	if config.SchemaVersion != "2" {
 		return fmt.Errorf("unsupported capability configuration schema version %q", config.SchemaVersion)
 	}
 	ids := make(map[string]bool)
@@ -238,6 +238,9 @@ func validate(config *Config) error {
 			if err := validateAccess(rule.ID, operand.Access); err != nil {
 				return err
 			}
+			if strings.ContainsAny(operand.PathMarker, "\r\n\x00") {
+				return fmt.Errorf("rule %q has invalid path marker", rule.ID)
+			}
 		}
 	}
 	for _, rule := range config.TargetRules {
@@ -297,10 +300,11 @@ func validate(config *Config) error {
 			if rule == nil {
 				continue
 			}
-			if err := validateRule(rule.ID, []string{rule.Capability}); err != nil {
+			capabilities := append([]string{rule.Capability}, rule.AdditionalCapabilities...)
+			if err := validateRule(rule.ID, capabilities); err != nil {
 				return err
 			}
-			if err := validateCapabilities(rule.ID, []string{rule.Capability}); err != nil {
+			if err := validateCapabilities(rule.ID, capabilities); err != nil {
 				return err
 			}
 		}

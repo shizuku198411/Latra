@@ -139,6 +139,11 @@ type resolvedArchive struct {
 	Size                             int64
 }
 
+type materializedArchive struct {
+	Root    string
+	Skipped []sdk.File
+}
+
 // Resolve implements source.StoreResolver.
 func (c *Client) Resolve(ctx context.Context, request source.StoreRequest, limits sdk.Limits) (*sdk.SDK, error) {
 	resolved, err := c.resolve(ctx, request)
@@ -149,7 +154,7 @@ func (c *Client) Resolve(ctx context.Context, request source.StoreRequest, limit
 		}
 		return nil, resolutionFailure(sdk.StateNotResolved, "store-resolve-failed", "resolve", err)
 	}
-	root, err := c.materialize(ctx, resolved, limits)
+	materialized, err := c.materialize(ctx, resolved, limits)
 	if err != nil {
 		var resolutionError *source.ResolutionError
 		if errors.As(err, &resolutionError) {
@@ -157,7 +162,10 @@ func (c *Client) Resolve(ctx context.Context, request source.StoreRequest, limit
 		}
 		return nil, resolutionFailure(sdk.StateDownloadFailed, "store-cache-failed", "cache", err)
 	}
-	result, err := sdk.Read(root, request.Name, limits)
+	result, err := sdk.ReadWithOptions(materialized.Root, request.Name, limits, sdk.ReadOptions{
+		AdditionalFiles: materialized.Skipped,
+		IgnorePaths:     []string{sdkcache.ManifestPath},
+	})
 	if err != nil {
 		return nil, resolutionFailure(sdk.StateInvalidArtifact, "store-artifact-analysis-failed", "analyze", fmt.Errorf("analyze downloaded SDK: %w", err))
 	}
@@ -272,12 +280,12 @@ func (c *Client) endpoint(parts ...string) string {
 	return copy.String()
 }
 
-func (c *Client) materialize(ctx context.Context, archive resolvedArchive, limits sdk.Limits) (string, error) {
+func (c *Client) materialize(ctx context.Context, archive resolvedArchive, limits sdk.Limits) (materializedArchive, error) {
 	if err := sdk.ValidateName(archive.Name); err != nil {
-		return "", fmt.Errorf("invalid SDK cache name: %w", err)
+		return materializedArchive{}, fmt.Errorf("invalid SDK cache name: %w", err)
 	}
 	if err := sdk.ValidateChannel(archive.Channel); err != nil {
-		return "", fmt.Errorf("invalid SDK cache channel: %w", err)
+		return materializedArchive{}, fmt.Errorf("invalid SDK cache channel: %w", err)
 	}
 	channelDir := filepath.Join(c.cacheDir, archive.Name, filepath.FromSlash(archive.Channel))
 	extractDir := filepath.Join(channelDir, strconv.Itoa(archive.Revision))
@@ -287,28 +295,35 @@ func (c *Client) materialize(ctx context.Context, archive resolvedArchive, limit
 			verifyErr := verifyArchive(file, archive)
 			file.Close()
 			if verifyErr == nil {
-				return extractDir, nil
+				skipped, manifestErr := sdkcache.ReadManifest(extractDir)
+				if manifestErr == nil {
+					return materializedArchive{Root: extractDir, Skipped: skipped}, nil
+				}
 			}
 		}
 	}
 	if err := os.MkdirAll(channelDir, 0o700); err != nil {
-		return "", err
+		return materializedArchive{}, err
 	}
 	if err := c.download(ctx, archive, archivePath); err != nil {
-		return "", err
+		return materializedArchive{}, err
 	}
 	temporary, err := os.MkdirTemp(channelDir, ".extract-")
 	if err != nil {
-		return "", err
+		return materializedArchive{}, err
 	}
 	defer os.RemoveAll(temporary)
-	if err := extractArchive(archivePath, temporary, limits); err != nil {
-		return "", resolutionFailure(sdk.StateInvalidArtifact, "store-artifact-extraction-failed", "extract", err)
+	skipped, err := extractArchive(archivePath, temporary, limits)
+	if err != nil {
+		return materializedArchive{}, resolutionFailure(sdk.StateInvalidArtifact, "store-artifact-extraction-failed", "extract", err)
+	}
+	if err := sdkcache.WriteManifest(temporary, skipped); err != nil {
+		return materializedArchive{}, fmt.Errorf("write extraction manifest: %w", err)
 	}
 	if err := replaceExtractedCache(temporary, extractDir); err != nil {
-		return "", err
+		return materializedArchive{}, err
 	}
-	return extractDir, nil
+	return materializedArchive{Root: extractDir, Skipped: skipped}, nil
 }
 
 func replaceExtractedCache(source, target string) error {
@@ -416,15 +431,15 @@ func verifyArchive(file *os.File, archive resolvedArchive) error {
 	return nil
 }
 
-func extractArchive(archivePath, target string, limits sdk.Limits) error {
+func extractArchive(archivePath, target string, limits sdk.Limits) ([]sdk.File, error) {
 	file, err := os.Open(archivePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer file.Close()
 	root, err := os.OpenRoot(target)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer root.Close()
 	decoder, err := zstd.NewReader(file,
@@ -432,89 +447,157 @@ func extractArchive(archivePath, target string, limits sdk.Limits) error {
 		zstd.WithDecoderMaxMemory(uint64(maxArchiveBytes)),
 	)
 	if err != nil {
-		return fmt.Errorf("open Zstandard SDK archive: %w", err)
+		return nil, fmt.Errorf("open Zstandard SDK archive: %w", err)
 	}
 	defer decoder.Close()
 	reader := tar.NewReader(decoder)
-	var files, total int64
+	var files, retained, streamed, requiredTotal int64
+	var skipped []sdk.File
+	skippedByPath := make(map[string]sdk.File)
+	seenPaths := make(map[string]bool)
+	type pendingSymlink struct {
+		name, linkName, targetPath string
+		mode                       os.FileMode
+	}
+	var symlinks []pendingSymlink
+	nonRequiredBudget := max(int64(0), limits.MaxTotalBytes-6*limits.MaxRequiredFileSize)
 	for {
 		header, err := reader.Next()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("read SDK archive: %w", err)
+			return nil, fmt.Errorf("read SDK archive: %w", err)
 		}
 		name := filepath.ToSlash(filepath.Clean(header.Name))
 		if name == "." {
 			continue
 		}
-		if filepath.IsAbs(header.Name) || name == ".." || strings.HasPrefix(name, "../") || strings.ContainsRune(name, '\x00') {
-			return fmt.Errorf("unsafe SDK archive path %q", header.Name)
+		if name == sdkcache.ManifestPath {
+			return nil, fmt.Errorf("SDK archive uses reserved cache path %q", name)
 		}
+		if filepath.IsAbs(header.Name) || name == ".." || strings.HasPrefix(name, "../") || strings.ContainsRune(name, '\x00') {
+			return nil, fmt.Errorf("unsafe SDK archive path %q", header.Name)
+		}
+		if seenPaths[name] {
+			return nil, fmt.Errorf("duplicate SDK archive path %q", name)
+		}
+		seenPaths[name] = true
 		if depth := len(strings.Split(name, "/")); depth > limits.MaxDepth {
-			return fmt.Errorf("SDK archive path exceeds maximum depth")
+			return nil, fmt.Errorf("SDK archive path exceeds maximum depth")
 		}
 		files++
 		if files > limits.MaxFiles {
-			return fmt.Errorf("SDK archive exceeds maximum file count")
+			return nil, fmt.Errorf("SDK archive exceeds maximum file count")
 		}
-		if header.Size < 0 || header.Size > limits.MaxFileSize {
-			return fmt.Errorf("SDK archive entry %q exceeds size limit", name)
+		if header.Size < 0 {
+			return nil, fmt.Errorf("SDK archive entry %q has invalid size", name)
 		}
-		total += header.Size
-		if total > limits.MaxTotalBytes {
-			return fmt.Errorf("SDK archive exceeds total size limit")
+		if header.Typeflag == tar.TypeReg || header.Typeflag == tar.TypeRegA {
+			streamed += header.Size
+			if streamed > limits.MaxStreamedBytes {
+				return nil, fmt.Errorf("SDK archive exceeds streamed size limit")
+			}
 		}
 		parent := filepath.ToSlash(filepath.Dir(name))
 		if parent != "." {
 			if err := root.MkdirAll(parent, 0o700); err != nil {
-				return fmt.Errorf("create archive directory: %w", err)
+				return nil, fmt.Errorf("create archive directory: %w", err)
 			}
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := root.MkdirAll(name, os.FileMode(header.Mode)&0o777|0o700); err != nil {
-				return err
+				return nil, err
 			}
 		case tar.TypeReg, tar.TypeRegA:
+			required := sdk.IsRequiredFile(name)
+			if required && header.Size > limits.MaxRequiredFileSize {
+				return nil, fmt.Errorf("required SDK archive entry %q exceeds size limit", name)
+			}
+			if required {
+				requiredTotal += header.Size
+				if requiredTotal > limits.MaxTotalBytes {
+					return nil, fmt.Errorf("required SDK archive entries exceed total size limit")
+				}
+			}
+			if !required && (header.Size > limits.MaxFileSize || retained+header.Size > nonRequiredBudget) {
+				hasher := sha3.New384()
+				if _, err := io.CopyN(hasher, reader, header.Size); err != nil {
+					return nil, fmt.Errorf("hash skipped archive entry %q: %w", name, err)
+				}
+				item := sdk.File{
+					Path: name, Type: sdk.FileRegular, Mode: os.FileMode(header.Mode), Size: header.Size,
+					Digest: "sha3-384:" + hex.EncodeToString(hasher.Sum(nil)), Skipped: true, SkipReason: "size-limit",
+				}
+				skipped = append(skipped, item)
+				skippedByPath[name] = item
+				continue
+			}
 			output, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, os.FileMode(header.Mode)&0o777|0o600)
 			if err != nil {
-				return fmt.Errorf("create archive entry %q: %w", name, err)
+				return nil, fmt.Errorf("create archive entry %q: %w", name, err)
 			}
 			_, copyErr := io.CopyN(output, reader, header.Size)
 			closeErr := output.Close()
 			if copyErr != nil {
-				return copyErr
+				return nil, copyErr
 			}
 			if closeErr != nil {
-				return closeErr
+				return nil, closeErr
 			}
+			retained += header.Size
 		case tar.TypeSymlink:
 			targetPath := filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(name), header.Linkname)))
 			if filepath.IsAbs(header.Linkname) || targetPath == ".." || strings.HasPrefix(targetPath, "../") {
-				return fmt.Errorf("unsafe SDK archive symlink %q -> %q", name, header.Linkname)
+				return nil, fmt.Errorf("unsafe SDK archive symlink %q -> %q", name, header.Linkname)
 			}
-			if err := root.Symlink(header.Linkname, name); err != nil {
-				return err
-			}
+			symlinks = append(symlinks, pendingSymlink{name: name, linkName: header.Linkname, targetPath: targetPath, mode: os.FileMode(header.Mode)})
 		case tar.TypeLink:
 			targetPath := filepath.ToSlash(filepath.Clean(header.Linkname))
 			if filepath.IsAbs(header.Linkname) || targetPath == "." || targetPath == ".." || strings.HasPrefix(targetPath, "../") {
-				return fmt.Errorf("unsafe SDK archive hard link %q -> %q", name, header.Linkname)
+				return nil, fmt.Errorf("unsafe SDK archive hard link %q -> %q", name, header.Linkname)
+			}
+			if target, ok := skippedByPath[targetPath]; ok {
+				item := sdk.File{
+					Path: name, Type: sdk.FileRegular, Mode: os.FileMode(header.Mode), Size: target.Size,
+					Digest: target.Digest, Skipped: true, SkipReason: "linked-content-skipped",
+				}
+				skipped = append(skipped, item)
+				skippedByPath[name] = item
+				continue
 			}
 			info, err := root.Lstat(targetPath)
 			if err != nil || !info.Mode().IsRegular() {
-				return fmt.Errorf("SDK archive hard link %q has an invalid target %q", name, header.Linkname)
+				return nil, fmt.Errorf("SDK archive hard link %q has an invalid target %q", name, header.Linkname)
 			}
 			if err := root.Link(targetPath, name); err != nil {
-				return fmt.Errorf("create SDK archive hard link %q -> %q: %w", name, header.Linkname, err)
+				return nil, fmt.Errorf("create SDK archive hard link %q -> %q: %w", name, header.Linkname, err)
 			}
 		default:
-			return fmt.Errorf("unsupported SDK archive entry type for %q", name)
+			return nil, fmt.Errorf("unsupported SDK archive entry type for %q", name)
 		}
 	}
-	return nil
+	for _, link := range symlinks {
+		if _, ok := skippedByPath[link.targetPath]; ok {
+			digest := sha3.Sum384([]byte(link.linkName))
+			item := sdk.File{
+				Path: link.name, Type: sdk.FileSymlink, Mode: link.mode | os.ModeSymlink,
+				Size: int64(len(link.linkName)), Digest: "sha3-384:" + hex.EncodeToString(digest[:]),
+				LinkTarget: link.linkName, Skipped: true, SkipReason: "target-content-skipped",
+			}
+			skipped = append(skipped, item)
+			skippedByPath[link.name] = item
+			continue
+		}
+		if _, err := root.Stat(link.targetPath); err != nil {
+			return nil, fmt.Errorf("SDK archive symlink %q has an invalid target %q", link.name, link.linkName)
+		}
+		if err := root.Symlink(link.linkName, link.name); err != nil {
+			return nil, err
+		}
+	}
+	return skipped, nil
 }
 
 func dpkgArchitecture(goarch string) (string, error) {

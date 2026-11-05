@@ -1,4 +1,70 @@
 path-classes:
+  project-sensitive:
+    exact:
+      - .env
+      - .npmrc
+      - .pypirc
+      - .netrc
+      - .git/config
+      - .git-credentials
+      - .aws/credentials
+      - .config/gcloud/application_default_credentials.json
+      - .config/gh/hosts.yml
+    prefixes:
+      - .ssh/
+      - .config/gcloud/
+    contains:
+      - /.git/config
+      - /.git-credentials
+      - /.aws/credentials
+      - /.config/gcloud/
+      - /.config/gh/hosts.yml
+      - /.ssh/
+    suffixes:
+      - .pem
+      - .key
+    basenames:
+      - .env
+      - .npmrc
+      - .pypirc
+      - .netrc
+    basename-prefixes:
+      - .env.
+    excluded-basenames:
+      - .env.example
+      - .env.sample
+      - .env.template
+  user-sensitive:
+    exact:
+      - /root/.npmrc
+      - /root/.pypirc
+      - /root/.netrc
+      - /root/.git-credentials
+      - /home/workshop/.npmrc
+      - /home/workshop/.pypirc
+      - /home/workshop/.netrc
+      - /home/workshop/.git-credentials
+    prefixes:
+      - /root/.ssh/
+      - /root/.aws/
+      - /root/.config/gcloud/
+      - /home/workshop/.ssh/
+      - /home/workshop/.aws/
+      - /home/workshop/.config/gcloud/
+    contains:
+      - /.config/gh/hosts.yml
+  system-sensitive:
+    exact:
+      - /etc/shadow
+      - /etc/gshadow
+      - /etc/sudoers
+    prefixes:
+      - /etc/sudoers.d/
+  unknown-sensitive-candidate:
+    suffixes:
+      - /.env
+      - .pem
+      - .key
   sensitive:
     case-insensitive-contains:
       - /.ssh
@@ -7,6 +73,9 @@ path-classes:
       - credential
       - token
       - secret
+    suffixes:
+      - .pem
+      - .key
   persistence:
     contains:
       - /systemd/

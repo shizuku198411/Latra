@@ -88,6 +88,88 @@ file-command-rules:
       - selector: all
         access: read
 
+  - id: file.sed-positional-script
+    commands:
+      - sed
+    match:
+      excluded-options:
+        - name: -e
+          value-styles:
+            - next
+            - attached
+        - name: --expression
+          value-styles:
+            - next
+            - equals
+    options:
+      - name: -f
+        value-styles:
+          - next
+          - attached
+      - name: --file
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: all-but-first
+        access: read
+    option-operands:
+      - options:
+          - name: -f
+            value-styles:
+              - next
+              - attached
+          - name: --file
+            value-styles:
+              - next
+              - equals
+        access: read
+
+  - id: file.sed-option-script
+    commands:
+      - sed
+    match:
+      any-options:
+        - name: -e
+          value-styles:
+            - next
+            - attached
+        - name: --expression
+          value-styles:
+            - next
+            - equals
+    options:
+      - name: -e
+        value-styles:
+          - next
+          - attached
+      - name: --expression
+        value-styles:
+          - next
+          - equals
+      - name: -f
+        value-styles:
+          - next
+          - attached
+      - name: --file
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: all
+        access: read
+    option-operands:
+      - options:
+          - name: -f
+            value-styles:
+              - next
+              - attached
+          - name: --file
+            value-styles:
+              - next
+              - equals
+        access: read
+
   - id: file.grep-pattern-operand
     commands:
       - grep
@@ -369,6 +451,53 @@ file-command-rules:
               - next
               - equals
         access: read
+
+  - id: file.awk-input
+    commands:
+      - awk
+      - gawk
+      - mawk
+    match:
+      excluded-options:
+        - name: -f
+          value-styles:
+            - next
+            - attached
+        - name: --file
+          value-styles:
+            - next
+            - equals
+    operands:
+      - selector: all-but-first
+        access: read
+
+  - id: file.curl-data-input
+    commands:
+      - curl
+    option-operands:
+      - options:
+          - name: -d
+            value-styles:
+              - next
+              - attached
+          - name: --data
+            value-styles:
+              - next
+              - equals
+          - name: --data-binary
+            value-styles:
+              - next
+              - equals
+          - name: -F
+            value-styles:
+              - next
+              - attached
+          - name: --form
+            value-styles:
+              - next
+              - equals
+        access: read
+        path-marker: "@"
 
   - id: file.script-input
     commands:

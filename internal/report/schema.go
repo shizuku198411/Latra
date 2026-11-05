@@ -14,7 +14,7 @@ import (
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
-const SchemaVersion = "2"
+const SchemaVersion = "3"
 
 // Document is the stable, versioned JSON inventory representation.
 type Document struct {
@@ -65,8 +65,9 @@ type SDKNameSummary struct {
 }
 
 type FileSummary struct {
-	Count int              `json:"count"`
-	BySDK []SDKFileSummary `json:"bySdk"`
+	Count          int              `json:"count"`
+	ContentSkipped int              `json:"contentSkipped"`
+	BySDK          []SDKFileSummary `json:"bySdk"`
 }
 
 type HookSummary struct {
@@ -107,9 +108,18 @@ type CountedName struct {
 }
 
 type SDKFileSummary struct {
-	SDKName   string   `json:"sdkName"`
-	Count     int      `json:"count"`
-	FilePaths []string `json:"filePaths"`
+	SDKName        string               `json:"sdkName"`
+	Count          int                  `json:"count"`
+	ContentSkipped int                  `json:"contentSkipped"`
+	FilePaths      []string             `json:"filePaths"`
+	SkippedFiles   []SkippedFileSummary `json:"skippedFiles"`
+}
+
+type SkippedFileSummary struct {
+	FilePath string `json:"filePath"`
+	Size     int64  `json:"size"`
+	Digest   string `json:"digest"`
+	Reason   string `json:"reason"`
 }
 
 type SDKHookSummary struct {
@@ -175,6 +185,8 @@ type File struct {
 	LinkTarget      string       `json:"linkTarget,omitempty"`
 	Content         *string      `json:"content,omitempty"`
 	ContentEncoding string       `json:"contentEncoding,omitempty"`
+	ContentStatus   string       `json:"contentStatus"`
+	SkipReason      string       `json:"skipReason,omitempty"`
 }
 
 type Hook struct {
@@ -343,9 +355,15 @@ func summarize(document Document) Summary {
 			summary.SDKs.Unresolved++
 			unresolvedSDKNames[item.Name] = struct{}{}
 		}
-		fileSummary := SDKFileSummary{SDKName: item.Name, Count: len(item.Files), FilePaths: []string{}}
+		fileSummary := SDKFileSummary{SDKName: item.Name, Count: len(item.Files), FilePaths: []string{}, SkippedFiles: []SkippedFileSummary{}}
 		for _, file := range item.Files {
 			fileSummary.FilePaths = append(fileSummary.FilePaths, file.Path)
+			if file.ContentStatus == "skipped" {
+				fileSummary.ContentSkipped++
+				fileSummary.SkippedFiles = append(fileSummary.SkippedFiles, SkippedFileSummary{
+					FilePath: file.Path, Size: file.Size, Digest: file.Digest, Reason: file.SkipReason,
+				})
+			}
 		}
 		hookSummary := SDKHookSummary{SDKName: item.Name, Count: len(item.Hooks), HookNames: []string{}}
 		operationSummary := SDKOperationSummary{SDKName: item.Name, OperationKinds: []CountedName{}}
@@ -387,6 +405,7 @@ func summarize(document Document) Summary {
 		operationSummary.OperationKinds = sortedCounts(operationKinds)
 		capabilitySummary.CapabilityNames = sortedCounts(capabilityNames)
 		summary.Files.Count += fileSummary.Count
+		summary.Files.ContentSkipped += fileSummary.ContentSkipped
 		summary.Hooks.Count += hookSummary.Count
 		summary.Operations.Count += operationSummary.Count
 		summary.Capabilities.Count += capabilitySummary.Count
@@ -500,11 +519,18 @@ func reportFiles(files []sdk.File) []File {
 	for _, file := range files {
 		item := File{
 			Path: file.Path, Type: file.Type, Mode: file.Mode, Size: file.Size,
-			Digest: file.Digest, LinkTarget: file.LinkTarget,
+			Digest: file.Digest, LinkTarget: file.LinkTarget, ContentStatus: "not-applicable",
 		}
 		if file.Type == sdk.FileRegular {
+			item.ContentStatus = "analyzed"
 			content, encoding := encodeContent(file.Content, file.Digest)
 			if file.Binary {
+				item.ContentStatus = "binary-only"
+				content, encoding = file.Digest, "sha3-384"
+			}
+			if file.Skipped {
+				item.ContentStatus = "skipped"
+				item.SkipReason = file.SkipReason
 				content, encoding = file.Digest, "sha3-384"
 			}
 			if item.Digest == "" && encoding == "sha3-384" {
@@ -512,6 +538,10 @@ func reportFiles(files []sdk.File) []File {
 			}
 			item.Content = &content
 			item.ContentEncoding = encoding
+		}
+		if file.Type == sdk.FileSymlink && file.Skipped {
+			item.ContentStatus = "skipped"
+			item.SkipReason = file.SkipReason
 		}
 		reported = append(reported, item)
 	}

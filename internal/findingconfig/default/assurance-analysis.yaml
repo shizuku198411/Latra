@@ -73,6 +73,10 @@ finding-rules:
       type: read-only-health-check
       hook-names:
         - check-health
+      run-as-root: true
+      project-mounted: true
+      interfaces-active: true
+      state-mounted: false
     message: The health check contains no detected write, destructive, persistence, or system-changing capability.
     limitations:
       - This finding depends on complete parsing and command coverage.

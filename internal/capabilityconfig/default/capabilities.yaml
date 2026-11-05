@@ -1,4 +1,4 @@
-schema-version: "1"
+schema-version: "2"
 
 capability-definitions:
   network-access:
@@ -21,6 +21,10 @@ capability-definitions:
     description: Writes data to the mounted Workshop project.
   credential-read:
     description: Reads a path likely to contain credentials or other sensitive data.
+  sensitive-file-read:
+    description: Reads a file classified as potentially containing secrets or other sensitive data.
+  project-sensitive-file-read:
+    description: Reads a sensitive file from the mounted Workshop project.
   state-read:
     description: Reads persisted Workshop SDK state.
   state-write:

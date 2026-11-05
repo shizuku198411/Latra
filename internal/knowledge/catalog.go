@@ -115,7 +115,9 @@ func Build(config *capabilityconfig.Config) Catalog {
 	for class, mapping := range config.PathCapabilities {
 		for _, pathRule := range []*capabilityconfig.CapabilityRule{mapping.Read, mapping.Write} {
 			if pathRule != nil {
-				add("", pathRule.Capability, "path-dependent", pathRule.ID)
+				for _, capability := range append([]string{pathRule.Capability}, pathRule.AdditionalCapabilities...) {
+					add("", capability, "path-dependent", pathRule.ID)
+				}
 			}
 		}
 		_ = class
@@ -131,10 +133,14 @@ func Build(config *capabilityconfig.Config) Catalog {
 		for _, command := range fileRule.Commands {
 			for _, mapping := range config.PathCapabilities {
 				if (accesses["read"] || accesses["read-write"]) && mapping.Read != nil {
-					add(command, mapping.Read.Capability, "path-dependent", fileRule.ID, mapping.Read.ID)
+					for _, capability := range append([]string{mapping.Read.Capability}, mapping.Read.AdditionalCapabilities...) {
+						add(command, capability, "path-dependent", fileRule.ID, mapping.Read.ID)
+					}
 				}
 				if (accesses["write"] || accesses["read-write"]) && mapping.Write != nil {
-					add(command, mapping.Write.Capability, "path-dependent", fileRule.ID, mapping.Write.ID)
+					for _, capability := range append([]string{mapping.Write.Capability}, mapping.Write.AdditionalCapabilities...) {
+						add(command, capability, "path-dependent", fileRule.ID, mapping.Write.ID)
+					}
 				}
 			}
 		}
