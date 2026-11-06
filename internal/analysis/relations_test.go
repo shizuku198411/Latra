@@ -84,6 +84,34 @@ func TestCapabilitiesReferenceOperationIDs(t *testing.T) {
 	}
 }
 
+func TestOutputRedirectCreatesStatementLocalFlow(t *testing.T) {
+	t.Parallel()
+
+	parsed := shell.NewParser().Parse([]byte("curl https://example.invalid/tool > generated/tool\nprintf unrelated\n> empty\n"), "fixture/hooks/setup-project")
+	result := analysis.Analyze("setup-project", &parsed)
+	var redirectFlows []analysis.Relation
+	for _, relation := range result.Relations {
+		if relation.Kind == analysis.RelationRedirectFlow {
+			redirectFlows = append(redirectFlows, relation)
+		}
+	}
+	if len(redirectFlows) != 1 {
+		t.Fatalf("redirect flows = %#v; all = %#v", redirectFlows, result.Relations)
+	}
+	flow := redirectFlows[0]
+	if flow.Name != "stdout-to-file" || flow.Resolution != analysis.Resolved {
+		t.Errorf("redirect flow = %#v", flow)
+	}
+	operations := flattenOperations(result.Operations)
+	byID := make(map[string]analysis.Operation, len(operations))
+	for _, operation := range operations {
+		byID[operation.ID] = operation
+	}
+	if byID[flow.FromOperationID].Command.Literal != "curl" || byID[flow.ToOperationID].Kind != analysis.OperationRedirectWrite {
+		t.Errorf("redirect endpoints = %#v -> %#v", byID[flow.FromOperationID], byID[flow.ToOperationID])
+	}
+}
+
 func flattenOperations(operations []analysis.Operation) []analysis.Operation {
 	var flattened []analysis.Operation
 	for _, operation := range operations {

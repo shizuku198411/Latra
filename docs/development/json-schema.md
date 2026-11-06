@@ -129,6 +129,7 @@ The hook-level `relations` array connects operation IDs:
 | `pipeline` | Standard output from one operation is connected to standard input of another. |
 | `substitution-flow` | Output from a command or process substitution is consumed by its owning operation. |
 | `variable-flow` | A variable assignment may supply a later reference in the same lexical scope. |
+| `redirect-flow` | Standard output from a producing command is written by an output redirect in the same shell statement. |
 
 Each capability includes `operationId`, linking the inferred behavior to its source operation. Relations and capabilities also carry `resolution`; consumers must preserve uncertainty rather than treating `PartiallyResolved` or `Unknown` as conclusive flow.
 

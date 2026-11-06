@@ -13,10 +13,11 @@ import (
 const candidateLimit = 8
 
 type builder struct {
-	sourceName       string
-	variables        map[string]Value
-	functions        map[string]bool
-	workingDirectory Value
+	sourceName         string
+	variables          map[string]Value
+	functions          map[string]bool
+	workingDirectory   Value
+	nextStatementGroup *int
 }
 
 // Analyze converts a parsed hook into operations and capabilities.
@@ -25,11 +26,13 @@ func Analyze(hook string, parsed *shell.Result) Result {
 	if parsed == nil || parsed.Program == nil {
 		return result
 	}
+	nextStatementGroup := 1
 	b := &builder{
-		sourceName:       parsed.Path,
-		variables:        make(map[string]Value),
-		functions:        make(map[string]bool),
-		workingDirectory: initialWorkingDirectory(hook),
+		sourceName:         parsed.Path,
+		variables:          make(map[string]Value),
+		functions:          make(map[string]bool),
+		workingDirectory:   initialWorkingDirectory(hook),
+		nextStatementGroup: &nextStatementGroup,
 	}
 	result.Operations = b.statements(parsed.Program.Stmts)
 	result.Relations = BuildRelations(result.Operations)
@@ -50,6 +53,8 @@ func (b *builder) statement(statement *syntax.Stmt) []Operation {
 		return nil
 	}
 	var operations []Operation
+	statementGroup := *b.nextStatementGroup
+	*b.nextStatementGroup = *b.nextStatementGroup + 1
 	statementWorkingDirectory := b.workingDirectory
 	switch command := statement.Cmd.(type) {
 	case *syntax.CallExpr:
@@ -117,6 +122,11 @@ func (b *builder) statement(statement *syntax.Stmt) []Operation {
 		operation := b.redirect(redirect)
 		operation.workingDirectory = statementWorkingDirectory
 		operations = append(operations, operation)
+	}
+	for index := range operations {
+		if operations[index].statementGroup == 0 {
+			operations[index].statementGroup = statementGroup
+		}
 	}
 	return operations
 }
@@ -439,10 +449,11 @@ func wrappedCommandIndex(name string, arguments []Value) int {
 
 func (b *builder) child() *builder {
 	return &builder{
-		sourceName:       b.sourceName,
-		variables:        cloneValues(b.variables),
-		functions:        cloneSet(b.functions),
-		workingDirectory: b.workingDirectory,
+		sourceName:         b.sourceName,
+		variables:          cloneValues(b.variables),
+		functions:          cloneSet(b.functions),
+		workingDirectory:   b.workingDirectory,
+		nextStatementGroup: b.nextStatementGroup,
 	}
 }
 

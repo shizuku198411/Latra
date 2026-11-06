@@ -715,6 +715,10 @@ func selectOperands(operands []Value, selector string) []Value {
 		if len(operands) > 1 {
 			return operands[:len(operands)-1]
 		}
+	case "position-2":
+		if len(operands) > 2 {
+			return operands[2:3]
+		}
 	}
 	return nil
 }

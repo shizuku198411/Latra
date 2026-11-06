@@ -6,7 +6,7 @@ Latra's built-in finding rules are YAML files under `internal/findingconfig/defa
 
 The finding database defines stable rule metadata and declarative matcher parameters:
 
-- finding ID and kind (`risk` or `assurance`);
+- finding ID and kind (`risk`, `assurance`, or `observation`);
 - family, title, message, and remediation;
 - severity or strength, confidence, and weight;
 - matcher type and its capability, context, path, diagnostic, or flow constraints;
@@ -39,7 +39,7 @@ finding-rules:
     remediation: Download and verify the artifact before executing it.
 ```
 
-Risk rules require `severity`; assurance rules require `strength`. All rules require evidence at runtime. A matcher that cannot produce evidence must not emit a finding.
+Risk rules require `severity`; assurance rules require `strength`. Observation rules are unscored, require weight `0`, and carry neither severity nor strength. All rules require evidence at runtime. A matcher that cannot produce evidence must not emit a finding.
 
 ## Matcher types
 
@@ -94,6 +94,7 @@ match:
     - pipeline
     - substitution-flow
     - variable-flow
+    - redirect-flow
   source-capability: project-sensitive-file-read
   sink-capability: external-send
   same-operation: true
@@ -101,7 +102,7 @@ match:
   interfaces-active: true
 ```
 
-`relation-kinds` follows explicit operation-graph edges. `same-operation: true` additionally matches commands such as `curl -F file=@.env`, where the file input and external send are capabilities of one operation. When command and capability sink constraints are both present, both must match.
+`relation-kinds` follows explicit operation-graph edges. Supported data-flow edges are `pipeline`, `substitution-flow`, `variable-flow`, and `redirect-flow`. `same-operation: true` additionally matches commands such as `curl -F file=@.env`, where the file input and external send are capabilities of one operation. When command and capability sink constraints are both present, both must match.
 
 Flow evidence records the source capability and the sink, including both operation IDs, values, resolutions, and source locations. Relation resolution can lower finding confidence when substitution or variable propagation is not fully resolved.
 

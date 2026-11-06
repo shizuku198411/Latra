@@ -740,7 +740,7 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["contains", "sequence", "pipeline", "substitution-flow", "variable-flow"]
+          "enum": ["contains", "sequence", "pipeline", "substitution-flow", "variable-flow", "redirect-flow"]
         },
         "fromOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
         "toOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },

@@ -116,6 +116,7 @@ Latra then creates the following relations:
 | `pipeline` | Standard output from one pipeline stage flows to the next stage's standard input. |
 | `substitution-flow` | Output from a command or process substitution flows into its containing operation. |
 | `variable-flow` | A later operation references a variable assigned by an earlier operation. |
+| `redirect-flow` | Standard output from a producing command flows to an output redirect in the same shell statement. |
 
 Variable flow is a conservative, lexical approximation. It does not claim to model every Bash control-flow or runtime scope behavior.
 

@@ -159,7 +159,7 @@ func validateRelationMatcher(rule Rule) error {
 		return fmt.Errorf("rule %q has no relation kinds or same-operation flow", rule.ID)
 	}
 	for _, kind := range matcher.RelationKinds {
-		if !contains([]string{"pipeline", "substitution-flow", "variable-flow"}, kind) {
+		if !contains([]string{"pipeline", "substitution-flow", "variable-flow", "redirect-flow"}, kind) {
 			return fmt.Errorf("rule %q has invalid relation kind %q", rule.ID, kind)
 		}
 	}

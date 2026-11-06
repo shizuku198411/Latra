@@ -11,7 +11,8 @@ This guide explains how to choose and edit the appropriate YAML fragment. It int
 | Register a known command without assigning behavior | `command-definitions.yaml` |
 | Add or change a capability definition | `capabilities.yaml` |
 | Map a command or command form to capabilities | `commands-core.yaml`, `commands-network.yaml`, `commands-runtime.yaml`, or `commands-system.yaml` |
-| Describe file operands read or written by a command | `files.yaml` |
+| Describe general file operands read or written by a command | `files.yaml` |
+| Describe explicit download, clone, extraction, or patch destinations | `file-outputs.yaml` |
 | Describe a command wrapper and continue analyzing its inner command | `wrappers.yaml` |
 | Detect inline code accepted by an interpreter option | `interpreters.yaml` |
 | Detect an option that sends local data externally | `uploads.yaml` |
@@ -202,7 +203,7 @@ Supported argument classes are:
 
 ## Describe file operands
 
-Use `files.yaml` when command operands represent paths. File rules derive path-based capabilities through `path-classes.yaml` and `path-capabilities.yaml`.
+Use `files.yaml` when general command operands represent paths. Use `file-outputs.yaml` for explicit destinations created by downloads, repository clones, archive extraction, or patch application. File rules derive path-based capabilities through `path-classes.yaml` and `path-capabilities.yaml`.
 
 ```yaml
 file-command-rules:
@@ -216,7 +217,7 @@ file-command-rules:
         access: write
 ```
 
-Supported operand selectors are `all`, `first`, `last`, `all-but-first`, and `all-but-last`. Supported access modes are `read`, `write`, and `read-write`.
+Supported operand selectors are `all`, `first`, `last`, `all-but-first`, `all-but-last`, and `position-2`. `position-2` selects the third positional operand and returns no value when it is absent; it is used for explicit destinations such as `git clone <repository> <directory>` while avoiding guesses about implicit output names. Supported access modes are `read`, `write`, and `read-write`.
 
 List options that consume values so those values are not interpreted as positional paths:
 

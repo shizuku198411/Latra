@@ -74,6 +74,7 @@ const (
 	RelationPipeline         RelationKind = "pipeline"
 	RelationSubstitutionFlow RelationKind = "substitution-flow"
 	RelationVariableFlow     RelationKind = "variable-flow"
+	RelationRedirectFlow     RelationKind = "redirect-flow"
 )
 
 // Relation connects two operations in the per-hook analysis graph.
@@ -103,6 +104,7 @@ type Operation struct {
 
 	pipelineBoundary int
 	workingDirectory Value
+	statementGroup   int
 }
 
 // HookContext describes Workshop's execution environment for a lifecycle hook.
