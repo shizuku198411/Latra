@@ -440,7 +440,7 @@ latra hook go setup-base
 latra file go sdk/hooks/setup-base
 ```
 
-The compact Summary shows only high- and critical-risk finding IDs. Assessment Key Risks retains all risk levels and all locations. Verbose text and JSON retain complete findings and evidence.
+The compact Summary shows only high- and critical-risk finding IDs. Text Assessment lists Key Risks only under each SDK to avoid duplicating the same evidence at project and SDK levels. JSON retains both the project aggregation and per-SDK Key Risks, while verbose JSON retains complete findings and evidence.
 
 ## 11. Determinism and versioning
 

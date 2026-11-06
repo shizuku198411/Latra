@@ -43,3 +43,17 @@ func TestAssessmentScoreColorCanBeDisabled(t *testing.T) {
 		t.Errorf("formatAssessmentScore() = %q", got)
 	}
 }
+
+func TestAssessmentBarUsesScoreWidthAndColor(t *testing.T) {
+	t.Parallel()
+
+	if got := formatAssessmentBar(50, "medium", false, false); got != "[██████████░░░░░░░░░░]" {
+		t.Errorf("formatAssessmentBar() = %q", got)
+	}
+	got := formatAssessmentBar(80, "high", true, true)
+	if !strings.HasPrefix(got, ansiWhite+"["+ansiGreen) ||
+		!strings.Contains(got, ansiWhite+"░░░░]") ||
+		!strings.HasSuffix(got, "]"+ansiReset) {
+		t.Errorf("colored assessment bar = %q", got)
+	}
+}

@@ -91,17 +91,16 @@ assurance, and analysis coverage:
 ```text
 Assessment
   Classification: expected-and-controlled
-  Review Priority: 10/100 (low)
-  Risk: 10/100 (low)
-  Assurance: 76/100 (high)
-  Coverage: 100/100 (sufficient)
-  Key Risks:
-    risk.profile-environment-write: Shell environment profile is written during base setup [low, score=10, occurrences=1]
-      sdk=go file=sdk/hooks/setup-base:1:11 hook=setup-base value="/etc/profile.d/go.sh"
+  Review Priority: 10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
+  Risk:            10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
+  Assurance:       76/100 (high)          [███████████████░░░░░]
+  Coverage:        100/100 (sufficient)   [████████████████████]
   By SDK:
     go: expected-and-controlled
-      Review Priority: 10/100 (low)
-      Risk: 10/100 (low), Assurance: 76/100 (high), Coverage: 100/100 (sufficient)
+      Review Priority: 10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
+      Risk:            10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
+      Assurance:       76/100 (high)          [███████████████░░░░░]
+      Coverage:        100/100 (sufficient)   [████████████████████]
       Key Risks:
         risk.profile-environment-write: Shell environment profile is written during base setup [low, score=10, occurrences=1]
           sdk=go file=sdk/hooks/setup-base:1:11 hook=setup-base value="/etc/profile.d/go.sh"
@@ -113,7 +112,7 @@ one low-risk behavior: it writes static environment configuration during base se
 `expected-and-controlled` classification means the detected behavior is
 consistent with the observed controls, not that the SDK is guaranteed safe.
 
-`Key Risks` identifies what needs review and where it was detected. Its `sdk`,
+The per-SDK `Key Risks` identifies what needs review and where it was detected. Its `sdk`,
 `file`, and `hook` values can be passed directly to the inspection commands in
 the next section.
 

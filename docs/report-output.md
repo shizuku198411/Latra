@@ -258,17 +258,16 @@ Assessment is displayed separately from Summary because Summary contains occurre
 ```text
 Assessment
   Classification: high-priority-review
-  Review Priority: 82/100 (critical)
-  Risk: 82/100 (critical)
-  Assurance: 66/100 (high)
-  Coverage: 88/100 (sufficient)
-  Key Risks:
-    risk.unknown-command-root: Unknown command runs in a root hook [medium, score=82, occurrences=6]
-      sdk=project-base file=hooks/check-health:4:1 hook=check-health value="example-command"
+  Review Priority: 82/100 (critical)      [████████████████░░░░]
+  Risk:            82/100 (critical)      [████████████████░░░░]
+  Assurance:       66/100 (high)          [█████████████░░░░░░░]
+  Coverage:        88/100 (sufficient)    [██████████████████░░]
   By SDK:
     project-base: high-priority-review
-      Review Priority: 82/100 (critical)
-      Risk: 82/100 (critical), Assurance: 66/100 (high), Coverage: 88/100 (sufficient)
+      Review Priority: 82/100 (critical)      [████████████████░░░░]
+      Risk:            82/100 (critical)      [████████████████░░░░]
+      Assurance:       66/100 (high)          [█████████████░░░░░░░]
+      Coverage:        88/100 (sufficient)    [██████████████████░░]
       Key Risks:
         risk.unknown-command-root: Unknown command runs in a root hook [medium, score=82, occurrences=6]
           sdk=project-base file=hooks/check-health:4:1 hook=check-health value="example-command"
@@ -276,7 +275,7 @@ Assessment
 
 `Review Priority` is the headline indicator: a higher number means the SDK should be reviewed sooner. It is not a probability that an SDK is malicious and it is not a safety score.
 
-`Key Risks` explains which rules contribute to the assessment. Each entry includes its aggregated rule score, occurrence count, and every source location. The `sdk`, `file`, and `hook` values can be copied directly into `latra file <sdk> <file>` and `latra hook <sdk> <hook>`. The line and column suffix on `file` identify the precise evidence location and are not part of the path passed to `latra file`.
+The `Key Risks` listed under each SDK explain which rules contribute to that SDK's assessment. Each entry includes its aggregated rule score, occurrence count, and every source location. The `sdk`, `file`, and `hook` values can be copied directly into `latra file <sdk> <file>` and `latra hook <sdk> <hook>`. The line and column suffix on `file` identify the precise evidence location and are not part of the path passed to `latra file`.
 
 Assurance is never subtracted from risk. For example, a verified artifact can still perform a high-impact root operation. In that case both the high risk and strong control remain visible. Incomplete analysis raises Review Priority through the coverage penalty and produces `insufficient-evidence`.
 

@@ -120,12 +120,70 @@ func TestWriteTextSummaryColorsAssessmentScores(t *testing.T) {
 	text := output.String()
 	for _, want := range []string{
 		"Review Priority: \x1b[32m0/100 (info)\x1b[0m",
-		"Risk: \x1b[32m0/100 (info)\x1b[0m",
-		"Assurance: \x1b[32m72/100 (high)\x1b[0m",
-		"Coverage: \x1b[32m100/100 (sufficient)\x1b[0m",
+		"Risk:            \x1b[32m0/100 (info)\x1b[0m",
+		"Assurance:       \x1b[32m72/100 (high)\x1b[0m",
+		"Coverage:        \x1b[32m100/100 (sufficient)\x1b[0m",
+		"\x1b[37m[\x1b[32m██████████████\x1b[37m░░░░░░]\x1b[0m",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text does not contain %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestTextAssessmentShowsKeyRisksOnlyBySDK(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	var output bytes.Buffer
+	if err := report.WriteTextSummary(&output, result); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	assessmentStart := strings.Index(text, "Assessment\n")
+	if assessmentStart < 0 {
+		t.Fatalf("Assessment section is missing:\n%s", text)
+	}
+	assessment := text[assessmentStart:]
+	bySDK := strings.Index(assessment, "  By SDK:\n")
+	keyRisks := strings.Index(assessment, "      Key Risks:\n")
+	if bySDK < 0 || keyRisks < bySDK {
+		t.Errorf("Key Risks must appear only below By SDK:\n%s", assessment)
+	}
+	if strings.Contains(assessment[:bySDK], "Key Risks:") {
+		t.Errorf("project-level Key Risks is still rendered:\n%s", assessment)
+	}
+}
+
+func TestAssessmentScoreBarsStartInTheSameColumn(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	if err := report.WriteTextSummary(&output, fixtureResult()); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(output.String(), "\n")
+	columns := make(map[int]int)
+	count := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "Review Priority:") && !strings.HasPrefix(trimmed, "Risk:") &&
+			!strings.HasPrefix(trimmed, "Assurance:") && !strings.HasPrefix(trimmed, "Coverage:") {
+			continue
+		}
+		column := strings.Index(line, "[")
+		if column < 0 {
+			t.Fatalf("score bar is missing from %q", line)
+		}
+		columns[column]++
+		count++
+	}
+	if count != 8 || len(columns) != 2 {
+		t.Errorf("score bar columns = %#v across %d lines; output:\n%s", columns, count, output.String())
+	}
+	for column, occurrences := range columns {
+		if occurrences != 4 {
+			t.Errorf("score bar column %d has %d lines, want 4", column, occurrences)
 		}
 	}
 }
