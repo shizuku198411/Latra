@@ -50,6 +50,103 @@ func TestRemoteContentExecutionFollowsSubstitutionAndVariableFlow(t *testing.T) 
 	}
 }
 
+func TestDynamicExecutionWithProjectAccessIsRisk(t *testing.T) {
+	t.Parallel()
+
+	project := analyzedSDK(t, "payload='printf safe'\neval \"$payload\"\n", sdk.HookSetupProject)
+	got := findFinding(finding.AnalyzeSDK(project), "risk.dynamic-execution")
+	if got == nil || got.Severity != "high" || got.Weight != 50 || got.Evidence[0].ID != "dynamic-execution" {
+		t.Fatalf("dynamic execution finding = %#v; all = %#v", got, finding.AnalyzeSDK(project))
+	}
+
+	base := analyzedSDK(t, "payload='printf safe'\neval \"$payload\"\n", sdk.HookSetupBase)
+	if got := findFinding(finding.AnalyzeSDK(base), "risk.dynamic-execution"); got != nil {
+		t.Fatalf("base setup matched project-access rule: %#v", got)
+	}
+}
+
+func TestRepositoryHookPersistenceIsRisk(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "hook file", content: "printf '#!/bin/sh' > .git/hooks/pre-commit\n"},
+		{name: "hook path config", content: "git config core.hooksPath .githooks\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, test.content, sdk.HookSetupProject)), "risk.repository-hook-persistence")
+			if got == nil || got.Severity != "high" || got.Weight != 50 {
+				t.Fatalf("repository persistence finding = %#v", got)
+			}
+		})
+	}
+
+	for _, content := range []string{
+		"printf value > .git/config\n",
+		"printf '#!/bin/sh' > generated/pre-commit\n",
+		"git config user.name fixture\n",
+		"git config core.hooksPath\n",
+		"git config --unset core.hooksPath\n",
+	} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.repository-hook-persistence"); got != nil {
+			t.Errorf("near miss matched repository persistence: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
+func TestProjectInPlaceModificationIsRisk(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"sed -i 's/before/after/' config.txt\n",
+		"sed -i.bak 's/before/after/' /project/config.txt\n",
+	} {
+		got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-file-modification")
+		if got == nil || got.Severity != "medium" || got.Weight != 25 || got.Evidence[0].ID != "project-in-place-modification" {
+			t.Fatalf("project modification finding = %#v", got)
+		}
+	}
+
+	for _, test := range []struct {
+		hook    sdk.HookName
+		content string
+	}{
+		{hook: sdk.HookSetupProject, content: "sed 's/before/after/' config.txt\n"},
+		{hook: sdk.HookSetupBase, content: "sed -i 's/before/after/' /project/config.txt\n"},
+		{hook: sdk.HookSetupProject, content: "printf generated > output.txt\n"},
+	} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, test.content, test.hook)), "risk.project-file-modification"); got != nil {
+			t.Errorf("near miss matched project modification: %#v", got)
+		}
+	}
+}
+
+func TestToolchainSearchOrderHijackRequiresCorrelatedBehavior(t *testing.T) {
+	t.Parallel()
+
+	positive := "cat <<'EOF' > /project/.tools/bin/compiler\n#!/bin/sh\nexit 0\nEOF\n" +
+		"chmod +x /project/.tools/bin/compiler\n" +
+		"printf '%s\\n' 'export PATH=/project/.tools/bin:$PATH' > /project/.toolchain.env\n"
+	got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, positive, sdk.HookSetupProject)), "risk.toolchain-search-order-hijack")
+	if got == nil || got.Severity != "high" || got.Weight != 50 || len(got.Evidence) != 3 {
+		t.Fatalf("toolchain hijack finding = %#v; all = %#v", got, finding.AnalyzeSDK(analyzedSDK(t, positive, sdk.HookSetupProject)))
+	}
+
+	for _, content := range []string{
+		"printf '#!/bin/sh' > /project/.tools/bin/compiler\nchmod +x /project/.tools/bin/compiler\n",
+		"printf '%s\\n' 'export PATH=/project/.tools/bin:$PATH' > /project/.toolchain.env\n",
+		"printf '#!/bin/sh' > /project/.tools/bin/compiler\nchmod +x /project/.tools/bin/compiler\nprintf '%s\\n' 'export PATH=/project/other:$PATH' > /project/.toolchain.env\n",
+		"printf '#!/bin/sh' > /tmp/compiler\nchmod +x /tmp/compiler\nprintf '%s\\n' 'export PATH=/tmp:$PATH' > /project/.toolchain.env\n",
+	} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.toolchain-search-order-hijack"); got != nil {
+			t.Errorf("near miss matched toolchain hijack: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
 func TestProjectSecretExfiltrationFlowVariants(t *testing.T) {
 	t.Parallel()
 

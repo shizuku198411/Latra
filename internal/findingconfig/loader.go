@@ -103,7 +103,8 @@ func validate(config *Config) error {
 		"all-commands-known": true, "absence-capability": true, "archive-digest": true,
 		"complete-file-inventory": true, "read-only-health-check": true,
 		"relation-flow": true, "path-write": true, "persistence-write": true,
-		"profile-environment-write": true,
+		"profile-environment-write": true, "repository-persistence": true,
+		"project-in-place-modification": true, "toolchain-search-order-hijack": true,
 	}
 	for _, rule := range config.Rules {
 		if !identifierPattern.MatchString(rule.ID) || seen[rule.ID] {

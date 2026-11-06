@@ -49,6 +49,9 @@ Risk rules require `severity`; assurance rules require `strength`. Observation r
 | `path-write` | An operation output classified into one of the configured path classes. |
 | `persistence-write` | A persistence capability except a statically controlled `setup-base` write under `/etc/profile.d/*.sh`. |
 | `profile-environment-write` | A fully resolved, statically controlled `setup-base` environment-profile write. |
+| `repository-persistence` | A project hook file write or a `core.hooksPath` configuration change during project setup. |
+| `project-in-place-modification` | An in-place editor operation targeting a file under the mounted project. |
+| `toolchain-search-order-hijack` | A correlated executable write, execute-permission change, and project PATH prepend. |
 | `unknown-command` | A resolved command not covered by the command database. |
 | `parse-status` | A hook parser status such as `Failed` or `Recovered`. |
 | `sdk-unresolved` | A non-resolved SDK state. |
@@ -118,6 +121,27 @@ The paired `persistence-write` and `profile-environment-write` matchers are mutu
 - a `tee` write receives the same kind of static generator through a pipeline.
 
 Remote download output, unresolved non-Workshop variables or paths, command substitution, arbitrary script statements, non-static file input, another lifecycle hook, and other persistence locations remain under the generic medium-severity persistence rule. Reading or sourcing a persistence-class path is not treated as a persistence write. This is an allowlisted calibration, not a general trust decision for profile writes.
+
+## Repository hook persistence
+
+The `repository-persistence` matcher is constrained to `setup-project` while
+the project is mounted. It emits evidence for either a project write to a file
+under `.git/hooks/` or a `git config` command that assigns a value to
+`core.hooksPath`. Directory creation, reads of `core.hooksPath`, removal of the
+setting, unrelated `.git` files, and unrelated Git configuration keys do not
+match.
+
+## Project modification and toolchain correlation
+
+`project-in-place-modification` reports an in-place editor only when its input
+has already been classified as a project read. Ordinary reads, generated-file
+writes, and the same command outside `setup-project` do not match.
+
+`toolchain-search-order-hijack` requires three correlated facts in one
+`setup-project` hook: a project file is written, the same file receives execute
+permission, and a project configuration file is generated with that file's
+directory prepended to `PATH`. A different PATH directory, a non-project
+executable, or any one behavior in isolation does not match.
 
 ## Adding a rule
 

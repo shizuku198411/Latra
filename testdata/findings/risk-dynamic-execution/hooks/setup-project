@@ -1,0 +1,3 @@
+payload='printf fixture'
+eval "$payload"
+

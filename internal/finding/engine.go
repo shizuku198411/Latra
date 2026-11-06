@@ -103,6 +103,12 @@ func evaluate(item sdk.SDK, rule findingconfig.Rule) []match {
 		return matchPersistenceWrites(item, rule, false)
 	case "profile-environment-write":
 		return matchPersistenceWrites(item, rule, true)
+	case "repository-persistence":
+		return matchRepositoryPersistence(item, rule)
+	case "project-in-place-modification":
+		return matchProjectInPlaceModification(item, rule)
+	case "toolchain-search-order-hijack":
+		return matchToolchainSearchOrderHijack(item, rule)
 	case "unknown-command":
 		return matchUnknownCommands(item, rule)
 	case "parse-status":
@@ -143,6 +149,223 @@ func evaluate(item sdk.SDK, rule findingconfig.Rule) []match {
 		return matchRelationFlows(item, rule)
 	}
 	return nil
+}
+
+func matchProjectInPlaceModification(item sdk.SDK, rule findingconfig.Rule) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if !hookMatches(hook, rule) || hook.Analysis == nil {
+			continue
+		}
+		operations := operationMap(hook.Analysis.Operations)
+		for _, capability := range hook.Analysis.Capabilities {
+			if capability.Kind != "project-read" {
+				continue
+			}
+			operation, ok := operations[capability.OperationID]
+			if !ok || !isInPlaceEditor(operation) {
+				continue
+			}
+			location := capability.Location
+			matches = append(matches, match{hook: hook, key: capability.OperationID + ":" + capabilityTarget(capability), confidence: confidenceFor(capability.Resolution), evidence: []Evidence{{
+				Type: "capability", ID: "project-in-place-modification", OperationID: capability.OperationID,
+				Value: capability.Target.Literal, NormalizedValue: capabilityTarget(capability),
+				Resolution: capability.Resolution, Location: &location,
+			}}})
+		}
+	}
+	return matches
+}
+
+func isInPlaceEditor(operation analysis.Operation) bool {
+	if operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved {
+		return false
+	}
+	command := filepath.Base(operation.Command.Literal)
+	for _, argument := range argumentLiterals(operation.Arguments) {
+		switch command {
+		case "sed":
+			if argument == "-i" || strings.HasPrefix(argument, "-i") && len(argument) > 2 {
+				return true
+			}
+		case "perl":
+			if strings.HasPrefix(argument, "-") && strings.Contains(strings.TrimPrefix(argument, "-"), "i") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func matchToolchainSearchOrderHijack(item sdk.SDK, rule findingconfig.Rule) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if !hookMatches(hook, rule) || hook.Analysis == nil {
+			continue
+		}
+		projectWrites := make(map[string]analysis.Capability)
+		for _, capability := range hook.Analysis.Capabilities {
+			if capability.Kind == "project-write" && capability.Resolution == analysis.Resolved {
+				projectWrites[capability.OperationID] = capability
+			}
+		}
+		for _, chmod := range flatten(hook.Analysis.Operations) {
+			executable := executableProjectTarget(chmod)
+			if executable == "" {
+				continue
+			}
+			writer, ok := projectWriteForTarget(projectWrites, executable)
+			if !ok {
+				continue
+			}
+			for _, generator := range flatten(hook.Analysis.Operations) {
+				prepended := prependedProjectPath(generator)
+				if prepended == "" || filepath.Clean(prepended) != filepath.Dir(filepath.Clean(executable)) {
+					continue
+				}
+				configWrite, ok := redirectedProjectWrite(generator.ID, hook.Analysis.Relations, projectWrites)
+				if !ok {
+					continue
+				}
+				writerLocation, chmodLocation, generatorLocation := writer.Location, chmod.Location, generator.Location
+				matches = append(matches, match{hook: hook, key: writer.OperationID + ":" + chmod.ID + ":" + generator.ID, confidence: "high", evidence: []Evidence{
+					{Type: "capability", ID: "toolchain-executable-write", OperationID: writer.OperationID, Value: writer.Target.Literal, NormalizedValue: capabilityTarget(writer), Resolution: writer.Resolution, Location: &writerLocation},
+					{Type: "operation", ID: "toolchain-executable-permission", OperationID: chmod.ID, Value: executable, Resolution: chmod.Resolution, Location: &chmodLocation},
+					{Type: "operation", ID: "toolchain-path-prepend", OperationID: generator.ID, ToOperationID: configWrite.OperationID, Value: prepended, Resolution: generator.Resolution, Location: &generatorLocation},
+				}})
+			}
+		}
+	}
+	return matches
+}
+
+func executableProjectTarget(operation analysis.Operation) string {
+	if operation.Kind != analysis.OperationCommand || filepath.Base(operation.Command.Literal) != "chmod" {
+		return ""
+	}
+	arguments := argumentLiterals(operation.Arguments)
+	executable := false
+	for _, argument := range arguments {
+		if strings.Contains(argument, "+x") {
+			executable = true
+		}
+	}
+	if !executable {
+		return ""
+	}
+	for index := len(arguments) - 1; index >= 0; index-- {
+		if strings.HasPrefix(arguments[index], "/project/") {
+			return filepath.Clean(arguments[index])
+		}
+	}
+	return ""
+}
+
+func projectWriteForTarget(writes map[string]analysis.Capability, target string) (analysis.Capability, bool) {
+	for _, capability := range writes {
+		if filepath.Clean(capabilityTarget(capability)) == filepath.Clean(target) {
+			return capability, true
+		}
+	}
+	return analysis.Capability{}, false
+}
+
+func prependedProjectPath(operation analysis.Operation) string {
+	if operation.Kind != analysis.OperationCommand {
+		return ""
+	}
+	for _, argument := range argumentLiterals(operation.Arguments) {
+		value := strings.TrimSpace(argument)
+		if index := strings.Index(value, "PATH="); index >= 0 {
+			value = strings.Trim(value[index+len("PATH="):], "\"'")
+			for _, suffix := range []string{":$PATH", ":${PATH}"} {
+				if strings.HasSuffix(value, suffix) {
+					candidate := strings.TrimSuffix(value, suffix)
+					if strings.HasPrefix(candidate, "/project/") {
+						return filepath.Clean(candidate)
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func redirectedProjectWrite(sourceID string, relations []analysis.Relation, writes map[string]analysis.Capability) (analysis.Capability, bool) {
+	for _, relation := range relations {
+		if relation.Kind == analysis.RelationRedirectFlow && relation.FromOperationID == sourceID {
+			capability, ok := writes[relation.ToOperationID]
+			return capability, ok
+		}
+	}
+	return analysis.Capability{}, false
+}
+
+func matchRepositoryPersistence(item sdk.SDK, rule findingconfig.Rule) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if !hookMatches(hook, rule) || hook.Analysis == nil {
+			continue
+		}
+		for _, capability := range hook.Analysis.Capabilities {
+			if capability.Kind != "project-write" || !isRepositoryHookFile(capabilityTarget(capability)) {
+				continue
+			}
+			location := capability.Location
+			matches = append(matches, match{hook: hook, key: capability.OperationID, confidence: confidenceFor(capability.Resolution), evidence: []Evidence{{
+				Type: "capability", ID: "repository-hook-write", OperationID: capability.OperationID,
+				Value: capability.Target.Literal, NormalizedValue: capabilityTarget(capability),
+				Resolution: capability.Resolution, Location: &location,
+			}}})
+		}
+		for _, operation := range flatten(hook.Analysis.Operations) {
+			if !isGitHooksPathConfiguration(operation) {
+				continue
+			}
+			location := operation.Location
+			matches = append(matches, match{hook: hook, key: operation.ID, confidence: confidenceFor(operation.Resolution), evidence: []Evidence{{
+				Type: "operation", ID: "repository-hook-config", OperationID: operation.ID,
+				Value: strings.Join(argumentLiterals(operation.Arguments), " "), Resolution: operation.Resolution, Location: &location,
+			}}})
+		}
+	}
+	return matches
+}
+
+func capabilityTarget(capability analysis.Capability) string {
+	if capability.NormalizedTarget.Literal != "" {
+		return capability.NormalizedTarget.Literal
+	}
+	return capability.Target.Literal
+}
+
+func isRepositoryHookFile(value string) bool {
+	cleaned := filepath.ToSlash(filepath.Clean(value))
+	marker := "/.git/hooks/"
+	index := strings.Index(cleaned, marker)
+	return index >= 0 && strings.Trim(cleaned[index+len(marker):], "/") != ""
+}
+
+func isGitHooksPathConfiguration(operation analysis.Operation) bool {
+	if operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved || filepath.Base(operation.Command.Literal) != "git" {
+		return false
+	}
+	arguments := argumentLiterals(operation.Arguments)
+	configuration := false
+	hooksPathIndex := -1
+	for index, argument := range arguments {
+		configuration = configuration || argument == "config"
+		if contains([]string{"--unset", "--unset-all", "--remove-section"}, argument) {
+			return false
+		}
+		if strings.EqualFold(strings.TrimLeft(argument, "-"), "core.hookspath") {
+			hooksPathIndex = index
+		}
+	}
+	return configuration && hooksPathIndex >= 0 && hooksPathIndex+1 < len(arguments) && strings.TrimSpace(arguments[hooksPathIndex+1]) != ""
 }
 
 func matchCapabilities(item sdk.SDK, rule findingconfig.Rule) []match {

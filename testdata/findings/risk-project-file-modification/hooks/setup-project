@@ -1,0 +1,2 @@
+sed -i 's/before/after/' config.txt
+
