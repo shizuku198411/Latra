@@ -192,7 +192,7 @@ Capabilities: 22
 
 Capabilities describe observable or conservatively inferred behavior. Counts represent detected occurrences, not unique capability names.
 
-A capability is not a severity, risk score, policy decision, or claim that an SDK is malicious. See [Categories and capabilities](capabilities.md) for the current definitions.
+A capability is not a severity, risk score, policy decision, or claim that an SDK is malicious. See [Capability model and definitions](../development/database/capabilities.md) for the current definitions.
 
 To inspect the embedded knowledge associated with a capability, use:
 

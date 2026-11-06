@@ -163,7 +163,7 @@ latra db commands --capability network-access --verbose
 
 A named capability or command query includes its associations without requiring `--verbose`. Unknown names return an error.
 
-The database reflects the configuration embedded when the binary was built. See [Categories and capabilities](capabilities.md) for the public definitions and [Command database development](development/command-database.md) for maintenance instructions.
+The database reflects the configuration embedded when the binary was built. See [Capability model and definitions](../development/database/capabilities.md) for the definitions and [Command database development](../development/database/command-database.md) for maintenance instructions.
 
 ## `latra file`
 

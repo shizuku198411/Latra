@@ -1,6 +1,6 @@
 # Command database development
 
-Latra's built-in command and capability knowledge is maintained as YAML under [`internal/capabilityconfig/default/`](../../internal/capabilityconfig/default/). These files are embedded in the Latra binary at build time.
+Latra's built-in command and capability knowledge is maintained as YAML under [`internal/capabilityconfig/default/`](../../../internal/capabilityconfig/default/). These files are embedded in the Latra binary at build time.
 
 This guide explains how to choose and edit the appropriate YAML fragment. It intentionally focuses on database maintenance rather than the Go evaluator implementation.
 
@@ -55,7 +55,7 @@ command-definitions:
 
 This removes `examplectl` from the unknown-command summary without reporting behavior that has not been established.
 
-Current categories are documented in [`docs/capabilities.md`](../capabilities.md). A category is descriptive metadata, not a capability. If a genuinely new category is required, use a valid identifier and update the public category list.
+Current categories are documented in [Capability model and definitions](capabilities.md). A category is descriptive metadata, not a capability. If a genuinely new category is required, use a valid identifier and update the category list.
 
 Do not add a broad capability rule only to make a command known. Add a command definition first, then add narrowly supported behavioral rules separately.
 
@@ -338,7 +338,7 @@ capability-definitions:
     description: Performs an observable example behavior.
 ```
 
-Also update [`docs/capabilities.md`](../capabilities.md) when the public capability set changes.
+Also update [Capability model and definitions](capabilities.md) when the capability set changes.
 
 Path classes accept these match fields:
 
@@ -402,21 +402,21 @@ The rule is ignored when the option value does not contain the marker.
 Run all commands inside the Workshop development environment:
 
 ```bash
-workshop run dev -- format
-workshop run dev -- check
+workshop run -- format
+workshop run -- check
 ```
 
 Inspect the embedded database through the CLI:
 
 ```bash
-workshop run dev -- latra db commands example
-workshop run dev -- latra db capabilities --command example --verbose
+workshop run -- latra db commands example
+workshop run -- latra db capabilities --command example --verbose
 ```
 
 Then scan a focused fixture or Workshop project that exercises both matching and non-matching command forms:
 
 ```bash
-workshop run dev -- latra scan ./testdata/project-sdks/valid-project --verbose
+workshop run -- latra scan ./testdata/project-sdks/valid-project --verbose
 ```
 
 When adding behavior, include regression tests for:

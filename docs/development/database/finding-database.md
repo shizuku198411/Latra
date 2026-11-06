@@ -1,6 +1,26 @@
 # Finding database
 
-Latra's built-in finding rules are YAML files under `internal/findingconfig/default/`. The files are embedded into the binary at build time. Runtime scanning does not read mutable rule files from the host.
+Latra's built-in finding rules are YAML files under [`internal/findingconfig/default/`](../../../internal/findingconfig/default/). The files are embedded into the binary at build time. Runtime scanning does not read mutable rule files from the host.
+
+The current finding database uses schema version `4`. `schema.yaml` owns the
+schema and content versions; every other fragment contributes only rules.
+
+## Choose the correct fragment
+
+| Rule responsibility | Fragment |
+| --- | --- |
+| Parser, resolution, inventory, or resource-limit coverage | `risk-analysis.yaml` |
+| Direct capability and persistence behavior | `risk-behavior.yaml` |
+| Sensitive-data and project-data flows | `risk-data-exposure.yaml` |
+| Hook lifecycle misuse | `risk-lifecycle.yaml` |
+| Remote content execution and project delivery | `risk-remote-execution.yaml` |
+| Analysis completeness and absence-based assurance | `assurance-analysis.yaml` |
+| Least privilege and path-scoped assurance | `assurance-scope.yaml` |
+| Unscored project boundary access | `observation-project-boundary.yaml` |
+
+Add a new fragment only for a stable rule family that does not fit an existing
+responsibility. Default fragments are loaded in sorted filename order, while
+finding output is deterministically sorted independently of that load order.
 
 ## Responsibilities
 
@@ -40,6 +60,23 @@ finding-rules:
 ```
 
 Risk rules require `severity`; assurance rules require `strength`. Observation rules are unscored, require weight `0`, and carry neither severity nor strength. All rules require evidence at runtime. A matcher that cannot produce evidence must not emit a finding.
+
+### Rule fields
+
+| Field | Contract |
+| --- | --- |
+| `id` | Globally unique stable identifier using lowercase dot or hyphen segments. |
+| `kind` | `risk`, `assurance`, or `observation`. |
+| `family` | Assessment aggregation family. |
+| `severity` | Required for risk: `info`, `low`, `medium`, `high`, or `critical`. |
+| `strength` | Required for assurance: `info`, `low`, `medium`, or `high`. |
+| `confidence` | `low`, `medium`, or `high`; may be lowered by runtime resolution. |
+| `weight` | Integer from `0` to `100`; observations must use `0`. |
+| `match` | Declarative matcher type and its constraints. |
+| `message` | User-facing explanation of the observed behavior. |
+| `remediation` | Optional review or mitigation guidance. |
+| `protects-against` | Optional identifiers describing assurance coverage. |
+| `limitations` | Optional boundaries that prevent overinterpreting the finding. |
 
 ## Matcher types
 
@@ -150,7 +187,7 @@ executable, or any one behavior in isolation does not match.
 3. Use the narrowest matcher and preserve context constraints.
 4. Add a positive fixture, a near-miss fixture, and an uncertainty or context variant.
 5. Verify that every emitted finding links to source, operation, flow, diagnostic, or SDK metadata evidence.
-6. Run `workshop run -- format`, `workshop run -- check`, and `workshop run -- test`.
+6. Run `workshop run -- format` and `workshop run -- check`.
 7. Review the normal SDK corpus for frequency and false positives.
 
-Adding a rule, changing matcher behavior, or changing a weight requires updating `content-version` in `schema.yaml`. Changing the YAML structure requires a finding database `schema-version` change. Report structure changes are versioned separately by the report `schemaVersion`.
+Adding a rule, changing matcher behavior, or changing a weight requires updating `content-version` in `schema.yaml`. Changing the YAML structure or compatibility contract requires a finding database `schema-version` change. Report structure changes are versioned separately by the report `schemaVersion`.

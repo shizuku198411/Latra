@@ -234,10 +234,21 @@ latra scan . --format json --verbose --output latra-report.json
 
 ## User documentation
 
-- [Command reference](docs/command-reference.md) — CLI commands, arguments,
+- [Documentation overview](docs/README.md) — documentation organized by
+  audience and purpose.
+- [Quick Start](docs/user/quickstart.md) — scan a project, inspect SDK content,
+  and write a JSON report.
+- [Command reference](docs/user/command-reference.md) — CLI commands, arguments,
   options, exit codes, and environment variables.
-- [Understanding scan output](docs/report-output.md) — how to read each report
+- [Understanding scan output](docs/user/report-output.md) — how to read each report
   section and use its SDK, hook, and file values for further investigation.
+
+## Developer documentation
+
+- [Analysis databases](docs/development/database/README.md) — command
+  knowledge, capabilities, path semantics, and finding rules.
+- [Development environment](docs/development/development.md) — build, test,
+  and run Latra in Workshop.
 
 ## Contributing
 
