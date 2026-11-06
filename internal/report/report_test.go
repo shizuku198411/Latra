@@ -121,7 +121,7 @@ func TestWriteTextSummaryColorsAssessmentScores(t *testing.T) {
 	for _, want := range []string{
 		"Review Priority: \x1b[32m0/100 (info)\x1b[0m",
 		"Risk:            \x1b[32m0/100 (info)\x1b[0m",
-		"Assurance:       \x1b[32m72/100 (high)\x1b[0m",
+		"Assurance:       \x1b[32m72/100 (strong)\x1b[0m",
 		"Coverage:        \x1b[32m100/100 (sufficient)\x1b[0m",
 		"\x1b[37m[\x1b[32m██████████████\x1b[37m░░░░░░]\x1b[0m",
 	} {

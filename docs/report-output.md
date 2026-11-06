@@ -260,13 +260,13 @@ Assessment
   Classification: high-priority-review
   Review Priority: 82/100 (critical)      [████████████████░░░░]
   Risk:            82/100 (critical)      [████████████████░░░░]
-  Assurance:       66/100 (high)          [█████████████░░░░░░░]
+  Assurance:       66/100 (strong)        [█████████████░░░░░░░]
   Coverage:        88/100 (sufficient)    [██████████████████░░]
   By SDK:
     project-base: high-priority-review
       Review Priority: 82/100 (critical)      [████████████████░░░░]
       Risk:            82/100 (critical)      [████████████████░░░░]
-      Assurance:       66/100 (high)          [█████████████░░░░░░░]
+      Assurance:       66/100 (strong)        [█████████████░░░░░░░]
       Coverage:        88/100 (sufficient)    [██████████████████░░]
       Key Risks:
         risk.unknown-command-root: Unknown command runs in a root hook [medium, score=82, occurrences=6]
@@ -274,6 +274,17 @@ Assessment
 ```
 
 `Review Priority` is the headline indicator: a higher number means the SDK should be reviewed sooner. It is not a probability that an SDK is malicious and it is not a safety score.
+
+Assurance uses positive-language labels so it cannot be confused with Risk severity:
+
+| Score | Text label | Meaning |
+| ---: | --- | --- |
+| 60–100 | `strong` | Strong positive evidence and analysis-quality properties were observed. |
+| 30–59 | `moderate` | Some meaningful positive evidence was observed. |
+| 1–29 | `limited` | Positive evidence exists but remains limited. |
+| 0 | `none` | No assurance contribution was established. |
+
+These labels describe observable assurance, not a guarantee that the SDK is safe.
 
 The `Key Risks` listed under each SDK explain which rules contribute to that SDK's assessment. Each entry includes its aggregated rule score, occurrence count, and every source location. The `sdk`, `file`, and `hook` values can be copied directly into `latra file <sdk> <file>` and `latra hook <sdk> <hook>`. The line and column suffix on `file` identify the precise evidence location and are not part of the path passed to `latra file`.
 

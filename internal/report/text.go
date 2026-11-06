@@ -227,26 +227,44 @@ func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool
 
 func writeAssessmentScores(writer io.Writer, priority finding.Score, risk, assurance finding.ScoredAxis, coverage finding.Coverage, indent string, color bool) error {
 	items := []struct {
-		label    string
-		score    int
-		level    string
-		positive bool
+		label     string
+		score     int
+		level     string
+		positive  bool
+		assurance bool
 	}{
 		{label: "Review Priority:", score: priority.Score, level: priority.Level},
 		{label: "Risk:", score: risk.Score, level: risk.Level},
-		{label: "Assurance:", score: assurance.Score, level: assurance.Level, positive: true},
+		{label: "Assurance:", score: assurance.Score, level: assurance.Level, positive: true, assurance: true},
 		{label: "Coverage:", score: coverage.Score, level: coverage.Level, positive: true},
 	}
 	for _, item := range items {
-		value := fmt.Sprintf("%d/100 (%s)", item.score, item.level)
+		displayLevel := item.level
+		if item.assurance {
+			displayLevel = assuranceDisplayLevel(item.level)
+		}
+		value := fmt.Sprintf("%d/100 (%s)", item.score, displayLevel)
 		padding := strings.Repeat(" ", max(0, 22-len(value)))
 		if _, err := fmt.Fprintf(writer, "%s%-16s %s%s %s\n", indent, item.label,
-			formatAssessmentScore(item.score, item.level, item.positive, color), padding,
+			formatAssessmentScoreDisplay(item.score, item.level, displayLevel, item.positive, color), padding,
 			formatAssessmentBar(item.score, item.level, item.positive, color)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func assuranceDisplayLevel(level string) string {
+	switch level {
+	case "high":
+		return "strong"
+	case "medium":
+		return "moderate"
+	case "low":
+		return "limited"
+	default:
+		return "none"
+	}
 }
 
 func formatAssessmentBar(score int, level string, positive, color bool) string {
@@ -266,7 +284,11 @@ func formatAssessmentBar(score int, level string, positive, color bool) string {
 }
 
 func formatAssessmentScore(score int, level string, positive bool, color bool) string {
-	value := fmt.Sprintf("%d/100 (%s)", score, level)
+	return formatAssessmentScoreDisplay(score, level, level, positive, color)
+}
+
+func formatAssessmentScoreDisplay(score int, level, displayLevel string, positive bool, color bool) string {
+	value := fmt.Sprintf("%d/100 (%s)", score, displayLevel)
 	if !color {
 		return value
 	}

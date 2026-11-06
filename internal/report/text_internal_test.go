@@ -57,3 +57,19 @@ func TestAssessmentBarUsesScoreWidthAndColor(t *testing.T) {
 		t.Errorf("colored assessment bar = %q", got)
 	}
 }
+
+func TestAssuranceDisplayLevelsUsePositiveLanguage(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"high":   "strong",
+		"medium": "moderate",
+		"low":    "limited",
+		"info":   "none",
+	}
+	for level, want := range tests {
+		if got := assuranceDisplayLevel(level); got != want {
+			t.Errorf("assuranceDisplayLevel(%q) = %q, want %q", level, got, want)
+		}
+	}
+}

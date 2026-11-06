@@ -6,6 +6,8 @@ This document defines how Latra turns Workshop SDK hook source into evidence-bac
 
 The assessment is a **review-priority aid**, not a probability that an SDK is malicious and not a safety certification. A high score means that human review should be prioritized. A high assurance score means that positive, verifiable properties were observed; it does not cancel detected risk.
 
+The text UI presents Assurance levels as `strong`, `moderate`, `limited`, and `none` to distinguish positive evidence from Risk severity. The JSON model retains the stable internal levels `high`, `medium`, `low`, and `info` for machine consumers.
+
 The design has four goals:
 
 - never execute SDK content during analysis;

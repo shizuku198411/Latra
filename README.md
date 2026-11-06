@@ -93,13 +93,13 @@ Assessment
   Classification: expected-and-controlled
   Review Priority: 10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
   Risk:            10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
-  Assurance:       76/100 (high)          [███████████████░░░░░]
+  Assurance:       76/100 (strong)        [███████████████░░░░░]
   Coverage:        100/100 (sufficient)   [████████████████████]
   By SDK:
     go: expected-and-controlled
       Review Priority: 10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
       Risk:            10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
-      Assurance:       76/100 (high)          [███████████████░░░░░]
+      Assurance:       76/100 (strong)        [███████████████░░░░░]
       Coverage:        100/100 (sufficient)   [████████████████████]
       Key Risks:
         risk.profile-environment-write: Shell environment profile is written during base setup [low, score=10, occurrences=1]
