@@ -54,31 +54,43 @@ The default text report summarizes the detected SDKs, files, hooks, operations, 
 ```text
 Input
   Kind: project
-  Root: /project
+  Root: /project/internaldocs/sample-project
 
 Workshops
-  dev
-    Definition: .workshop/dev.yaml
-    Base: ubuntu@26.04
+  kernel-dev
+    Definition: .workshop/kernel-dev.yaml
+    Base: ubuntu@24.04
 
 Summary
-  SDKs: 1 (1 resolved, 0 unresolved)
-    Resolved: go
+  SDKs: 2 (2 resolved, 0 unresolved)
+    Resolved: project-toolchain, rust
     Unresolved: -
-  Files: 17381
-    go (17381): meta/sdk.yaml, sdk/hooks/check-health, sdk/hooks/restore-state, sdk/hooks/save-state, sdk/hooks/setup-base, ... and more files (17376)
-  Hooks: 4
-    go (4): check-health, restore-state, save-state, setup-base
-  Operations: 27
-    go (27): assignment (3), command-invocation (14), command-substitution (1), control-flow (4), pipeline (2), redirect-read (2), redirect-write (1)
-  Capabilities: 9
-    go (9): identity-change (6), persistence (1), state-read (1), state-write (1)
-  Unknown Commands: 0
-    go (0)
-  Findings: 8 (1 risk, 7 assurance)
+  Files: 26
+    project-toolchain (5): hooks/check-health, hooks/setup-base, hooks/setup-project, sdk.yaml, ... and more files (1)
+    rust (21): meta/sdk.yaml, sdk/hooks/check-health, sdk/hooks/setup-base, ... and more files (18)
+  Hooks: 5
+    project-toolchain (3): check-health, setup-base, setup-project
+    rust (2): check-health, setup-base
+  Operations: 61
+    project-toolchain (47): assignment (10), command-invocation (23), control-flow (9), redirect-write (5)
+    rust (14): command-invocation (9), control-flow (1), redirect-read (1), redirect-write (2), source (1)
+  Capabilities: 25
+    project-toolchain (14): code-execution (1), device-access (5), identity-change (2), network-access (3), network-download (1), project-write (1), system-modification (1)
+    rust (11): code-execution (1), destructive-operation (1), dynamic-execution (1), identity-change (2), network-access (2), persistence (2), system-modification (2)
+  Unknown Commands: 5
+    project-toolchain (5)
+      hooks/check-health (4): clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
+      hooks/setup-project (1): make (1)
+    rust (0)
+  Findings: 14 (6 risk, 8 assurance)
     High-priority risks:
-      -
+      project-toolchain (high): risk.remote-content-to-project (1), risk.unknown-command-root (4)
   Diagnostics: 0: -
+
+Observations
+  Project Access: 1 (0 reads, 1 writes)
+  By SDK:
+    project-toolchain: 1 (0 reads, 1 writes)
 ```
 
 </details>
@@ -90,27 +102,43 @@ assurance, and analysis coverage:
 
 ```text
 Assessment
-  Classification: expected-and-controlled
-  Review Priority: 10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
-  Risk:            10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
-  Assurance:       76/100 (strong)        [███████████████░░░░░]
-  Coverage:        100/100 (sufficient)   [████████████████████]
+  Classification: powerful-but-controlled
+  Review Priority: 79/100 (high)          [████████████████░░░░]
+  Risk:            79/100 (high)          [████████████████░░░░]
+  Assurance:       80/100 (strong)        [████████████████░░░░]
+  Coverage:        94/100 (sufficient)    [███████████████████░]
   By SDK:
-    go: expected-and-controlled
+    project-toolchain: powerful-but-controlled
+      Review Priority: 76/100 (high)          [███████████████░░░░░]
+      Risk:            76/100 (high)          [███████████████░░░░░]
+      Assurance:       66/100 (strong)        [█████████████░░░░░░░]
+      Coverage:        91/100 (sufficient)    [██████████████████░░]
+      Key Risks:
+        risk.unknown-command-root: Unknown command runs in a root hook [medium, score=68, occurrences=4]
+          sdk=project-toolchain file=hooks/check-health:8:1 hook=check-health value="qemu-system-riscv64"
+          sdk=project-toolchain file=hooks/check-health:9:1 hook=check-health value="clang"
+          sdk=project-toolchain file=hooks/check-health:10:1 hook=check-health value="llvm-objdump"
+          sdk=project-toolchain file=hooks/check-health:11:1 hook=check-health value="llvm-objcopy"
+        risk.remote-content-to-project: Remote content is written into the Workshop project [medium, score=25, occurrences=1]
+          sdk=project-toolchain file=hooks/setup-project:13:3 hook=setup-project value="git"
+          sdk=project-toolchain file=hooks/setup-project:13:3 hook=setup-project value="opensbi"
+    rust: expected-and-controlled
       Review Priority: 10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
       Risk:            10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
-      Assurance:       76/100 (strong)        [███████████████░░░░░]
+      Assurance:       68/100 (strong)        [██████████████░░░░░░]
       Coverage:        100/100 (sufficient)   [████████████████████]
       Key Risks:
         risk.profile-environment-write: Shell environment profile is written during base setup [low, score=10, occurrences=1]
-          sdk=go file=sdk/hooks/setup-base:1:11 hook=setup-base value="/etc/profile.d/go.sh"
+          sdk=rust file=sdk/hooks/setup-base:4:11 hook=setup-base value="/etc/profile.d/rust.sh"
 ```
 
 This result indicates that Latra analyzed the available hook and command
-evidence with sufficient coverage. The SDK has strong observable assurance and
-one low-risk behavior: it writes static environment configuration during base setup. The
-`expected-and-controlled` classification means the detected behavior is
-consistent with the observed controls, not that the SDK is guaranteed safe.
+evidence with sufficient coverage. The project SDK requires focused review
+because it runs unknown commands as root and writes remotely obtained content
+into the project. The Rust SDK is assessed separately as
+`expected-and-controlled`, with one low-risk static environment configuration
+write. These classifications describe the observed behavior and controls; they
+do not guarantee that either SDK is safe.
 
 The per-SDK `Key Risks` identifies what needs review and where it was detected. Its `sdk`,
 `file`, and `hook` values can be passed directly to the inspection commands in
@@ -123,26 +151,28 @@ Use an SDK name and hook reported by the scan:
 ```bash
 # command: latra hook <sdk> <hook>
 
-latra hook go setup-base
+latra hook rust setup-base
 ```
 
 <details>
 <summary>Example output</summary>
 
 ```text
-cat <<EOF >/etc/profile.d/go.sh
-export PATH="/home/workshop/go/bin:$SDK/bin:\$PATH"
+apt-get update
+apt-get install build-essential
+
+cat <<EOF >> /etc/profile.d/rust.sh
+PATH="$SDK/bin:\$PATH"
 EOF
 
-cache=/home/workshop/go/pkg/mod
-sudo -iu workshop -- go env -w GOMODCACHE="$cache"
+# Ensure hook is idempotent.
+rm -f /home/workshop/.rustup/settings.toml
 
-if [[ "$(dpkg --print-architecture)" == riscv64 ]]; then
-gopls_version=$(cat "$SDK/share/gopls-version")
-sudo -iu workshop -- env GOTOOLCHAIN=auto go install "golang.org/x/tools/gopls@${gopls_version}"
-fi
+sudo -u workshop --login rustup default stable
 
-sudo -iu workshop -- go env -w GOTOOLCHAIN=local
+# shellcheck source=/dev/null
+. /etc/profile.d/rust.sh
+rustup completions bash > /etc/bash_completion.d/rustup.sh
 ```
 
 </details><br>
@@ -152,63 +182,35 @@ Display any detected SDK file by its reported path:
 ```bash
 # command: latra file <sdk> <file>
 
-latra file go meta/sdk.yaml
+latra file rust meta/sdk.yaml
 ```
 
 <details>
 <summary>Example output</summary>
 
 ```text
-name: go
-title: Go SDK
-version: 1.27.3
-summary: The Go programming language
+name: rust
+version: 1.99.1
+summary: The Rust toolchain installer
 description: |
-  This SDK provides the official Go toolchain for efficient Go development.
-  Module downloads are persisted on the host to speed up builds across workshop
-  updates, and Go environment settings are preserved between workshop updates.
-
-  ## Key components
-
-  - `go`: The Go programming language toolchain, including the
-    compiler, standard library, and all official tools (`gofmt`, `goimports`,
-    etc.). The version is determined by the SDK release, not the base image.
-  - `gopls`: The official Go language server for editor integrations,
-    built for the SDK's target architecture, tracking the latest gopls that
-    supports the SDK's Go release. On RISC-V, the pinned version is installed
-    when the workshop launches instead.
-  - Module cache: Configured to persist at `~/go/pkg/mod` with a bind mount
-    to the host, so downloaded dependencies survive workshop updates.
-  - Environment preservation: Custom Go environment variables (set via
-    `go env -w`) are automatically saved and restored across workshop updates.
-
-  The SDK installs the complete official Go distribution from go.dev and a pinned
-  `gopls` version from `golang.org/x/tools/gopls`. Build tools such as `gcc` are
-  **not** included. If your project requires CGo or needs to compile C
-  dependencies, install the necessary toolchain separately.
-
-  ## Setup actions
-
-  On launch, the SDK:
-
-  - Adds Go binaries to `PATH` system-wide via `/etc/profile.d/go.sh`.
-  - Configures `GOMODCACHE` to point to the persistent mount at
-    `~/go/pkg/mod`.
-  - Makes the SDK's pinned `gopls` build available on `PATH`.
-  - Restores any previously changed Go environment variables.
+  This SDK provides rustup and the Rust toolchain for Rust development.
+  Toolchains and Cargo configuration are persisted on the host across
+  workshop updates. Automatically detects project toolchain requirements
+  via rust-toolchain.toml.
+base: ubuntu@24.04
 architecture: arm64
-website: https://github.com/canonical/go-sdk
-license: BSD-3-Clause
+website: https://github.com/canonical/rust-sdk
+license: Apache-2.0 OR MIT
 plugs:
-  mod-cache:
+  cargo-registry:
     interface: mount
-    workshop-target: /home/workshop/go/pkg/mod
-sdkcraft-started-at: '2026-10-20T21:30:48.728712+00:00'
+    workshop-target: /home/workshop/.cargo/registry
+sdkcraft-started-at: '2026-10-16T19:27:34.158961+00:00'
 ```
 
 </details><br>
 
-Replace `go`, `setup-base`, and `meta/sdk.yaml` with values from your project report. Latra resolves the SDK from the current project's `.workshop/*.yaml` definitions, including its declared channel.
+Replace `rust`, `setup-base`, and `meta/sdk.yaml` with values from your project report. Latra resolves the SDK from the current project's `.workshop/*.yaml` definitions, including its declared channel.
 
 ### Write a JSON report
 
