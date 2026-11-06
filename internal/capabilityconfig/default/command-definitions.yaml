@@ -3,6 +3,10 @@ command-definitions:
     category: shell-builtin
     description: POSIX test shell builtin.
 
+  cd:
+    category: shell-builtin
+    description: Shell builtin that changes the current working directory.
+
   echo:
     category: shell-builtin
     description: Shell builtin that writes its arguments.
