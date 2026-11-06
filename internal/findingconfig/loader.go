@@ -90,7 +90,7 @@ func decode(content []byte) (*Config, error) {
 var identifierPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*$`)
 
 func validate(config *Config) error {
-	if config.SchemaVersion != "3" || strings.TrimSpace(config.ContentVersion) == "" {
+	if config.SchemaVersion != "4" || strings.TrimSpace(config.ContentVersion) == "" {
 		return fmt.Errorf("unsupported or incomplete finding configuration version %q", config.SchemaVersion)
 	}
 	if len(config.Rules) == 0 {
@@ -110,7 +110,7 @@ func validate(config *Config) error {
 			return fmt.Errorf("invalid or duplicate finding rule ID %q", rule.ID)
 		}
 		seen[rule.ID] = true
-		if rule.Kind != "risk" && rule.Kind != "assurance" {
+		if rule.Kind != "risk" && rule.Kind != "assurance" && rule.Kind != "observation" {
 			return fmt.Errorf("rule %q has invalid kind %q", rule.ID, rule.Kind)
 		}
 		if !identifierPattern.MatchString(rule.Family) || strings.TrimSpace(rule.Title) == "" || strings.TrimSpace(rule.Message) == "" {
@@ -121,6 +121,9 @@ func validate(config *Config) error {
 		}
 		if rule.Kind == "assurance" && !contains([]string{"info", "low", "medium", "high"}, rule.Strength) {
 			return fmt.Errorf("rule %q has invalid strength %q", rule.ID, rule.Strength)
+		}
+		if rule.Kind == "observation" && (rule.Weight != 0 || rule.Severity != "" || rule.Strength != "") {
+			return fmt.Errorf("rule %q observation must be unscored", rule.ID)
 		}
 		if !contains([]string{"low", "medium", "high"}, rule.Confidence) || rule.Weight < 0 || rule.Weight > 100 {
 			return fmt.Errorf("rule %q has invalid confidence or weight", rule.ID)

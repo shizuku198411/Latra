@@ -22,7 +22,13 @@ func TestWriteJSONGolden(t *testing.T) {
 	if err := report.WriteJSON(&output, fixtureResult()); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "report", "inventory.json"))
+	goldenPath := filepath.Join("..", "..", "testdata", "report", "inventory.json")
+	if os.Getenv("LATRA_UPDATE_GOLDEN") == "1" {
+		if err := os.WriteFile(goldenPath, output.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(goldenPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,6 +126,62 @@ func TestWriteTextSummaryColorsAssessmentScores(t *testing.T) {
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text does not contain %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestProjectObservationsAreReportedSeparately(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	hook := &result.SDKs[0].Hooks[0]
+	location := hook.Analysis.Operations[0].Location
+	hook.Analysis.Capabilities = append(hook.Analysis.Capabilities,
+		analysis.Capability{
+			Kind: "project-read", RuleID: "path.project.read", RuleSource: "embedded-default",
+			Operation: analysis.OperationCommand, OperationID: "op-0002",
+			Target:           analysis.Value{Resolution: analysis.Resolved, Literal: "README.md"},
+			NormalizedTarget: analysis.Value{Resolution: analysis.Resolved, Literal: "/project/README.md"},
+			Resolution:       analysis.Resolved, Location: location,
+		},
+		analysis.Capability{
+			Kind: "project-write", RuleID: "path.project.write", RuleSource: "embedded-default",
+			Operation: analysis.OperationRedirectWrite, OperationID: "op-0003",
+			Target:           analysis.Value{Resolution: analysis.Resolved, Literal: "generated.txt"},
+			NormalizedTarget: analysis.Value{Resolution: analysis.Resolved, Literal: "/project/generated.txt"},
+			Resolution:       analysis.Resolved, Location: location,
+		},
+	)
+	document := report.NewDocument(result)
+	if document.Summary.Observations.Count != 2 || len(document.Summary.Observations.BySDK) != 1 {
+		t.Fatalf("observation summary = %#v", document.Summary.Observations)
+	}
+	access := document.Summary.Observations.BySDK[0].ProjectAccess
+	if access.Reads != 1 || access.Writes != 1 || access.UniqueReads != 1 || access.UniqueWrites != 1 {
+		t.Errorf("project access summary = %#v", access)
+	}
+	if document.Summary.Findings.Count != document.Summary.Findings.Risk+document.Summary.Findings.Assurance {
+		t.Errorf("observations leaked into finding summary: %#v", document.Summary.Findings)
+	}
+
+	var compact bytes.Buffer
+	if err := report.WriteTextSummary(&compact, result); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(compact.String(), "Project Access: 2 (1 reads, 1 writes)") || !strings.Contains(compact.String(), "example: 2 (1 reads, 1 writes)") {
+		t.Errorf("compact observations missing:\n%s", compact.String())
+	}
+
+	var verbose bytes.Buffer
+	if err := report.WriteText(&verbose, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`sdk=example file=hooks/setup-project:1:1 hook=setup-project value="/project/README.md" raw="README.md" resolution=Resolved`,
+		`sdk=example file=hooks/setup-project:1:1 hook=setup-project value="/project/generated.txt" raw="generated.txt" resolution=Resolved`,
+	} {
+		if !strings.Contains(verbose.String(), want) {
+			t.Errorf("verbose observations do not contain %q:\n%s", want, verbose.String())
 		}
 	}
 }

@@ -1,6 +1,6 @@
 # JSON report schema
 
-The machine-readable JSON Schema for Latra scan reports is [`report.schema.json`](report.schema.json). It uses JSON Schema Draft 2020-12 and describes report `schemaVersion` `"3"`.
+The machine-readable JSON Schema for Latra scan reports is [`report.schema.json`](report.schema.json). It uses JSON Schema Draft 2020-12 and describes report `schemaVersion` `"4"`.
 
 ## Report variants
 
@@ -15,7 +15,7 @@ The root schema uses `oneOf` to distinguish these variants. The compact form int
 
 ## Stability boundary
 
-`schemaVersion` is the compatibility boundary for report consumers. Version `1` is fixed for the v0.1.0 report structure. Version `2` adds the operation graph used by contextual finding analysis. Version `3` distinguishes analyzed, binary-only, and resource-limited file content and exposes skipped-content totals.
+`schemaVersion` is the compatibility boundary for report consumers. Version `1` is fixed for the original v0.1.0 report structure. Version `2` adds the operation graph used by contextual finding analysis. Version `3` distinguishes analyzed, binary-only, and resource-limited file content and exposes skipped-content totals. Version `4` adds unscored observations and normalized project-access evidence.
 
 Within one schema version:
 
@@ -44,6 +44,7 @@ report
 │   ├── capabilities
 │   ├── unknownCommands
 │   ├── findings
+│   ├── observations
 │   └── diagnostics
 ├── assessment
 │   ├── classification
@@ -78,6 +79,8 @@ Summary `count` fields contain occurrence totals, not unique-name totals.
 - `capabilities.count` counts capability occurrences.
 - `unknownCommands.count` counts resolved command invocations not covered by the embedded command database.
 - `diagnostics.count` counts document diagnostics.
+- `findings.count` contains only scored risk and assurance findings.
+- `observations.count` counts unscored project-access observations. Per-SDK project access contains read/write occurrence totals and unique normalized-path totals.
 
 Per-SDK arrays contain the corresponding totals and sorted names. `CountedName.count` records occurrences for one name.
 
@@ -133,16 +136,19 @@ The graph is a conservative static representation. It does not claim complete sh
 
 ## Findings
 
-`findingDatabase` identifies the embedded rule set independently from the scanner and report schema versions. A full report stores findings under each SDK; compact and full reports both include aggregate counts under `summary.findings`.
+`findingDatabase` identifies the embedded rule set independently from the scanner and report schema versions. A full report stores findings and observations under each SDK. Compact and full reports include risk and assurance counts under `summary.findings`, while observations are aggregated independently under `summary.observations`.
 
-Findings have two independent kinds:
+Rules can produce three kinds:
 
 - `risk` records behavior that may require review and carries `severity`;
-- `assurance` records an observed control or limitation and carries `strength`.
+- `assurance` records an observed control or limitation and carries `strength`;
+- `observation` records a security-relevant fact without classifying it as good or bad. Observations have weight `0` and carry neither severity nor strength.
 
 Assurance findings do not remove or reduce risk findings. Neither kind is a claim that an SDK is malicious or safe. `confidence` describes evidence certainty, while `weight` is rule metadata reserved for later score calibration.
 
 Every finding contains at least one evidence item. Operation and flow evidence uses the hook-local operation IDs described above, allowing consumers to join a finding back to `operations`, `relations`, and source locations.
+
+Project-access observation evidence preserves both `value`, the raw shell path, and `normalizedValue`, the path resolved against the hook's tracked working directory. Partially resolved paths also retain every bounded candidate in `normalizedCandidates`. The `resolution` field indicates whether the normalized result is conclusive.
 
 ## Assessment
 

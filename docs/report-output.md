@@ -224,6 +224,25 @@ latra scan . --verbose
 latra scan . --format json --verbose --output inventory.json
 ```
 
+## Observations
+
+```text
+Observations
+  Project Access: 3 (1 reads, 2 writes)
+  By SDK:
+    project-base: 3 (1 reads, 2 writes)
+```
+
+Observations record important facts without increasing or reducing Risk, Assurance, Review Priority, or Classification. Project Access shows how often SDK hooks read or modify the mounted project.
+
+The compact report contains occurrence totals. With `--verbose`, each access includes the SDK, hook, source location, normalized project path, original shell path, and resolution status:
+
+```text
+sdk=project-base file=hooks/setup-project:4:1 hook=setup-project value="/project/README.md" raw="README.md" resolution=Resolved
+```
+
+In JSON, `summary.observations` contains project-wide and per-SDK totals. Full JSON also retains each `observation` rule and its evidence under `sdks[].findings`; `value` is the raw path and `normalizedValue` is the path resolved against the tracked hook working directory.
+
 ## Assessment
 
 Assessment is displayed separately from Summary because Summary contains occurrence counts, while Assessment answers how urgently the result should be reviewed.

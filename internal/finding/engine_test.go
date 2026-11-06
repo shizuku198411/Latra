@@ -1,6 +1,7 @@
 package finding_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/shizuku198411/Latra/internal/analysis"
@@ -63,6 +64,48 @@ func TestProjectSecretExfiltrationFlowVariants(t *testing.T) {
 				t.Errorf("flow evidence = %#v", got.Evidence)
 			}
 		})
+	}
+}
+
+func TestProjectAccessCreatesUnscoredObservations(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "cat README.md\nprintf generated > output.txt\n", sdk.HookSetupProject)
+	findings := finding.AnalyzeSDK(item)
+	read := findFinding(findings, "observation.project-read")
+	write := findFinding(findings, "observation.project-write")
+	if read == nil || write == nil {
+		t.Fatalf("project observations = %#v", findings)
+	}
+	if read.Kind != finding.KindObservation || read.Weight != 0 || read.Evidence[0].Value != "README.md" || read.Evidence[0].NormalizedValue != "/project/README.md" {
+		t.Errorf("read observation = %#v", read)
+	}
+	if write.Kind != finding.KindObservation || write.Weight != 0 || write.Evidence[0].Value != "output.txt" || write.Evidence[0].NormalizedValue != "/project/output.txt" {
+		t.Errorf("write observation = %#v", write)
+	}
+
+	without := make([]finding.Finding, 0, len(findings))
+	for _, itemFinding := range findings {
+		if itemFinding.Kind != finding.KindObservation {
+			without = append(without, itemFinding)
+		}
+	}
+	withAssessment := finding.AssessSDK(item, findings)
+	withoutAssessment := finding.AssessSDK(item, without)
+	if !reflect.DeepEqual(withAssessment.Risk, withoutAssessment.Risk) ||
+		!reflect.DeepEqual(withAssessment.Assurance, withoutAssessment.Assurance) ||
+		withAssessment.ReviewPriority != withoutAssessment.ReviewPriority ||
+		withAssessment.Classification != withoutAssessment.Classification {
+		t.Errorf("observation changed assessment: with=%#v without=%#v", withAssessment, withoutAssessment)
+	}
+}
+
+func TestRelativeProjectAccessIsNotObservedOutsideSetupProject(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "cat README.md\n", sdk.HookCheckHealth)
+	if got := findFinding(finding.AnalyzeSDK(item), "observation.project-read"); got != nil {
+		t.Fatalf("relative health-check observation = %#v", got)
 	}
 }
 

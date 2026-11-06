@@ -127,13 +127,27 @@ func matchCapabilities(item sdk.SDK, rule findingconfig.Rule) []match {
 				continue
 			}
 			location := capability.Location
-			matches = append(matches, match{hook: hook, key: capability.OperationID, confidence: confidenceFor(capability.Resolution), evidence: []Evidence{{
+			value := capability.NormalizedTarget.Literal
+			if value == "" && len(capability.NormalizedTarget.Candidates) > 0 {
+				value = strings.Join(capability.NormalizedTarget.Candidates, ",")
+			}
+			key := capability.OperationID
+			if rule.Kind == string(KindObservation) {
+				key = capability.OperationID + ":" + capability.Kind + ":" + value + ":" + locationKey(location)
+			}
+			matches = append(matches, match{hook: hook, key: key, confidence: confidenceFor(capability.Resolution), evidence: []Evidence{{
 				Type: "capability", ID: capability.Kind, OperationID: capability.OperationID,
-				Value: capability.Target.Literal, Resolution: capability.Resolution, Location: &location,
+				Value: capability.Target.Literal, NormalizedValue: value,
+				NormalizedCandidates: append([]string{}, capability.NormalizedTarget.Candidates...),
+				Resolution:           capability.Resolution, Location: &location,
 			}}})
 		}
 	}
 	return matches
+}
+
+func locationKey(location shell.Location) string {
+	return fmt.Sprintf("%s:%d:%d", location.Path, location.StartLine, location.StartColumn)
 }
 
 func matchPathWrites(item sdk.SDK, rule findingconfig.Rule) []match {
