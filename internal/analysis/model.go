@@ -102,6 +102,7 @@ type Operation struct {
 	Children   []Operation     `json:"children,omitempty"`
 
 	pipelineBoundary int
+	workingDirectory Value
 }
 
 // HookContext describes Workshop's execution environment for a lifecycle hook.
@@ -124,6 +125,10 @@ type Capability struct {
 	Target      Value          `json:"target,omitzero"`
 	Resolution  Resolution     `json:"resolution"`
 	Location    shell.Location `json:"location"`
+
+	// NormalizedTarget is the path target resolved against the operation's
+	// working directory. Phase 2 exposes it through reports and observations.
+	NormalizedTarget Value `json:"-"`
 }
 
 // Result contains the normalized inventory for one hook.

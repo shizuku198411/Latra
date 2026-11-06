@@ -3,6 +3,7 @@ package analysis
 import (
 	"bytes"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/shizuku198411/Latra/internal/shell"
@@ -12,9 +13,10 @@ import (
 const candidateLimit = 8
 
 type builder struct {
-	sourceName string
-	variables  map[string]Value
-	functions  map[string]bool
+	sourceName       string
+	variables        map[string]Value
+	functions        map[string]bool
+	workingDirectory Value
 }
 
 // Analyze converts a parsed hook into operations and capabilities.
@@ -24,9 +26,10 @@ func Analyze(hook string, parsed *shell.Result) Result {
 		return result
 	}
 	b := &builder{
-		sourceName: parsed.Path,
-		variables:  make(map[string]Value),
-		functions:  make(map[string]bool),
+		sourceName:       parsed.Path,
+		variables:        make(map[string]Value),
+		functions:        make(map[string]bool),
+		workingDirectory: initialWorkingDirectory(hook),
 	}
 	result.Operations = b.statements(parsed.Program.Stmts)
 	result.Relations = BuildRelations(result.Operations)
@@ -47,6 +50,7 @@ func (b *builder) statement(statement *syntax.Stmt) []Operation {
 		return nil
 	}
 	var operations []Operation
+	statementWorkingDirectory := b.workingDirectory
 	switch command := statement.Cmd.(type) {
 	case *syntax.CallExpr:
 		operations = append(operations, b.call(command)...)
@@ -111,6 +115,7 @@ func (b *builder) statement(statement *syntax.Stmt) []Operation {
 
 	for _, redirect := range statement.Redirs {
 		operation := b.redirect(redirect)
+		operation.workingDirectory = statementWorkingDirectory
 		operations = append(operations, operation)
 	}
 	return operations
@@ -144,6 +149,7 @@ func (b *builder) call(call *syntax.CallExpr) []Operation {
 	operation := Operation{
 		Kind: kind, Command: command, Arguments: arguments, Wrappers: wrappers,
 		Resolution: command.Resolution, Location: shell.LocationOf(b.sourceName, call),
+		workingDirectory: b.workingDirectory,
 	}
 	if kind == OperationSource && len(arguments) > 0 {
 		operation.Inputs = append(operation.Inputs, DataReference{Kind: "file-read", Value: arguments[0]})
@@ -152,6 +158,9 @@ func (b *builder) call(call *syntax.CallExpr) []Operation {
 		operation.Children = append(operation.Children, b.substitutions(word)...)
 	}
 	operations = append(operations, operation)
+	if command.Resolution == Resolved && filepath.Base(command.Literal) == "cd" {
+		b.workingDirectory = resolveChangedDirectory(arguments, b.workingDirectory)
+	}
 	return operations
 }
 
@@ -166,7 +175,7 @@ func (b *builder) assignment(assignment *syntax.Assign) Operation {
 	}
 	return Operation{Kind: OperationAssignment, Name: name, Arguments: []Value{value},
 		Resolution: value.Resolution, Location: shell.LocationOf(b.sourceName, assignment),
-		Children: b.substitutions(assignment.Value)}
+		Children: b.substitutions(assignment.Value), workingDirectory: b.workingDirectory}
 }
 
 func (b *builder) redirect(redirect *syntax.Redirect) Operation {
@@ -200,20 +209,25 @@ func (b *builder) redirect(redirect *syntax.Redirect) Operation {
 
 func (b *builder) ifClause(clause *syntax.IfClause) Operation {
 	before := cloneValues(b.variables)
+	beforeWorkingDirectory := b.workingDirectory
 	thenBuilder := b.child()
 	children := thenBuilder.statements(clause.Cond)
 	children = append(children, thenBuilder.statements(clause.Then)...)
 	branches := []map[string]Value{thenBuilder.variables}
+	workingDirectories := []Value{thenBuilder.workingDirectory}
 	if clause.Else != nil {
 		elseBuilder := b.child()
 		children = append(children, elseBuilder.ifBranch(clause.Else)...)
 		branches = append(branches, elseBuilder.variables)
+		workingDirectories = append(workingDirectories, elseBuilder.workingDirectory)
 	} else {
 		branches = append(branches, before)
+		workingDirectories = append(workingDirectories, beforeWorkingDirectory)
 	}
 	b.variables = mergeValues(branches)
+	b.workingDirectory = mergePathValues(workingDirectories)
 	return Operation{Kind: OperationControlFlow, Name: "if", Resolution: PartiallyResolved,
-		Location: shell.LocationOf(b.sourceName, clause), Children: children}
+		Location: shell.LocationOf(b.sourceName, clause), Children: children, workingDirectory: beforeWorkingDirectory}
 }
 
 func (b *builder) ifBranch(clause *syntax.IfClause) []Operation {
@@ -425,10 +439,68 @@ func wrappedCommandIndex(name string, arguments []Value) int {
 
 func (b *builder) child() *builder {
 	return &builder{
-		sourceName: b.sourceName,
-		variables:  cloneValues(b.variables),
-		functions:  cloneSet(b.functions),
+		sourceName:       b.sourceName,
+		variables:        cloneValues(b.variables),
+		functions:        cloneSet(b.functions),
+		workingDirectory: b.workingDirectory,
 	}
+}
+
+func initialWorkingDirectory(hook string) Value {
+	if hook == "setup-project" {
+		return literalValue("/project")
+	}
+	return Value{Resolution: Unknown}
+}
+
+func resolveChangedDirectory(arguments []Value, current Value) Value {
+	var target Value
+	found := false
+	optionsEnded := false
+	for _, argument := range arguments {
+		if !optionsEnded && argument.Resolution == Resolved && argument.Literal == "--" {
+			optionsEnded = true
+			continue
+		}
+		if !optionsEnded && argument.Resolution == Resolved && strings.HasPrefix(argument.Literal, "-") {
+			continue
+		}
+		target = argument
+		found = true
+		break
+	}
+	if !found || (target.Resolution == Resolved && target.Literal == "-") {
+		return Value{Resolution: Unknown}
+	}
+	return normalizePathValue(target, current)
+}
+
+func mergePathValues(values []Value) Value {
+	var candidates []string
+	for _, value := range values {
+		switch {
+		case value.Resolution == Resolved && value.Literal != "":
+			if !contains(candidates, value.Literal) {
+				candidates = append(candidates, value.Literal)
+			}
+		case value.Resolution == PartiallyResolved && len(value.Candidates) > 0:
+			for _, candidate := range value.Candidates {
+				if !contains(candidates, candidate) {
+					candidates = append(candidates, candidate)
+				}
+			}
+		default:
+			return Value{Resolution: Unknown}
+		}
+	}
+	if len(candidates) == 1 {
+		return literalValue(candidates[0])
+	}
+	if len(candidates) == 0 || len(candidates) > candidateLimit {
+		return Value{Resolution: Unknown}
+	}
+	sort.Strings(candidates)
+	return Value{Resolution: PartiallyResolved, Candidates: candidates}
 }
 
 func cloneValues(values map[string]Value) map[string]Value {

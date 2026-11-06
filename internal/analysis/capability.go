@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/shizuku198411/Latra/internal/capabilityconfig"
@@ -49,7 +50,7 @@ func classifyPath(value Value, context HookContext, config *capabilityconfig.Con
 		fallback := PathUnknown
 		for _, candidate := range value.Candidates {
 			class := classifyPath(literalValue(candidate), context, config)
-			if isSensitivePathClass(class) {
+			if isSensitivePathClass(class) || class == PathProject {
 				return class
 			}
 			if fallback == PathUnknown {
@@ -267,9 +268,14 @@ func capabilitiesForOperation(operation Operation, context HookContext, config *
 						continue
 					}
 					target := literalValue(strings.TrimPrefix(argument.Literal, prefix))
-					if contains(rule.PathClasses, string(classifyPath(target, context, config))) {
+					normalized := normalizePathValue(target, operation.workingDirectory)
+					if contains(rule.PathClasses, string(classifyPath(normalized, context, config))) {
 						for _, capability := range rule.Capabilities {
-							add(capability, rule.ID, target, target.Resolution)
+							before := len(capabilities)
+							add(capability, rule.ID, target, normalized.Resolution)
+							if len(capabilities) > before {
+								capabilities[before].NormalizedTarget = normalized
+							}
 						}
 					}
 				}
@@ -786,7 +792,8 @@ func matchAllOptions(arguments []Value, options []capabilityconfig.OptionSpec) [
 }
 
 func addPathCapability(capabilities *[]Capability, operation Operation, target Value, write bool, context HookContext, config *capabilityconfig.Config) {
-	class := classifyPath(target, context, config)
+	normalized := normalizePathValue(target, operation.workingDirectory)
+	class := classifyPath(normalized, context, config)
 	mapping, ok := config.PathCapabilities[string(class)]
 	if !ok {
 		return
@@ -802,9 +809,56 @@ func addPathCapability(capabilities *[]Capability, operation Operation, target V
 		*capabilities = append(*capabilities, Capability{
 			Kind: capability, RuleID: rule.ID,
 			RuleSource: capabilityconfig.SourceEmbeddedDefault, Operation: operation.Kind,
-			OperationID: operation.ID, Target: target, Resolution: target.Resolution, Location: operation.Location,
+			OperationID: operation.ID, Target: target, NormalizedTarget: normalized,
+			Resolution: normalized.Resolution, Location: operation.Location,
 		})
 	}
+}
+
+func normalizePathValue(target, workingDirectory Value) Value {
+	if target.Literal != "" && filepath.IsAbs(target.Literal) {
+		normalized := target
+		normalized.Literal = filepath.Clean(target.Literal)
+		return normalized
+	}
+	if target.Literal == "" && len(target.Candidates) > 0 {
+		var candidates []string
+		for _, candidate := range target.Candidates {
+			normalized := normalizePathValue(literalValue(candidate), workingDirectory)
+			if normalized.Resolution == Resolved && normalized.Literal != "" && !contains(candidates, normalized.Literal) {
+				candidates = append(candidates, normalized.Literal)
+			}
+			for _, value := range normalized.Candidates {
+				if !contains(candidates, value) {
+					candidates = append(candidates, value)
+				}
+			}
+		}
+		if len(candidates) > 0 && len(candidates) <= candidateLimit {
+			sort.Strings(candidates)
+			return Value{Resolution: PartiallyResolved, Candidates: candidates}
+		}
+	}
+	if target.Literal != "" {
+		switch {
+		case workingDirectory.Resolution == Resolved && filepath.IsAbs(workingDirectory.Literal):
+			normalized := target
+			normalized.Literal = filepath.Clean(filepath.Join(workingDirectory.Literal, target.Literal))
+			return normalized
+		case workingDirectory.Resolution == PartiallyResolved && len(workingDirectory.Candidates) > 0:
+			candidates := make([]string, 0, len(workingDirectory.Candidates))
+			for _, directory := range workingDirectory.Candidates {
+				if filepath.IsAbs(directory) {
+					candidates = append(candidates, filepath.Clean(filepath.Join(directory, target.Literal)))
+				}
+			}
+			if len(candidates) > 0 && len(candidates) <= candidateLimit {
+				sort.Strings(candidates)
+				return Value{Parts: target.Parts, Resolution: PartiallyResolved, Candidates: candidates}
+			}
+		}
+	}
+	return Value{Parts: target.Parts, Resolution: Unknown, Literal: target.Literal, Candidates: target.Candidates}
 }
 
 func matchesExactOrPrefix(path string, class capabilityconfig.PathClass) bool {
