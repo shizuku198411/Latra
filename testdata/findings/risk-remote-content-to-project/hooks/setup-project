@@ -1,0 +1,1 @@
+curl --output generated/tool https://example.invalid/tool

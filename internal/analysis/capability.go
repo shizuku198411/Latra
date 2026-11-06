@@ -299,9 +299,15 @@ func capabilitiesForOperation(operation Operation, context HookContext, config *
 		}
 	}
 	for _, input := range operation.Inputs {
+		if input.Kind == "pipeline" {
+			continue
+		}
 		addPathCapability(&capabilities, operation, input.Value, false, context, config)
 	}
 	for _, output := range operation.Outputs {
+		if output.Kind == "pipeline" {
+			continue
+		}
 		addPathCapability(&capabilities, operation, output.Value, true, context, config)
 	}
 	return capabilities
@@ -315,7 +321,11 @@ func pathAfterMarker(value Value, marker string) (Value, bool) {
 	if index < 0 || index+len(marker) == len(value.Literal) {
 		return Value{}, false
 	}
-	return literalValue(value.Literal[index+len(marker):]), true
+	path := value.Literal[index+len(marker):]
+	if path == "-" {
+		return Value{}, false
+	}
+	return literalValue(path), true
 }
 
 func matchCommand(arguments []Value, match capabilityconfig.CommandMatch) (bool, Resolution) {

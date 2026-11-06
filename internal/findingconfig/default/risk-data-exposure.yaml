@@ -1,4 +1,46 @@
 finding-rules:
+  - id: risk.remote-content-to-project
+    kind: risk
+    family: supply-chain
+    title: Remote content is written into the Workshop project
+    severity: medium
+    confidence: high
+    weight: 25
+    match:
+      type: relation-flow
+      relation-kinds:
+        - pipeline
+        - substitution-flow
+        - variable-flow
+        - redirect-flow
+      source-capability: network-download
+      sink-capability: project-write
+      same-operation: true
+      project-mounted: true
+    message: Content obtained from a remote endpoint flows into the mounted Workshop project.
+    remediation: Verify the remote source and pin immutable content before allowing it to modify the project.
+
+  - id: risk.project-data-exfiltration
+    kind: risk
+    family: data-exposure
+    title: Project data flows to an external endpoint
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: relation-flow
+      relation-kinds:
+        - pipeline
+        - substitution-flow
+        - variable-flow
+      source-capability: project-read
+      sink-capability: external-send
+      same-operation: true
+      project-mounted: true
+      interfaces-active: true
+    message: Data read from the mounted project flows to an external endpoint.
+    remediation: Remove the transfer or restrict it to explicitly approved project data and endpoints.
+
   - id: risk.project-secret-exfiltration
     kind: risk
     family: data-exposure

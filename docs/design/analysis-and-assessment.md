@@ -148,6 +148,19 @@ Sensitive file reads are classified using the embedded path database. Workshop r
 
 File inputs are extracted from known command operands, input redirections, `source`/`.` operations, and command-specific option values such as curl's `@file` syntax. The emitted capability preserves the operation ID, target value, resolution, and source location. Hook context remains available through the enclosing analysis result.
 
+Project reads and writes are also retained as unscored observations. Relative paths in `setup-project` are normalized against `/project`; resolved `cd` operations update that working directory, and bounded branch candidates remain partially resolved. The raw shell value is preserved alongside the normalized path and candidates.
+
+### Project-boundary flow
+
+Project access alone is not a risk finding. Latra promotes it only when an explicit operation-graph flow crosses the project boundary:
+
+- `risk.remote-content-to-project` requires `network-download` to reach `project-write` through a pipeline, substitution, variable, redirect, or same-operation flow. It is medium severity because downloading dependencies into a project can be expected SDK behavior.
+- `risk.project-data-exfiltration` requires `project-read` to reach `external-send` while the project is mounted and network interfaces are active. It is high severity because repository content is demonstrably connected to an external transfer.
+
+Explicit destinations from curl, wget, git clone, archive extraction, and patch commands are handled by the file-output command database. Implicit destinations are not guessed. Pipeline `stdin`/`stdout` markers and curl's `@-` standard-input marker are streams rather than filesystem paths and therefore never create project-access capabilities.
+
+Both boundary findings retain source and sink evidence, including operation IDs, source locations, raw values, normalized project paths, and resolution. A disconnected download and write, or a disconnected project read and send, does not match.
+
 ### Sensitive-data flow
 
 Project-secret exfiltration is not inferred from a sensitive read or network command in isolation. The finding engine requires `project-sensitive-file-read` to reach `external-send` through a pipeline, command-substitution containment, or variable-flow edge. It also handles a same-operation file upload where both capabilities belong to one command.
@@ -156,6 +169,8 @@ The matcher requires a context in which the project is mounted and interfaces ar
 
 The combined resolution is the least certain resolution across the source, traversed relations, and sink. This lowers confidence for partially resolved or unknown propagation without discarding the observed flow. A confirmed project-secret exfiltration finding is `critical`; the assessment model therefore applies the existing critical risk floor of 80 even when the family aggregation would otherwise be lower.
 
+Because a project-sensitive read also carries the general `project-read` capability, the same flow could satisfy both exfiltration rules. Latra suppresses the general finding only when the SDK, hook, source path, and source/sink operations match the critical sensitive flow. A different non-sensitive source path remains an independent general exfiltration finding.
+
 ## 5. Finding generation
 
 Finding definitions are embedded from `internal/findingconfig/default/*.yaml`. The database has an independent schema version and content version so that rule changes can be identified in reports.
@@ -163,9 +178,9 @@ Finding definitions are embedded from `internal/findingconfig/default/*.yaml`. T
 Each rule defines:
 
 - a stable finding ID;
-- `risk` or `assurance` kind;
+- `risk`, `assurance`, or unscored `observation` kind;
 - a family;
-- severity for risk, or strength for assurance;
+- severity for risk, strength for assurance, or neither for observation;
 - confidence and weight;
 - a matcher and optional hook context;
 - explanatory text, remediation, limitations, and protected risks;

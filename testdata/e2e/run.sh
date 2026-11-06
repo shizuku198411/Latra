@@ -105,7 +105,7 @@ with open(sys.argv[1]) as report_file:
 
 assert report["schemaVersion"] == "4"
 assert report["findingDatabase"]["schemaVersion"] == "4"
-assert report["findingDatabase"]["contentVersion"] == "2026.11.6"
+assert report["findingDatabase"]["contentVersion"] == "2026.11.6.1"
 assert report["findingDatabase"]["source"] == "embedded-default"
 assert report["input"]["kind"] == "project"
 assert report["summary"]["sdks"] == {

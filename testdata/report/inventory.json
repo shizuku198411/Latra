@@ -8,7 +8,7 @@
   },
   "findingDatabase": {
     "schemaVersion": "4",
-    "contentVersion": "2026.11.6",
+    "contentVersion": "2026.11.6.1",
     "source": "embedded-default"
   },
   "input": {

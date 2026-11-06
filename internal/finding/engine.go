@@ -59,8 +59,38 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 			})
 		}
 	}
+	findings = suppressSubsumedFindings(findings)
 	sortFindings(findings)
 	return findings
+}
+
+func suppressSubsumedFindings(findings []Finding) []Finding {
+	secretFlows := make(map[string]bool)
+	for _, item := range findings {
+		if item.ID == "risk.project-secret-exfiltration" {
+			secretFlows[findingFlowKey(item)] = true
+		}
+	}
+	filtered := findings[:0]
+	for _, item := range findings {
+		if item.ID == "risk.project-data-exfiltration" && secretFlows[findingFlowKey(item)] {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func findingFlowKey(item Finding) string {
+	key := item.Scope.SDK + "\x00" + string(item.Scope.Hook)
+	for _, evidence := range item.Evidence {
+		value := evidence.NormalizedValue
+		if value == "" {
+			value = evidence.Value
+		}
+		key += "\x00" + evidence.OperationID + "\x00" + evidence.FromOperationID + "\x00" + evidence.ToOperationID + "\x00" + value
+	}
+	return key
 }
 
 func evaluate(item sdk.SDK, rule findingconfig.Rule) []match {
@@ -570,10 +600,24 @@ func sameOperationFlow(hook *sdk.Hook, rule findingconfig.Rule, source analysis.
 func flowMatch(hook *sdk.Hook, rule findingconfig.Rule, source, sink analysis.Capability, relationResolution analysis.Resolution) match {
 	resolution := combinedResolution(combinedResolution(source.Resolution, sink.Resolution), relationResolution)
 	fromLocation, toLocation := source.Location, sink.Location
-	return match{hook: hook, key: source.OperationID + "->" + sink.OperationID, confidence: confidenceFor(resolution), evidence: []Evidence{
-		{Type: "capability", ID: source.Kind, OperationID: source.OperationID, Value: source.Target.Literal, Resolution: source.Resolution, Location: &fromLocation},
-		{Type: "data-flow", ID: sinkEvidenceID(rule), OperationID: sink.OperationID, FromOperationID: source.OperationID, ToOperationID: sink.OperationID, Value: sink.Target.Literal, Resolution: resolution, Location: &toLocation},
+	return match{hook: hook, key: source.OperationID + "->" + sink.OperationID + ":" + capabilityTargetKey(source) + ":" + capabilityTargetKey(sink), confidence: confidenceFor(resolution), evidence: []Evidence{
+		{Type: "capability", ID: source.Kind, OperationID: source.OperationID, Value: source.Target.Literal,
+			NormalizedValue: source.NormalizedTarget.Literal, NormalizedCandidates: append([]string{}, source.NormalizedTarget.Candidates...),
+			Resolution: source.Resolution, Location: &fromLocation},
+		{Type: "data-flow", ID: sinkEvidenceID(rule), OperationID: sink.OperationID, FromOperationID: source.OperationID, ToOperationID: sink.OperationID,
+			Value: sink.Target.Literal, NormalizedValue: sink.NormalizedTarget.Literal, NormalizedCandidates: append([]string{}, sink.NormalizedTarget.Candidates...),
+			Resolution: resolution, Location: &toLocation},
 	}}
+}
+
+func capabilityTargetKey(capability analysis.Capability) string {
+	if capability.NormalizedTarget.Literal != "" {
+		return capability.NormalizedTarget.Literal
+	}
+	if len(capability.NormalizedTarget.Candidates) > 0 {
+		return strings.Join(capability.NormalizedTarget.Candidates, ",")
+	}
+	return capability.Target.Literal
 }
 
 func sinkEvidenceID(rule findingconfig.Rule) string {

@@ -368,6 +368,28 @@ func TestImplicitOrNonWritingDestinationsAreNotGuessed(t *testing.T) {
 	}
 }
 
+func TestPipelineStreamsAreNotClassifiedAsProjectPaths(t *testing.T) {
+	t.Parallel()
+
+	result := analyze(t, "setup-project", "cat README.md | grep fixture | tee generated.txt\n")
+	for _, capability := range result.Capabilities {
+		if capability.Target.Literal == "stdin" || capability.Target.Literal == "stdout" {
+			t.Fatalf("pipeline stream was classified as a path: %#v", capability)
+		}
+	}
+}
+
+func TestStandardInputMarkerIsNotClassifiedAsProjectPath(t *testing.T) {
+	t.Parallel()
+
+	result := analyze(t, "setup-project", "cat README.md | curl --data-binary @- https://example.invalid/upload\n")
+	for _, capability := range result.Capabilities {
+		if capability.Target.Literal == "-" || capability.NormalizedTarget.Literal == "/project/-" {
+			t.Fatalf("standard input marker was classified as a path: %#v", capability)
+		}
+	}
+}
+
 func capabilitiesOfKind(capabilities []analysis.Capability, kind string) []analysis.Capability {
 	var matches []analysis.Capability
 	for _, capability := range capabilities {

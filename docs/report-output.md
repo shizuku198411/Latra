@@ -217,6 +217,14 @@ The compact Summary lists only risk IDs for SDKs whose aggregated risk level is 
 - Risk and assurance are independent. Assurance does not remove or lower a risk finding.
 - Confidence describes how directly the available static evidence supports the finding.
 
+Project-boundary flow findings connect both sides of the detected transfer:
+
+- `risk.remote-content-to-project` identifies remote content flowing into a project write;
+- `risk.project-data-exfiltration` identifies ordinary project data flowing to an external send;
+- `risk.project-secret-exfiltration` takes precedence over the general exfiltration rule for the same sensitive source and sink flow.
+
+These rules require a connected operation flow. Separate commands that happen to download, read, write, or send data are not treated as connected without graph evidence.
+
 Use `--verbose` to see each finding's rule ID, level, confidence, source hook, and evidence. In JSON output, evidence can reference `operationId`, `fromOperationId`, and `toOperationId`; these values join back to the selected hook's `operations` and `relations`.
 
 ```bash
