@@ -90,7 +90,7 @@ func decode(content []byte) (*Config, error) {
 var identifierPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*$`)
 
 func validate(config *Config) error {
-	if config.SchemaVersion != "3" || strings.TrimSpace(config.ContentVersion) == "" {
+	if config.SchemaVersion != "4" || strings.TrimSpace(config.ContentVersion) == "" {
 		return fmt.Errorf("unsupported or incomplete finding configuration version %q", config.SchemaVersion)
 	}
 	if len(config.Rules) == 0 {
@@ -103,14 +103,15 @@ func validate(config *Config) error {
 		"all-commands-known": true, "absence-capability": true, "archive-digest": true,
 		"complete-file-inventory": true, "read-only-health-check": true,
 		"relation-flow": true, "path-write": true, "persistence-write": true,
-		"profile-environment-write": true,
+		"profile-environment-write": true, "repository-persistence": true,
+		"project-in-place-modification": true, "toolchain-search-order-hijack": true,
 	}
 	for _, rule := range config.Rules {
 		if !identifierPattern.MatchString(rule.ID) || seen[rule.ID] {
 			return fmt.Errorf("invalid or duplicate finding rule ID %q", rule.ID)
 		}
 		seen[rule.ID] = true
-		if rule.Kind != "risk" && rule.Kind != "assurance" {
+		if rule.Kind != "risk" && rule.Kind != "assurance" && rule.Kind != "observation" {
 			return fmt.Errorf("rule %q has invalid kind %q", rule.ID, rule.Kind)
 		}
 		if !identifierPattern.MatchString(rule.Family) || strings.TrimSpace(rule.Title) == "" || strings.TrimSpace(rule.Message) == "" {
@@ -121,6 +122,9 @@ func validate(config *Config) error {
 		}
 		if rule.Kind == "assurance" && !contains([]string{"info", "low", "medium", "high"}, rule.Strength) {
 			return fmt.Errorf("rule %q has invalid strength %q", rule.ID, rule.Strength)
+		}
+		if rule.Kind == "observation" && (rule.Weight != 0 || rule.Severity != "" || rule.Strength != "") {
+			return fmt.Errorf("rule %q observation must be unscored", rule.ID)
 		}
 		if !contains([]string{"low", "medium", "high"}, rule.Confidence) || rule.Weight < 0 || rule.Weight > 100 {
 			return fmt.Errorf("rule %q has invalid confidence or weight", rule.ID)
@@ -156,7 +160,7 @@ func validateRelationMatcher(rule Rule) error {
 		return fmt.Errorf("rule %q has no relation kinds or same-operation flow", rule.ID)
 	}
 	for _, kind := range matcher.RelationKinds {
-		if !contains([]string{"pipeline", "substitution-flow", "variable-flow"}, kind) {
+		if !contains([]string{"pipeline", "substitution-flow", "variable-flow", "redirect-flow"}, kind) {
 			return fmt.Errorf("rule %q has invalid relation kind %q", rule.ID, kind)
 		}
 	}

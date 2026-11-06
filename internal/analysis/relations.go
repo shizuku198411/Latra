@@ -13,6 +13,7 @@ func BuildRelations(operations []Operation) []Relation {
 
 	collector := relationCollector{seen: make(map[string]bool)}
 	collector.structural(operations)
+	collector.redirectFlows(operations)
 	collector.variableFlows(operations, make(map[string]variableDefinition))
 	sort.SliceStable(collector.relations, func(i, j int) bool {
 		left, right := collector.relations[i], collector.relations[j]
@@ -28,6 +29,35 @@ func BuildRelations(operations []Operation) []Relation {
 		return left.Name < right.Name
 	})
 	return collector.relations
+}
+
+func (c *relationCollector) redirectFlows(operations []Operation) {
+	for index := range operations {
+		operation := &operations[index]
+		if operation.Kind == OperationRedirectWrite && operation.statementGroup != 0 {
+			if producer := precedingOutputProducer(operations[:index], operation.statementGroup); producer != nil {
+				c.add(RelationRedirectFlow, producer.ID, operation.ID, "stdout-to-file",
+					combineResolution(producer.Resolution, operation.Resolution))
+			}
+		}
+		c.redirectFlows(operation.Children)
+	}
+}
+
+func precedingOutputProducer(operations []Operation, statementGroup int) *Operation {
+	for index := len(operations) - 1; index >= 0; index-- {
+		operation := &operations[index]
+		if operation.statementGroup != statementGroup {
+			break
+		}
+		switch operation.Kind {
+		case OperationCommand, OperationFunctionInvocation, OperationSource, OperationEval:
+			return operation
+		case OperationPipeline:
+			return lastLeaf(operation.Children)
+		}
+	}
+	return nil
 }
 
 func assignOperationIDs(operations []Operation, parentID string, nextID *int) {

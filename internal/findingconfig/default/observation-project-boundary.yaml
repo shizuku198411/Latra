@@ -1,0 +1,24 @@
+finding-rules:
+  - id: observation.project-read
+    kind: observation
+    family: project-boundary
+    title: Workshop project data is read
+    confidence: high
+    weight: 0
+    match:
+      type: capability
+      capabilities:
+        - project-read
+    message: The SDK reads data from the mounted Workshop project.
+
+  - id: observation.project-write
+    kind: observation
+    family: project-boundary
+    title: Workshop project data is modified
+    confidence: high
+    weight: 0
+    match:
+      type: capability
+      capabilities:
+        - project-write
+    message: The SDK writes data under the mounted Workshop project.

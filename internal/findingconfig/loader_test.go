@@ -12,21 +12,21 @@ func TestDefaultIsValidAndSplitAcrossKinds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.SchemaVersion != "3" || config.ContentVersion == "" {
+	if config.SchemaVersion != "4" || config.ContentVersion == "" {
 		t.Fatalf("versions = %q, %q", config.SchemaVersion, config.ContentVersion)
 	}
 	kinds := map[string]int{}
 	for _, rule := range config.Rules {
 		kinds[rule.Kind]++
 	}
-	if kinds["risk"] == 0 || kinds["assurance"] == 0 {
+	if kinds["risk"] == 0 || kinds["assurance"] == 0 || kinds["observation"] == 0 {
 		t.Fatalf("rule kinds = %#v", kinds)
 	}
 }
 
 func TestParseRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
-	_, err := findingconfig.Parse([]byte("schema-version: '3'\ncontent-version: test\nunknown: true\n"))
+	_, err := findingconfig.Parse([]byte("schema-version: '4'\ncontent-version: test\nunknown: true\n"))
 	if err == nil {
 		t.Fatal("expected strict decoding error")
 	}
@@ -35,7 +35,7 @@ func TestParseRejectsUnknownFields(t *testing.T) {
 func TestParseAcceptsHookContextConstraints(t *testing.T) {
 	t.Parallel()
 	config, err := findingconfig.Parse([]byte(`
-schema-version: "3"
+schema-version: "4"
 content-version: test
 finding-rules:
   - id: risk.context-test
@@ -70,7 +70,7 @@ finding-rules:
 func TestParseRejectsHookContextOnSDKMatcher(t *testing.T) {
 	t.Parallel()
 	_, err := findingconfig.Parse([]byte(`
-schema-version: "3"
+schema-version: "4"
 content-version: test
 finding-rules:
   - id: risk.invalid-context
@@ -99,7 +99,7 @@ func TestParseValidatesRelationFlowSinks(t *testing.T) {
 		"source-capability: project-sensitive-file-read\n      sink-capability: external-send\n      relation-kinds: [unsupported]",
 	} {
 		_, err := findingconfig.Parse([]byte(`
-schema-version: "3"
+schema-version: "4"
 content-version: test
 finding-rules:
   - id: risk.invalid-flow

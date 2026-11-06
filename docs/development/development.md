@@ -77,7 +77,7 @@ The repository is mounted at `/project` and changes made there are reflected on 
 
 ## Command database changes
 
-See [Command database development](command-database.md) when adding known commands, capability mappings, match rules, or path classifications under `internal/capabilityconfig/default/`.
+See [Command database development](database/command-database.md) when adding known commands, capability mappings, match rules, or path classifications under `internal/capabilityconfig/default/`.
 
 See [JSON report schema](json-schema.md) when changing report fields, JSON tags, enums, compact output, or verbose output.
 

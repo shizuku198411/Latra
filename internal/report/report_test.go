@@ -22,7 +22,13 @@ func TestWriteJSONGolden(t *testing.T) {
 	if err := report.WriteJSON(&output, fixtureResult()); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.ReadFile(filepath.Join("..", "..", "testdata", "report", "inventory.json"))
+	goldenPath := filepath.Join("..", "..", "testdata", "report", "inventory.json")
+	if os.Getenv("LATRA_UPDATE_GOLDEN") == "1" {
+		if err := os.WriteFile(goldenPath, output.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(goldenPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,12 +120,126 @@ func TestWriteTextSummaryColorsAssessmentScores(t *testing.T) {
 	text := output.String()
 	for _, want := range []string{
 		"Review Priority: \x1b[32m0/100 (info)\x1b[0m",
-		"Risk: \x1b[32m0/100 (info)\x1b[0m",
-		"Assurance: \x1b[32m72/100 (high)\x1b[0m",
-		"Coverage: \x1b[32m100/100 (sufficient)\x1b[0m",
+		"Risk:            \x1b[32m0/100 (info)\x1b[0m",
+		"Assurance:       \x1b[32m72/100 (strong)\x1b[0m",
+		"Coverage:        \x1b[32m100/100 (sufficient)\x1b[0m",
+		"\x1b[37m[\x1b[32m██████████████\x1b[37m░░░░░░]\x1b[0m",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text does not contain %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestTextAssessmentShowsKeyRisksOnlyBySDK(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	var output bytes.Buffer
+	if err := report.WriteTextSummary(&output, result); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	assessmentStart := strings.Index(text, "Assessment\n")
+	if assessmentStart < 0 {
+		t.Fatalf("Assessment section is missing:\n%s", text)
+	}
+	assessment := text[assessmentStart:]
+	bySDK := strings.Index(assessment, "  By SDK:\n")
+	keyRisks := strings.Index(assessment, "      Key Risks:\n")
+	if bySDK < 0 || keyRisks < bySDK {
+		t.Errorf("Key Risks must appear only below By SDK:\n%s", assessment)
+	}
+	if strings.Contains(assessment[:bySDK], "Key Risks:") {
+		t.Errorf("project-level Key Risks is still rendered:\n%s", assessment)
+	}
+}
+
+func TestAssessmentScoreBarsStartInTheSameColumn(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	if err := report.WriteTextSummary(&output, fixtureResult()); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(output.String(), "\n")
+	columns := make(map[int]int)
+	count := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "Review Priority:") && !strings.HasPrefix(trimmed, "Risk:") &&
+			!strings.HasPrefix(trimmed, "Assurance:") && !strings.HasPrefix(trimmed, "Coverage:") {
+			continue
+		}
+		column := strings.Index(line, "[")
+		if column < 0 {
+			t.Fatalf("score bar is missing from %q", line)
+		}
+		columns[column]++
+		count++
+	}
+	if count != 8 || len(columns) != 2 {
+		t.Errorf("score bar columns = %#v across %d lines; output:\n%s", columns, count, output.String())
+	}
+	for column, occurrences := range columns {
+		if occurrences != 4 {
+			t.Errorf("score bar column %d has %d lines, want 4", column, occurrences)
+		}
+	}
+}
+
+func TestProjectObservationsAreReportedSeparately(t *testing.T) {
+	t.Parallel()
+
+	result := fixtureResult()
+	hook := &result.SDKs[0].Hooks[0]
+	location := hook.Analysis.Operations[0].Location
+	hook.Analysis.Capabilities = append(hook.Analysis.Capabilities,
+		analysis.Capability{
+			Kind: "project-read", RuleID: "path.project.read", RuleSource: "embedded-default",
+			Operation: analysis.OperationCommand, OperationID: "op-0002",
+			Target:           analysis.Value{Resolution: analysis.Resolved, Literal: "README.md"},
+			NormalizedTarget: analysis.Value{Resolution: analysis.Resolved, Literal: "/project/README.md"},
+			Resolution:       analysis.Resolved, Location: location,
+		},
+		analysis.Capability{
+			Kind: "project-write", RuleID: "path.project.write", RuleSource: "embedded-default",
+			Operation: analysis.OperationRedirectWrite, OperationID: "op-0003",
+			Target:           analysis.Value{Resolution: analysis.Resolved, Literal: "generated.txt"},
+			NormalizedTarget: analysis.Value{Resolution: analysis.Resolved, Literal: "/project/generated.txt"},
+			Resolution:       analysis.Resolved, Location: location,
+		},
+	)
+	document := report.NewDocument(result)
+	if document.Summary.Observations.Count != 2 || len(document.Summary.Observations.BySDK) != 1 {
+		t.Fatalf("observation summary = %#v", document.Summary.Observations)
+	}
+	access := document.Summary.Observations.BySDK[0].ProjectAccess
+	if access.Reads != 1 || access.Writes != 1 || access.UniqueReads != 1 || access.UniqueWrites != 1 {
+		t.Errorf("project access summary = %#v", access)
+	}
+	if document.Summary.Findings.Count != document.Summary.Findings.Risk+document.Summary.Findings.Assurance {
+		t.Errorf("observations leaked into finding summary: %#v", document.Summary.Findings)
+	}
+
+	var compact bytes.Buffer
+	if err := report.WriteTextSummary(&compact, result); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(compact.String(), "Project Access: 2 (1 reads, 1 writes)") || !strings.Contains(compact.String(), "example: 2 (1 reads, 1 writes)") {
+		t.Errorf("compact observations missing:\n%s", compact.String())
+	}
+
+	var verbose bytes.Buffer
+	if err := report.WriteText(&verbose, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`sdk=example file=hooks/setup-project:1:1 hook=setup-project value="/project/README.md" raw="README.md" resolution=Resolved`,
+		`sdk=example file=hooks/setup-project:1:1 hook=setup-project value="/project/generated.txt" raw="generated.txt" resolution=Resolved`,
+	} {
+		if !strings.Contains(verbose.String(), want) {
+			t.Errorf("verbose observations do not contain %q:\n%s", want, verbose.String())
 		}
 	}
 }

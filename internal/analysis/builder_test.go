@@ -2,6 +2,7 @@ package analysis_test
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/shizuku198411/Latra/internal/analysis"
@@ -135,6 +136,15 @@ func TestContextForLifecycleHooks(t *testing.T) {
 	}
 }
 
+func hasCapabilityKind(capabilities []analysis.Capability, kind string) bool {
+	for _, capability := range capabilities {
+		if capability.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
 func TestClassifyPath(t *testing.T) {
 	t.Parallel()
 
@@ -230,6 +240,156 @@ cat "$file"
 	}
 }
 
+func TestProjectPathResolutionUsesHookWorkingDirectory(t *testing.T) {
+	t.Parallel()
+
+	project := analyze(t, "setup-project", `
+cat README.md
+printf 'generated' > generated.txt
+source ./environment.sh
+`)
+	assertNormalizedCapability(t, project.Capabilities, "project-read", "README.md", "/project/README.md", analysis.Resolved)
+	assertNormalizedCapability(t, project.Capabilities, "project-write", "generated.txt", "/project/generated.txt", analysis.Resolved)
+	assertNormalizedCapability(t, project.Capabilities, "project-read", "./environment.sh", "/project/environment.sh", analysis.Resolved)
+
+	health := analyze(t, "check-health", `cat README.md`)
+	if len(capabilitiesOfKind(health.Capabilities, "project-read")) != 0 {
+		t.Errorf("relative health-check path was classified as project access: %#v", health.Capabilities)
+	}
+	health = analyze(t, "check-health", `cat /project/README.md`)
+	assertNormalizedCapability(t, health.Capabilities, "project-read", "/project/README.md", "/project/README.md", analysis.Resolved)
+}
+
+func TestProjectPathResolutionTracksChangedWorkingDirectory(t *testing.T) {
+	t.Parallel()
+
+	result := analyze(t, "setup-base", `
+cd /project
+cat README.md
+cd /tmp
+cat ignored.txt
+`)
+	reads := capabilitiesOfKind(result.Capabilities, "project-read")
+	if len(reads) != 1 {
+		t.Fatalf("project reads = %#v", reads)
+	}
+	assertNormalizedCapability(t, reads, "project-read", "README.md", "/project/README.md", analysis.Resolved)
+
+	unknown := analyze(t, "setup-base", `
+cd "$TARGET"
+cat config
+`)
+	if len(capabilitiesOfKind(unknown.Capabilities, "project-read")) != 0 {
+		t.Errorf("unresolved cwd was classified as project access: %#v", unknown.Capabilities)
+	}
+}
+
+func TestProjectPathResolutionPreservesBranchCandidates(t *testing.T) {
+	t.Parallel()
+
+	result := analyze(t, "setup-base", `
+if true; then
+  cd /project
+else
+  cd /tmp
+fi
+cat config
+`)
+	reads := capabilitiesOfKind(result.Capabilities, "project-read")
+	if len(reads) != 1 {
+		t.Fatalf("project candidate reads = %#v", reads)
+	}
+	capability := reads[0]
+	if capability.Resolution != analysis.PartiallyResolved || capability.Target.Literal != "config" {
+		t.Fatalf("project candidate capability = %#v", capability)
+	}
+	want := []string{"/project/config", "/tmp/config"}
+	if !reflect.DeepEqual(capability.NormalizedTarget.Candidates, want) {
+		t.Errorf("normalized candidates = %#v, want %#v", capability.NormalizedTarget.Candidates, want)
+	}
+}
+
+func TestCommandSpecificProjectOutputDestinations(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, content, raw, normalized string
+	}{
+		{"curl short", "curl -o downloads/tool https://example.invalid/tool", "downloads/tool", "/project/downloads/tool"},
+		{"curl long", "curl --output=downloads/tool https://example.invalid/tool", "downloads/tool", "/project/downloads/tool"},
+		{"wget", "wget --output-document downloads/tool https://example.invalid/tool", "downloads/tool", "/project/downloads/tool"},
+		{"git clone", "git clone --depth 1 https://example.invalid/repo external/repo", "external/repo", "/project/external/repo"},
+		{"tar short", "tar -xf archive.tar -C extracted", "extracted", "/project/extracted"},
+		{"tar long", "tar --extract --file archive.tar --directory=extracted", "extracted", "/project/extracted"},
+		{"unzip", "unzip archive.zip -d extracted", "extracted", "/project/extracted"},
+		{"patch target", "patch source.txt change.patch", "source.txt", "/project/source.txt"},
+		{"patch directory", "patch -d source -i change.patch", "source", "/project/source"},
+		{"git apply directory", "git apply --directory=source change.patch", "source", "/project/source"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := analyze(t, "setup-project", test.content+"\n")
+			var found *analysis.Capability
+			for index := range result.Capabilities {
+				capability := &result.Capabilities[index]
+				if capability.Kind == "project-write" && capability.Target.Literal == test.raw {
+					found = capability
+					break
+				}
+			}
+			if found == nil || found.NormalizedTarget.Literal != test.normalized || found.Resolution != analysis.Resolved {
+				t.Fatalf("project output capability = %#v; all = %#v", found, result.Capabilities)
+			}
+		})
+	}
+	gitClone := analyze(t, "setup-project", "git clone https://example.invalid/repo external/repo\n")
+	if !hasCapabilityKind(gitClone.Capabilities, "network-download") {
+		t.Errorf("git clone has no network-download capability: %#v", gitClone.Capabilities)
+	}
+}
+
+func TestImplicitOrNonWritingDestinationsAreNotGuessed(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"curl https://example.invalid/tool\n",
+		"wget https://example.invalid/tool\n",
+		"git clone https://example.invalid/repo\n",
+		"tar -cf archive.tar -C source .\n",
+		"unzip archive.zip\n",
+		"git apply change.patch\n",
+	} {
+		result := analyze(t, "setup-project", content)
+		for _, capability := range result.Capabilities {
+			if capability.Kind == "project-write" {
+				t.Fatalf("implicit or non-writing destination was inferred for %q: %#v", content, capability)
+			}
+		}
+	}
+}
+
+func TestPipelineStreamsAreNotClassifiedAsProjectPaths(t *testing.T) {
+	t.Parallel()
+
+	result := analyze(t, "setup-project", "cat README.md | grep fixture | tee generated.txt\n")
+	for _, capability := range result.Capabilities {
+		if capability.Target.Literal == "stdin" || capability.Target.Literal == "stdout" {
+			t.Fatalf("pipeline stream was classified as a path: %#v", capability)
+		}
+	}
+}
+
+func TestStandardInputMarkerIsNotClassifiedAsProjectPath(t *testing.T) {
+	t.Parallel()
+
+	result := analyze(t, "setup-project", "cat README.md | curl --data-binary @- https://example.invalid/upload\n")
+	for _, capability := range result.Capabilities {
+		if capability.Target.Literal == "-" || capability.NormalizedTarget.Literal == "/project/-" {
+			t.Fatalf("standard input marker was classified as a path: %#v", capability)
+		}
+	}
+}
+
 func capabilitiesOfKind(capabilities []analysis.Capability, kind string) []analysis.Capability {
 	var matches []analysis.Capability
 	for _, capability := range capabilities {
@@ -247,6 +407,20 @@ func hasCapabilityTarget(capabilities []analysis.Capability, target string) bool
 		}
 	}
 	return false
+}
+
+func assertNormalizedCapability(t *testing.T, capabilities []analysis.Capability, kind, raw, normalized string, resolution analysis.Resolution) {
+	t.Helper()
+	for _, capability := range capabilities {
+		if capability.Kind != kind || capability.Target.Literal != raw {
+			continue
+		}
+		if capability.NormalizedTarget.Literal != normalized || capability.Resolution != resolution {
+			t.Fatalf("capability %s raw %q = %#v, want normalized %q resolution %q", kind, raw, capability, normalized, resolution)
+		}
+		return
+	}
+	t.Fatalf("capability %s raw %q not found: %#v", kind, raw, capabilities)
 }
 
 func TestKnownCommandCoverage(t *testing.T) {
@@ -498,8 +672,8 @@ func TestOptionTerminatorPreservesFileOperands(t *testing.T) {
 	if counts["path.project.write"] != 1 {
 		t.Errorf("project writes = %d, want 1; all: %#v", counts["path.project.write"], counts)
 	}
-	if counts["path.project.read"] != 0 {
-		t.Errorf("project destination was treated as source: %#v", counts)
+	if counts["path.project.read"] != 1 {
+		t.Errorf("relative project source reads = %d, want 1: %#v", counts["path.project.read"], counts)
 	}
 }
 
@@ -639,8 +813,8 @@ socat EXEC:/bin/sh -
 			t.Errorf("%s count = %d, want %d; all: %#v", ruleID, counts[ruleID], want, counts)
 		}
 	}
-	if counts["path.project.read"] != 1 {
-		t.Errorf("sftp batch reads = %d, want 1", counts["path.project.read"])
+	if counts["path.project.read"] != 3 {
+		t.Errorf("relative rsync and sftp batch reads = %d, want 3", counts["path.project.read"])
 	}
 }
 

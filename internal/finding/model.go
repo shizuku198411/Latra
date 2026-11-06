@@ -1,4 +1,4 @@
-// Package finding evaluates explainable risk and assurance findings from an SDK inventory.
+// Package finding evaluates explainable findings from an SDK inventory.
 package finding
 
 import (
@@ -10,8 +10,9 @@ import (
 type Kind string
 
 const (
-	KindRisk      Kind = "risk"
-	KindAssurance Kind = "assurance"
+	KindRisk        Kind = "risk"
+	KindAssurance   Kind = "assurance"
+	KindObservation Kind = "observation"
 )
 
 type Database struct {
@@ -33,14 +34,16 @@ type Context struct {
 }
 
 type Evidence struct {
-	Type            string              `json:"type"`
-	ID              string              `json:"id,omitempty"`
-	OperationID     string              `json:"operationId,omitempty"`
-	FromOperationID string              `json:"fromOperationId,omitempty"`
-	ToOperationID   string              `json:"toOperationId,omitempty"`
-	Value           string              `json:"value,omitempty"`
-	Resolution      analysis.Resolution `json:"resolution,omitempty"`
-	Location        *shell.Location     `json:"location,omitempty"`
+	Type                 string              `json:"type"`
+	ID                   string              `json:"id,omitempty"`
+	OperationID          string              `json:"operationId,omitempty"`
+	FromOperationID      string              `json:"fromOperationId,omitempty"`
+	ToOperationID        string              `json:"toOperationId,omitempty"`
+	Value                string              `json:"value,omitempty"`
+	NormalizedValue      string              `json:"normalizedValue,omitempty"`
+	NormalizedCandidates []string            `json:"normalizedCandidates,omitempty"`
+	Resolution           analysis.Resolution `json:"resolution,omitempty"`
+	Location             *shell.Location     `json:"location,omitempty"`
 }
 
 type Finding struct {

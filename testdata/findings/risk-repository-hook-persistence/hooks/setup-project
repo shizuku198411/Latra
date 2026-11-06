@@ -1,0 +1,2 @@
+printf '#!/bin/sh\n' > .git/hooks/pre-commit
+

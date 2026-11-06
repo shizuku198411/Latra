@@ -1,6 +1,6 @@
 # Command database development
 
-Latra's built-in command and capability knowledge is maintained as YAML under [`internal/capabilityconfig/default/`](../../internal/capabilityconfig/default/). These files are embedded in the Latra binary at build time.
+Latra's built-in command and capability knowledge is maintained as YAML under [`internal/capabilityconfig/default/`](../../../internal/capabilityconfig/default/). These files are embedded in the Latra binary at build time.
 
 This guide explains how to choose and edit the appropriate YAML fragment. It intentionally focuses on database maintenance rather than the Go evaluator implementation.
 
@@ -11,7 +11,8 @@ This guide explains how to choose and edit the appropriate YAML fragment. It int
 | Register a known command without assigning behavior | `command-definitions.yaml` |
 | Add or change a capability definition | `capabilities.yaml` |
 | Map a command or command form to capabilities | `commands-core.yaml`, `commands-network.yaml`, `commands-runtime.yaml`, or `commands-system.yaml` |
-| Describe file operands read or written by a command | `files.yaml` |
+| Describe general file operands read or written by a command | `files.yaml` |
+| Describe explicit download, clone, extraction, or patch destinations | `file-outputs.yaml` |
 | Describe a command wrapper and continue analyzing its inner command | `wrappers.yaml` |
 | Detect inline code accepted by an interpreter option | `interpreters.yaml` |
 | Detect an option that sends local data externally | `uploads.yaml` |
@@ -54,7 +55,7 @@ command-definitions:
 
 This removes `examplectl` from the unknown-command summary without reporting behavior that has not been established.
 
-Current categories are documented in [`docs/capabilities.md`](../capabilities.md). A category is descriptive metadata, not a capability. If a genuinely new category is required, use a valid identifier and update the public category list.
+Current categories are documented in [Capability model and definitions](capabilities.md). A category is descriptive metadata, not a capability. If a genuinely new category is required, use a valid identifier and update the category list.
 
 Do not add a broad capability rule only to make a command known. Add a command definition first, then add narrowly supported behavioral rules separately.
 
@@ -202,7 +203,7 @@ Supported argument classes are:
 
 ## Describe file operands
 
-Use `files.yaml` when command operands represent paths. File rules derive path-based capabilities through `path-classes.yaml` and `path-capabilities.yaml`.
+Use `files.yaml` when general command operands represent paths. Use `file-outputs.yaml` for explicit destinations created by downloads, repository clones, archive extraction, or patch application. File rules derive path-based capabilities through `path-classes.yaml` and `path-capabilities.yaml`.
 
 ```yaml
 file-command-rules:
@@ -216,7 +217,7 @@ file-command-rules:
         access: write
 ```
 
-Supported operand selectors are `all`, `first`, `last`, `all-but-first`, and `all-but-last`. Supported access modes are `read`, `write`, and `read-write`.
+Supported operand selectors are `all`, `first`, `last`, `all-but-first`, `all-but-last`, and `position-2`. `position-2` selects the third positional operand and returns no value when it is absent; it is used for explicit destinations such as `git clone <repository> <directory>` while avoiding guesses about implicit output names. Supported access modes are `read`, `write`, and `read-write`.
 
 List options that consume values so those values are not interpreted as positional paths:
 
@@ -337,7 +338,7 @@ capability-definitions:
     description: Performs an observable example behavior.
 ```
 
-Also update [`docs/capabilities.md`](../capabilities.md) when the public capability set changes.
+Also update [Capability model and definitions](capabilities.md) when the capability set changes.
 
 Path classes accept these match fields:
 
@@ -401,21 +402,21 @@ The rule is ignored when the option value does not contain the marker.
 Run all commands inside the Workshop development environment:
 
 ```bash
-workshop run dev -- format
-workshop run dev -- check
+workshop run -- format
+workshop run -- check
 ```
 
 Inspect the embedded database through the CLI:
 
 ```bash
-workshop run dev -- latra db commands example
-workshop run dev -- latra db capabilities --command example --verbose
+workshop run -- latra db commands example
+workshop run -- latra db capabilities --command example --verbose
 ```
 
 Then scan a focused fixture or Workshop project that exercises both matching and non-matching command forms:
 
 ```bash
-workshop run dev -- latra scan ./testdata/project-sdks/valid-project --verbose
+workshop run -- latra scan ./testdata/project-sdks/valid-project --verbose
 ```
 
 When adding behavior, include regression tests for:

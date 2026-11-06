@@ -72,6 +72,22 @@ command-rules:
     capabilities:
       - network-access
 
+  - id: command.git-download
+    commands:
+      - git
+    match:
+      options-consuming-next:
+        - -C
+        - -c
+        - --git-dir
+        - --work-tree
+      subcommands:
+        - clone
+        - fetch
+        - pull
+    capabilities:
+      - network-download
+
   - id: command.git-submodule-network
     commands:
       - git

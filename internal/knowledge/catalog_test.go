@@ -63,6 +63,7 @@ func TestDefaultCatalogContainsCanonicalSDKCommandCategories(t *testing.T) {
 
 	catalog := knowledge.Default()
 	want := map[string]string{
+		"cd":                  "shell-builtin",
 		"exit":                "shell-builtin",
 		"adduser":             "system-utility",
 		"dpkg-query":          "system-utility",

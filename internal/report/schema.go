@@ -14,7 +14,7 @@ import (
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
-const SchemaVersion = "3"
+const SchemaVersion = "4"
 
 // Document is the stable, versioned JSON inventory representation.
 type Document struct {
@@ -50,6 +50,7 @@ type Summary struct {
 	UnknownCommands UnknownCommandSummary `json:"unknownCommands"`
 	Diagnostics     DiagnosticSummary     `json:"diagnostics"`
 	Findings        FindingSummary        `json:"findings"`
+	Observations    ObservationSummary    `json:"observations"`
 }
 
 type SDKSummary struct {
@@ -158,6 +159,24 @@ type SDKFindingSummary struct {
 	Risk       int           `json:"risk"`
 	Assurance  int           `json:"assurance"`
 	FindingIDs []CountedName `json:"findingIds"`
+}
+
+type ObservationSummary struct {
+	Count int                     `json:"count"`
+	BySDK []SDKObservationSummary `json:"bySdk"`
+}
+
+type SDKObservationSummary struct {
+	SDKName       string               `json:"sdkName"`
+	Count         int                  `json:"count"`
+	ProjectAccess ProjectAccessSummary `json:"projectAccess"`
+}
+
+type ProjectAccessSummary struct {
+	Reads        int `json:"reads"`
+	Writes       int `json:"writes"`
+	UniqueReads  int `json:"uniqueReads"`
+	UniqueWrites int `json:"uniqueWrites"`
 }
 
 type SDK struct {
@@ -340,6 +359,7 @@ func summarize(document Document) Summary {
 		UnknownCommands: UnknownCommandSummary{BySDK: []SDKUnknownCommandSummary{}},
 		Diagnostics:     DiagnosticSummary{Count: len(document.Diagnostics), DiagnosticCodes: []CountedName{}},
 		Findings:        FindingSummary{BySDK: []SDKFindingSummary{}},
+		Observations:    ObservationSummary{BySDK: []SDKObservationSummary{}},
 	}
 	resolvedSDKNames := make(map[string]struct{})
 	unresolvedSDKNames := make(map[string]struct{})
@@ -370,17 +390,40 @@ func summarize(document Document) Summary {
 		capabilitySummary := SDKCapabilitySummary{SDKName: item.Name, CapabilityNames: []CountedName{}}
 		unknownCommandSummary := SDKUnknownCommandSummary{SDKName: item.Name, Files: []FileUnknownCommandSummary{}}
 		findingSummary := SDKFindingSummary{SDKName: item.Name, FindingIDs: []CountedName{}}
+		observationSummary := SDKObservationSummary{SDKName: item.Name}
 		findingIDs := make(map[string]int)
+		uniqueReads := make(map[string]struct{})
+		uniqueWrites := make(map[string]struct{})
 		for _, itemFinding := range item.Findings {
-			findingIDs[itemFinding.ID]++
-			if itemFinding.Kind == finding.KindRisk {
+			switch itemFinding.Kind {
+			case finding.KindRisk:
+				findingIDs[itemFinding.ID]++
 				findingSummary.Risk++
-			} else {
+			case finding.KindAssurance:
+				findingIDs[itemFinding.ID]++
 				findingSummary.Assurance++
+			case finding.KindObservation:
+				observationSummary.Count++
+				for _, evidence := range itemFinding.Evidence {
+					value := evidence.NormalizedValue
+					if value == "" {
+						value = evidence.Value
+					}
+					switch itemFinding.ID {
+					case "observation.project-read":
+						observationSummary.ProjectAccess.Reads++
+						uniqueReads[value] = struct{}{}
+					case "observation.project-write":
+						observationSummary.ProjectAccess.Writes++
+						uniqueWrites[value] = struct{}{}
+					}
+				}
 			}
 		}
-		findingSummary.Count = len(item.Findings)
+		findingSummary.Count = findingSummary.Risk + findingSummary.Assurance
 		findingSummary.FindingIDs = sortedCounts(findingIDs)
+		observationSummary.ProjectAccess.UniqueReads = len(uniqueReads)
+		observationSummary.ProjectAccess.UniqueWrites = len(uniqueWrites)
 		hookNames := make(map[string]struct{})
 		operationKinds := make(map[string]int)
 		capabilityNames := make(map[string]int)
@@ -413,12 +456,14 @@ func summarize(document Document) Summary {
 		summary.Findings.Count += findingSummary.Count
 		summary.Findings.Risk += findingSummary.Risk
 		summary.Findings.Assurance += findingSummary.Assurance
+		summary.Observations.Count += observationSummary.Count
 		summary.Files.BySDK = append(summary.Files.BySDK, fileSummary)
 		summary.Hooks.BySDK = append(summary.Hooks.BySDK, hookSummary)
 		summary.Operations.BySDK = append(summary.Operations.BySDK, operationSummary)
 		summary.Capabilities.BySDK = append(summary.Capabilities.BySDK, capabilitySummary)
 		summary.UnknownCommands.BySDK = append(summary.UnknownCommands.BySDK, unknownCommandSummary)
 		summary.Findings.BySDK = append(summary.Findings.BySDK, findingSummary)
+		summary.Observations.BySDK = append(summary.Observations.BySDK, observationSummary)
 	}
 	summary.SDKs.SDKNames.Resolved = sortedSet(resolvedSDKNames)
 	summary.SDKs.SDKNames.Unresolved = sortedSet(unresolvedSDKNames)

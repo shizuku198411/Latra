@@ -224,7 +224,7 @@ func validate(config *Config) error {
 			return fmt.Errorf("rule %q has no operands", rule.ID)
 		}
 		for _, operand := range rule.Operands {
-			if !containsString([]string{"all", "first", "last", "all-but-first", "all-but-last"}, operand.Selector) {
+			if !containsString([]string{"all", "first", "last", "all-but-first", "all-but-last", "position-2"}, operand.Selector) {
 				return fmt.Errorf("rule %q has invalid operand selector %q", rule.ID, operand.Selector)
 			}
 			if err := validateAccess(rule.ID, operand.Access); err != nil {

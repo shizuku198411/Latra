@@ -192,7 +192,7 @@ Capabilities: 22
 
 Capabilities describe observable or conservatively inferred behavior. Counts represent detected occurrences, not unique capability names.
 
-A capability is not a severity, risk score, policy decision, or claim that an SDK is malicious. See [Categories and capabilities](capabilities.md) for the current definitions.
+A capability is not a severity, risk score, policy decision, or claim that an SDK is malicious. See [Capability model and definitions](../development/database/capabilities.md) for the current definitions.
 
 To inspect the embedded knowledge associated with a capability, use:
 
@@ -217,12 +217,39 @@ The compact Summary lists only risk IDs for SDKs whose aggregated risk level is 
 - Risk and assurance are independent. Assurance does not remove or lower a risk finding.
 - Confidence describes how directly the available static evidence supports the finding.
 
+Project-boundary flow findings connect both sides of the detected transfer:
+
+- `risk.remote-content-to-project` identifies remote content flowing into a project write;
+- `risk.project-data-exfiltration` identifies ordinary project data flowing to an external send;
+- `risk.project-secret-exfiltration` takes precedence over the general exfiltration rule for the same sensitive source and sink flow.
+
+These rules require a connected operation flow. Separate commands that happen to download, read, write, or send data are not treated as connected without graph evidence.
+
 Use `--verbose` to see each finding's rule ID, level, confidence, source hook, and evidence. In JSON output, evidence can reference `operationId`, `fromOperationId`, and `toOperationId`; these values join back to the selected hook's `operations` and `relations`.
 
 ```bash
 latra scan . --verbose
 latra scan . --format json --verbose --output inventory.json
 ```
+
+## Observations
+
+```text
+Observations
+  Project Access: 3 (1 reads, 2 writes)
+  By SDK:
+    project-base: 3 (1 reads, 2 writes)
+```
+
+Observations record important facts without increasing or reducing Risk, Assurance, Review Priority, or Classification. Project Access shows how often SDK hooks read or modify the mounted project.
+
+The compact report contains occurrence totals. With `--verbose`, each access includes the SDK, hook, source location, normalized project path, original shell path, and resolution status:
+
+```text
+sdk=project-base file=hooks/setup-project:4:1 hook=setup-project value="/project/README.md" raw="README.md" resolution=Resolved
+```
+
+In JSON, `summary.observations` contains project-wide and per-SDK totals. Full JSON also retains each `observation` rule and its evidence under `sdks[].findings`; `value` is the raw path and `normalizedValue` is the path resolved against the tracked hook working directory.
 
 ## Assessment
 
@@ -231,17 +258,16 @@ Assessment is displayed separately from Summary because Summary contains occurre
 ```text
 Assessment
   Classification: high-priority-review
-  Review Priority: 82/100 (critical)
-  Risk: 82/100 (critical)
-  Assurance: 66/100 (high)
-  Coverage: 88/100 (sufficient)
-  Key Risks:
-    risk.unknown-command-root: Unknown command runs in a root hook [medium, score=82, occurrences=6]
-      sdk=project-base file=hooks/check-health:4:1 hook=check-health value="example-command"
+  Review Priority: 82/100 (critical)      [████████████████░░░░]
+  Risk:            82/100 (critical)      [████████████████░░░░]
+  Assurance:       66/100 (strong)        [█████████████░░░░░░░]
+  Coverage:        88/100 (sufficient)    [██████████████████░░]
   By SDK:
     project-base: high-priority-review
-      Review Priority: 82/100 (critical)
-      Risk: 82/100 (critical), Assurance: 66/100 (high), Coverage: 88/100 (sufficient)
+      Review Priority: 82/100 (critical)      [████████████████░░░░]
+      Risk:            82/100 (critical)      [████████████████░░░░]
+      Assurance:       66/100 (strong)        [█████████████░░░░░░░]
+      Coverage:        88/100 (sufficient)    [██████████████████░░]
       Key Risks:
         risk.unknown-command-root: Unknown command runs in a root hook [medium, score=82, occurrences=6]
           sdk=project-base file=hooks/check-health:4:1 hook=check-health value="example-command"
@@ -249,7 +275,18 @@ Assessment
 
 `Review Priority` is the headline indicator: a higher number means the SDK should be reviewed sooner. It is not a probability that an SDK is malicious and it is not a safety score.
 
-`Key Risks` explains which rules contribute to the assessment. Each entry includes its aggregated rule score, occurrence count, and every source location. The `sdk`, `file`, and `hook` values can be copied directly into `latra file <sdk> <file>` and `latra hook <sdk> <hook>`. The line and column suffix on `file` identify the precise evidence location and are not part of the path passed to `latra file`.
+Assurance uses positive-language labels so it cannot be confused with Risk severity:
+
+| Score | Text label | Meaning |
+| ---: | --- | --- |
+| 60–100 | `strong` | Strong positive evidence and analysis-quality properties were observed. |
+| 30–59 | `moderate` | Some meaningful positive evidence was observed. |
+| 1–29 | `limited` | Positive evidence exists but remains limited. |
+| 0 | `none` | No assurance contribution was established. |
+
+These labels describe observable assurance, not a guarantee that the SDK is safe.
+
+The `Key Risks` listed under each SDK explain which rules contribute to that SDK's assessment. Each entry includes its aggregated rule score, occurrence count, and every source location. The `sdk`, `file`, and `hook` values can be copied directly into `latra file <sdk> <file>` and `latra hook <sdk> <hook>`. The line and column suffix on `file` identify the precise evidence location and are not part of the path passed to `latra file`.
 
 Assurance is never subtracted from risk. For example, a verified artifact can still perform a high-impact root operation. In that case both the high risk and strong control remain visible. Incomplete analysis raises Review Priority through the coverage penalty and produces `insufficient-evidence`.
 

@@ -46,6 +46,7 @@ func TestEmbeddedDefaultFragmentLayout(t *testing.T) {
 		"commands-runtime.yaml":    true,
 		"commands-system.yaml":     true,
 		"files.yaml":               true,
+		"file-outputs.yaml":        true,
 		"interpreters.yaml":        true,
 		"operations.yaml":          true,
 		"path-capabilities.yaml":   true,

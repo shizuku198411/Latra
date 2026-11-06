@@ -40,6 +40,68 @@ finding-rules:
     message: The hook sends local or generated data to a network endpoint.
     remediation: Review the source data, endpoint, and transport before allowing the transfer.
 
+  - id: risk.dynamic-execution
+    kind: risk
+    family: remote-execution
+    title: Dynamic code executes with project access
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: capability
+      capabilities:
+        - dynamic-execution
+      hook-names:
+        - setup-project
+      project-mounted: true
+    message: The project setup hook dynamically evaluates code while the Workshop project is mounted.
+    remediation: Replace dynamic evaluation with explicit commands and review the complete origin of the evaluated content.
+
+  - id: risk.repository-hook-persistence
+    kind: risk
+    family: persistence
+    title: Repository hook persistence is configured
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: repository-persistence
+      hook-names:
+        - setup-project
+      project-mounted: true
+    message: The project setup hook writes a Git hook or changes the repository hook path.
+    remediation: Remove SDK-managed Git hooks and require repository hook changes to be explicitly reviewed by the project owner.
+
+  - id: risk.project-file-modification
+    kind: risk
+    family: project-integrity
+    title: An existing project file is modified in place
+    severity: medium
+    confidence: high
+    weight: 25
+    match:
+      type: project-in-place-modification
+      hook-names:
+        - setup-project
+      project-mounted: true
+    message: The project setup hook uses an in-place editor on a file under the mounted project.
+    remediation: Review the exact file and edit expression, and prefer an explicit project-owned setup step when modification is required.
+
+  - id: risk.toolchain-search-order-hijack
+    kind: risk
+    family: remote-execution
+    title: A project-local executable is prepended to the tool search path
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: toolchain-search-order-hijack
+      hook-names:
+        - setup-project
+      project-mounted: true
+    message: The hook creates an executable project file and writes configuration that prepends its directory to PATH.
+    remediation: Do not let SDK hooks inject project-local command wrappers ahead of trusted toolchain directories.
+
   - id: risk.persistence-write
     kind: risk
     family: persistence

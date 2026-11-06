@@ -1,0 +1,7 @@
+cat <<'EOF' > /project/.tools/bin/compiler
+#!/bin/sh
+exit 0
+EOF
+chmod +x /project/.tools/bin/compiler
+printf '%s\n' 'export PATH=/project/.tools/bin:$PATH' > /project/.toolchain.env
+

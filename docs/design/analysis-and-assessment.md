@@ -6,6 +6,8 @@ This document defines how Latra turns Workshop SDK hook source into evidence-bac
 
 The assessment is a **review-priority aid**, not a probability that an SDK is malicious and not a safety certification. A high score means that human review should be prioritized. A high assurance score means that positive, verifiable properties were observed; it does not cancel detected risk.
 
+The text UI presents Assurance levels as `strong`, `moderate`, `limited`, and `none` to distinguish positive evidence from Risk severity. The JSON model retains the stable internal levels `high`, `medium`, `low`, and `info` for machine consumers.
+
 The design has four goals:
 
 - never execute SDK content during analysis;
@@ -116,6 +118,7 @@ Latra then creates the following relations:
 | `pipeline` | Standard output from one pipeline stage flows to the next stage's standard input. |
 | `substitution-flow` | Output from a command or process substitution flows into its containing operation. |
 | `variable-flow` | A later operation references a variable assigned by an earlier operation. |
+| `redirect-flow` | Standard output from a producing command flows to an output redirect in the same shell statement. |
 
 Variable flow is a conservative, lexical approximation. It does not claim to model every Bash control-flow or runtime scope behavior.
 
@@ -147,6 +150,19 @@ Sensitive file reads are classified using the embedded path database. Workshop r
 
 File inputs are extracted from known command operands, input redirections, `source`/`.` operations, and command-specific option values such as curl's `@file` syntax. The emitted capability preserves the operation ID, target value, resolution, and source location. Hook context remains available through the enclosing analysis result.
 
+Project reads and writes are also retained as unscored observations. Relative paths in `setup-project` are normalized against `/project`; resolved `cd` operations update that working directory, and bounded branch candidates remain partially resolved. The raw shell value is preserved alongside the normalized path and candidates.
+
+### Project-boundary flow
+
+Project access alone is not a risk finding. Latra promotes it only when an explicit operation-graph flow crosses the project boundary:
+
+- `risk.remote-content-to-project` requires `network-download` to reach `project-write` through a pipeline, substitution, variable, redirect, or same-operation flow. It is medium severity because downloading dependencies into a project can be expected SDK behavior.
+- `risk.project-data-exfiltration` requires `project-read` to reach `external-send` while the project is mounted and network interfaces are active. It is high severity because repository content is demonstrably connected to an external transfer.
+
+Explicit destinations from curl, wget, git clone, archive extraction, and patch commands are handled by the file-output command database. Implicit destinations are not guessed. Pipeline `stdin`/`stdout` markers and curl's `@-` standard-input marker are streams rather than filesystem paths and therefore never create project-access capabilities.
+
+Both boundary findings retain source and sink evidence, including operation IDs, source locations, raw values, normalized project paths, and resolution. A disconnected download and write, or a disconnected project read and send, does not match.
+
 ### Sensitive-data flow
 
 Project-secret exfiltration is not inferred from a sensitive read or network command in isolation. The finding engine requires `project-sensitive-file-read` to reach `external-send` through a pipeline, command-substitution containment, or variable-flow edge. It also handles a same-operation file upload where both capabilities belong to one command.
@@ -155,6 +171,8 @@ The matcher requires a context in which the project is mounted and interfaces ar
 
 The combined resolution is the least certain resolution across the source, traversed relations, and sink. This lowers confidence for partially resolved or unknown propagation without discarding the observed flow. A confirmed project-secret exfiltration finding is `critical`; the assessment model therefore applies the existing critical risk floor of 80 even when the family aggregation would otherwise be lower.
 
+Because a project-sensitive read also carries the general `project-read` capability, the same flow could satisfy both exfiltration rules. Latra suppresses the general finding only when the SDK, hook, source path, and source/sink operations match the critical sensitive flow. A different non-sensitive source path remains an independent general exfiltration finding.
+
 ## 5. Finding generation
 
 Finding definitions are embedded from `internal/findingconfig/default/*.yaml`. The database has an independent schema version and content version so that rule changes can be identified in reports.
@@ -162,9 +180,9 @@ Finding definitions are embedded from `internal/findingconfig/default/*.yaml`. T
 Each rule defines:
 
 - a stable finding ID;
-- `risk` or `assurance` kind;
+- `risk`, `assurance`, or unscored `observation` kind;
 - a family;
-- severity for risk, or strength for assurance;
+- severity for risk, strength for assurance, or neither for observation;
 - confidence and weight;
 - a matcher and optional hook context;
 - explanatory text, remediation, limitations, and protected risks;
@@ -390,7 +408,7 @@ Review Priority is at least `87`, and the project is `high-priority-review`. Ass
 
 For a fully analyzed SDK with only one medium persistence finding of weight `25`, risk is `25`. If assurance is at least `60` and coverage is sufficient, the classification is `expected-and-controlled`, while the persistence finding remains visible for review.
 
-A statically controlled `setup-base` write to a fully resolved `/etc/profile.d/*.sh` target is represented by `risk.profile-environment-write` with low severity and weight `10`. Low-risk content is restricted to declarative `export NAME=...` assignments, comments, and blank lines. A heredoc template may contain the Workshop-provided `SDK` variable because Workshop supplies it to every SDK hook; arbitrary variables and expansions remain unresolved. The generic medium persistence rule excludes the calibrated occurrence, so it is not counted twice. Remote content, unresolved non-Workshop values, arbitrary script statements, non-static file input, other hooks, `/etc/profile`, shell rc files, cron, and systemd paths remain generic persistence risk. Heredoc content is preserved as an operation value so this decision remains evidence-based.
+A statically controlled `setup-base` write to a fully resolved `/etc/profile.d/*.sh` target is represented by `risk.profile-environment-write` with low severity and weight `10`. Low-risk content is restricted to declarative `NAME=...` or `export NAME=...` assignments, comments, and blank lines. Reading or sourcing a persistence-class path is not classified as a persistence write. A heredoc template may contain the Workshop-provided `SDK` variable because Workshop supplies it to every SDK hook; arbitrary variables and expansions remain unresolved. The generic medium persistence rule excludes the calibrated occurrence, so it is not counted twice. Remote content, unresolved non-Workshop values, arbitrary script statements, non-static file input, other hooks, `/etc/profile`, shell rc files, cron, and systemd paths remain generic persistence risk. Heredoc content is preserved as an operation value so this decision remains evidence-based.
 
 ## 10. Key Risks
 
@@ -424,7 +442,7 @@ latra hook go setup-base
 latra file go sdk/hooks/setup-base
 ```
 
-The compact Summary shows only high- and critical-risk finding IDs. Assessment Key Risks retains all risk levels and all locations. Verbose text and JSON retain complete findings and evidence.
+The compact Summary shows only high- and critical-risk finding IDs. Text Assessment lists Key Risks only under each SDK to avoid duplicating the same evidence at project and SDK levels. JSON retains both the project aggregation and per-SDK Key Risks, while verbose JSON retains complete findings and evidence.
 
 ## 11. Determinism and versioning
 

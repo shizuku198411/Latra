@@ -22,6 +22,7 @@ const (
 	ansiGreen     = "\x1b[32m"
 	ansiYellow    = "\x1b[33m"
 	ansiCyan      = "\x1b[36m"
+	ansiWhite     = "\x1b[37m"
 	ansiBrightRed = "\x1b[91m"
 )
 
@@ -62,6 +63,9 @@ func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextO
 	if err := writeSummary(writer, document.Summary, document.Assessment, false); err != nil {
 		return err
 	}
+	if err := writeObservations(writer, document, true); err != nil {
+		return err
+	}
 	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
 		return err
 	}
@@ -92,22 +96,112 @@ func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, option
 	if err := writeSummary(writer, document.Summary, document.Assessment, true); err != nil {
 		return err
 	}
+	if err := writeObservations(writer, document, false); err != nil {
+		return err
+	}
 	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
 		return err
 	}
 	return writeDocumentDiagnostics(writer, document.Diagnostics)
 }
 
-func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool) error {
-	if _, err := fmt.Fprintf(writer, "\nAssessment\n  Classification: %s\n  Review Priority: %s\n  Risk: %s\n  Assurance: %s\n  Coverage: %s\n",
-		assessment.Classification,
-		formatAssessmentScore(assessment.ReviewPriority.Score, assessment.ReviewPriority.Level, false, color),
-		formatAssessmentScore(assessment.Risk.Score, assessment.Risk.Level, false, color),
-		formatAssessmentScore(assessment.Assurance.Score, assessment.Assurance.Level, true, color),
-		formatAssessmentScore(assessment.Coverage.Score, assessment.Coverage.Level, true, color)); err != nil {
+func writeObservations(writer io.Writer, document Document, verbose bool) error {
+	if _, err := fmt.Fprintf(writer, "\nObservations\n  Project Access: %d", document.Summary.Observations.Count); err != nil {
 		return err
 	}
-	if err := writeKeyRisks(writer, assessment.KeyRisks, "  "); err != nil {
+	reads, writes := 0, 0
+	for _, item := range document.Summary.Observations.BySDK {
+		reads += item.ProjectAccess.Reads
+		writes += item.ProjectAccess.Writes
+	}
+	if _, err := fmt.Fprintf(writer, " (%d reads, %d writes)\n", reads, writes); err != nil {
+		return err
+	}
+	if !verbose {
+		if _, err := fmt.Fprintln(writer, "  By SDK:"); err != nil {
+			return err
+		}
+		wrote := false
+		for _, item := range document.Summary.Observations.BySDK {
+			if item.Count == 0 {
+				continue
+			}
+			wrote = true
+			if _, err := fmt.Fprintf(writer, "    %s: %d (%d reads, %d writes)\n", item.SDKName, item.Count, item.ProjectAccess.Reads, item.ProjectAccess.Writes); err != nil {
+				return err
+			}
+		}
+		if !wrote {
+			_, err := fmt.Fprintln(writer, "    -")
+			return err
+		}
+		return nil
+	}
+	if document.Summary.Observations.Count == 0 {
+		_, err := fmt.Fprintln(writer, "    -")
+		return err
+	}
+	for _, item := range document.SDKs {
+		var observations []finding.Finding
+		for _, itemFinding := range item.Findings {
+			if itemFinding.Kind == finding.KindObservation {
+				observations = append(observations, itemFinding)
+			}
+		}
+		if len(observations) == 0 {
+			continue
+		}
+		if _, err := fmt.Fprintf(writer, "    %s:\n", item.Name); err != nil {
+			return err
+		}
+		for _, access := range []struct {
+			id, label string
+		}{{"observation.project-read", "Read"}, {"observation.project-write", "Write"}} {
+			var matching []finding.Finding
+			for _, observation := range observations {
+				if observation.ID == access.id {
+					matching = append(matching, observation)
+				}
+			}
+			if len(matching) == 0 {
+				continue
+			}
+			if _, err := fmt.Fprintf(writer, "      %s:\n", access.label); err != nil {
+				return err
+			}
+			for _, observation := range matching {
+				for _, evidence := range observation.Evidence {
+					value := evidence.NormalizedValue
+					if value == "" {
+						value = evidence.Value
+					}
+					file := "-"
+					if evidence.Location != nil {
+						location := *evidence.Location
+						for _, hook := range item.Hooks {
+							if hook.Name == observation.Scope.Hook {
+								location.Path = hook.Path
+								break
+							}
+						}
+						file = locationString(location)
+					}
+					if _, err := fmt.Fprintf(writer, "        sdk=%s file=%s hook=%s value=%q raw=%q resolution=%s\n",
+						item.Name, file, observation.Scope.Hook, value, evidence.Value, evidence.Resolution); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool) error {
+	if _, err := fmt.Fprintf(writer, "\nAssessment\n  Classification: %s\n", assessment.Classification); err != nil {
+		return err
+	}
+	if err := writeAssessmentScores(writer, assessment.ReviewPriority, assessment.Risk, assessment.Assurance, assessment.Coverage, "  ", color); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintln(writer, "  By SDK:"); err != nil {
@@ -118,12 +212,10 @@ func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool
 		return err
 	}
 	for _, item := range assessment.BySDK {
-		if _, err := fmt.Fprintf(writer, "    %s: %s\n      Review Priority: %s\n      Risk: %s, Assurance: %s, Coverage: %s\n",
-			item.SDK, item.Classification,
-			formatAssessmentScore(item.ReviewPriority.Score, item.ReviewPriority.Level, false, color),
-			formatAssessmentScore(item.Risk.Score, item.Risk.Level, false, color),
-			formatAssessmentScore(item.Assurance.Score, item.Assurance.Level, true, color),
-			formatAssessmentScore(item.Coverage.Score, item.Coverage.Level, true, color)); err != nil {
+		if _, err := fmt.Fprintf(writer, "    %s: %s\n", item.SDK, item.Classification); err != nil {
+			return err
+		}
+		if err := writeAssessmentScores(writer, item.ReviewPriority, item.Risk, item.Assurance, item.Coverage, "      ", color); err != nil {
 			return err
 		}
 		if err := writeKeyRisks(writer, item.KeyRisks, "      "); err != nil {
@@ -133,8 +225,70 @@ func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool
 	return nil
 }
 
+func writeAssessmentScores(writer io.Writer, priority finding.Score, risk, assurance finding.ScoredAxis, coverage finding.Coverage, indent string, color bool) error {
+	items := []struct {
+		label     string
+		score     int
+		level     string
+		positive  bool
+		assurance bool
+	}{
+		{label: "Review Priority:", score: priority.Score, level: priority.Level},
+		{label: "Risk:", score: risk.Score, level: risk.Level},
+		{label: "Assurance:", score: assurance.Score, level: assurance.Level, positive: true, assurance: true},
+		{label: "Coverage:", score: coverage.Score, level: coverage.Level, positive: true},
+	}
+	for _, item := range items {
+		displayLevel := item.level
+		if item.assurance {
+			displayLevel = assuranceDisplayLevel(item.level)
+		}
+		value := fmt.Sprintf("%d/100 (%s)", item.score, displayLevel)
+		padding := strings.Repeat(" ", max(0, 22-len(value)))
+		if _, err := fmt.Fprintf(writer, "%s%-16s %s%s %s\n", indent, item.label,
+			formatAssessmentScoreDisplay(item.score, item.level, displayLevel, item.positive, color), padding,
+			formatAssessmentBar(item.score, item.level, item.positive, color)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func assuranceDisplayLevel(level string) string {
+	switch level {
+	case "high":
+		return "strong"
+	case "medium":
+		return "moderate"
+	case "low":
+		return "limited"
+	default:
+		return "none"
+	}
+}
+
+func formatAssessmentBar(score int, level string, positive, color bool) string {
+	const width = 20
+	score = max(0, min(100, score))
+	filled := (score*width + 50) / 100
+	filledBar := strings.Repeat("█", filled)
+	emptyBar := strings.Repeat("░", width-filled)
+	if !color {
+		return "[" + filledBar + emptyBar + "]"
+	}
+	code := negativeScoreColor(level)
+	if positive {
+		code = positiveScoreColor(level)
+	}
+	return ansiWhite + "[" + code + filledBar + ansiWhite + emptyBar + "]" + ansiReset
+}
+
 func formatAssessmentScore(score int, level string, positive bool, color bool) string {
-	value := fmt.Sprintf("%d/100 (%s)", score, level)
+	return formatAssessmentScoreDisplay(score, level, level, positive, color)
+}
+
+func formatAssessmentScoreDisplay(score int, level, displayLevel string, positive bool, color bool) string {
+	value := fmt.Sprintf("%d/100 (%s)", score, displayLevel)
 	if !color {
 		return value
 	}
@@ -470,6 +624,8 @@ func writeFindings(writer io.Writer, findings []finding.Finding) error {
 		level := itemFinding.Severity
 		if itemFinding.Kind == "assurance" {
 			level = itemFinding.Strength
+		} else if itemFinding.Kind == "observation" {
+			level = "unscored"
 		}
 		if _, err := fmt.Fprintf(writer, "      %s [%s/%s, confidence=%s] %s", itemFinding.ID, itemFinding.Kind, level, itemFinding.Confidence, itemFinding.Title); err != nil {
 			return err

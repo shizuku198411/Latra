@@ -1,0 +1,240 @@
+file-command-rules:
+  - id: file.curl-output
+    commands:
+      - curl
+    option-operands:
+      - options:
+          - name: -o
+            value-styles:
+              - next
+              - attached
+          - name: --output
+            value-styles:
+              - next
+              - equals
+        access: write
+
+  - id: file.wget-output
+    commands:
+      - wget
+    option-operands:
+      - options:
+          - name: -O
+            value-styles:
+              - next
+              - attached
+          - name: --output-document
+            value-styles:
+              - next
+              - equals
+        access: write
+
+  - id: file.git-clone-destination
+    commands:
+      - git
+    match:
+      subcommands:
+        - clone
+      options-consuming-next:
+        - -b
+        - --branch
+        - --config
+        - --depth
+        - -j
+        - --jobs
+        - -o
+        - --origin
+        - --reference
+        - --reference-if-able
+        - --separate-git-dir
+        - --server-option
+        - --shallow-exclude
+        - --shallow-since
+        - -u
+        - --upload-pack
+        - --template
+    options:
+      - name: -b
+        value-styles:
+          - next
+      - name: --branch
+        value-styles:
+          - next
+          - equals
+      - name: --config
+        value-styles:
+          - next
+          - equals
+      - name: --depth
+        value-styles:
+          - next
+          - equals
+      - name: -j
+        value-styles:
+          - next
+          - attached
+      - name: --jobs
+        value-styles:
+          - next
+          - equals
+      - name: -o
+        value-styles:
+          - next
+      - name: --origin
+        value-styles:
+          - next
+          - equals
+      - name: --reference
+        value-styles:
+          - next
+          - equals
+      - name: --reference-if-able
+        value-styles:
+          - next
+          - equals
+      - name: --separate-git-dir
+        value-styles:
+          - next
+          - equals
+      - name: --server-option
+        value-styles:
+          - next
+          - equals
+      - name: --shallow-exclude
+        value-styles:
+          - next
+          - equals
+      - name: --shallow-since
+        value-styles:
+          - next
+          - equals
+      - name: -u
+        value-styles:
+          - next
+      - name: --upload-pack
+        value-styles:
+          - next
+          - equals
+      - name: --template
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: position-2
+        access: write
+
+  - id: file.tar-extract-directory-short
+    commands:
+      - tar
+    match:
+      short-flag-set:
+        - -x
+        - -C
+        - -f
+        - -v
+        - -z
+        - -j
+        - -J
+      any-short-flags:
+        - -x
+    option-operands:
+      - options:
+          - name: -C
+            value-styles:
+              - next
+              - attached
+          - name: --directory
+            value-styles:
+              - next
+              - equals
+        access: write
+
+  - id: file.tar-extract-directory-long
+    commands:
+      - tar
+    match:
+      any-options:
+        - name: --extract
+          value-styles:
+            - none
+    option-operands:
+      - options:
+          - name: -C
+            value-styles:
+              - next
+              - attached
+          - name: --directory
+            value-styles:
+              - next
+              - equals
+        access: write
+
+  - id: file.unzip-output-directory
+    commands:
+      - unzip
+    option-operands:
+      - options:
+          - name: -d
+            value-styles:
+              - next
+              - attached
+        access: write
+
+  - id: file.patch-target
+    commands:
+      - patch
+    options:
+      - name: -d
+        value-styles:
+          - next
+          - attached
+      - name: --directory
+        value-styles:
+          - next
+          - equals
+      - name: -i
+        value-styles:
+          - next
+          - attached
+      - name: --input
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: first
+        access: write
+    option-operands:
+      - options:
+          - name: -d
+            value-styles:
+              - next
+              - attached
+          - name: --directory
+            value-styles:
+              - next
+              - equals
+        access: write
+      - options:
+          - name: -i
+            value-styles:
+              - next
+              - attached
+          - name: --input
+            value-styles:
+              - next
+              - equals
+        access: read
+
+  - id: file.git-apply-directory
+    commands:
+      - git
+    match:
+      subcommands:
+        - apply
+    option-operands:
+      - options:
+          - name: --directory
+            value-styles:
+              - next
+              - equals
+        access: write
