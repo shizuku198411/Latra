@@ -216,7 +216,7 @@ func matchPersistenceWrites(item sdk.SDK, rule findingconfig.Rule, safeProfileOn
 		}
 		operations := operationMap(hook.Analysis.Operations)
 		for _, capability := range hook.Analysis.Capabilities {
-			if capability.Kind != "persistence" {
+			if capability.Kind != "persistence" || capability.RuleID == "path.persistence.read" {
 				continue
 			}
 			safeProfile := isSafeProfileEnvironmentWrite(hook, capability, operations, hook.Analysis.Relations)
@@ -374,10 +374,10 @@ func isEnvironmentProfileText(value string) bool {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if !strings.HasPrefix(line, "export ") {
-			return false
+		assignment := line
+		if strings.HasPrefix(line, "export ") {
+			assignment = strings.TrimSpace(strings.TrimPrefix(line, "export "))
 		}
-		assignment := strings.TrimSpace(strings.TrimPrefix(line, "export "))
 		if !environmentAssignment.MatchString(assignment) || containsExecutablePayload(assignment) || strings.ContainsAny(assignment, ";|&`") || strings.Contains(assignment, "$(") {
 			return false
 		}

@@ -112,12 +112,12 @@ The paired `persistence-write` and `profile-environment-write` matchers are mutu
 
 - the hook is `setup-base` with its expected Workshop context;
 - the target is fully resolved and its normalized path is `/etc/profile.d/<name>.sh`;
-- content comes from resolved `echo` or `printf` arguments, or a static heredoc, and contains only declarative `export NAME=...` environment assignments, comments, and blank lines;
+- content comes from resolved `echo` or `printf` arguments, or a static heredoc, and contains only declarative `NAME=...` or `export NAME=...` environment assignments, comments, and blank lines;
 - heredoc templates may reference the Workshop-provided `SDK` variable; other unresolved variables and expansions are rejected;
 - the content does not contain a recognized download or shell-execution payload;
 - a `tee` write receives the same kind of static generator through a pipeline.
 
-Remote download output, unresolved non-Workshop variables or paths, command substitution, arbitrary script statements, non-static file input, another lifecycle hook, and other persistence locations remain under the generic medium-severity persistence rule. This is an allowlisted calibration, not a general trust decision for profile writes.
+Remote download output, unresolved non-Workshop variables or paths, command substitution, arbitrary script statements, non-static file input, another lifecycle hook, and other persistence locations remain under the generic medium-severity persistence rule. Reading or sourcing a persistence-class path is not treated as a persistence write. This is an allowlisted calibration, not a general trust decision for profile writes.
 
 ## Adding a rule
 

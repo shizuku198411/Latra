@@ -277,6 +277,7 @@ func TestStaticProfileEnvironmentWriteIsCalibratedToLowRisk(t *testing.T) {
 		"printf 'export FIXTURE=1\\n' | tee /etc/profile.d/fixture.sh\n",
 		"cat <<'EOF' > /etc/profile.d/fixture.sh\nexport FIXTURE=1\nEOF\n",
 		"cat <<EOF > /etc/profile.d/fixture.sh\nexport PATH=\"${SDK}/bin:\\$PATH\"\nEOF\n",
+		"cat <<EOF >> /etc/profile.d/fixture.sh\nPATH=\"${SDK}/bin:\\$PATH\"\nEOF\n. /etc/profile.d/fixture.sh\n",
 	} {
 		item := analyzedSDK(t, content, sdk.HookSetupBase)
 		findings := finding.AnalyzeSDK(item)
@@ -291,6 +292,19 @@ func TestStaticProfileEnvironmentWriteIsCalibratedToLowRisk(t *testing.T) {
 		if assessment.Risk.Score != 10 || assessment.Risk.Level != "low" {
 			t.Errorf("profile assessment = %#v", assessment)
 		}
+	}
+}
+
+func TestReadingEnvironmentProfileIsNotPersistenceWrite(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, ". /etc/profile.d/fixture.sh\n", sdk.HookSetupBase)
+	findings := finding.AnalyzeSDK(item)
+	if generic := findFinding(findings, "risk.persistence-write"); generic != nil {
+		t.Fatalf("profile read was classified as persistence write: %#v", findings)
+	}
+	if profile := findFinding(findings, "risk.profile-environment-write"); profile != nil {
+		t.Fatalf("profile read was classified as environment write: %#v", findings)
 	}
 }
 
