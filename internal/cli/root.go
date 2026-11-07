@@ -28,7 +28,7 @@ const (
 // User-facing command output is written to stdout. Diagnostics are written to stderr.
 func Run(args []string, stdout, stderr io.Writer) int {
 	dependencies := Dependencies{CacheRoot: sdkcache.DefaultRoot}
-	if len(args) > 0 && args[0] == "scan" {
+	if len(args) > 0 && (args[0] == "scan" || args[0] == "tui") {
 		store, err := sdkstore.NewClient(sdkstore.Config{})
 		if err != nil {
 			fmt.Fprintf(stderr, "latra: initialize SDK Store client: %v\n", err)
@@ -66,6 +66,8 @@ func RunWithDependencies(args []string, stdout, stderr io.Writer, dependencies D
 		}
 		fmt.Fprintln(stdout, buildinfo.Current().String())
 		return exitOK
+	case "tui":
+		return runTUI(args[1:], stdout, stderr, dependencies)
 	case "scan":
 		return runScan(args[1:], stdout, stderr, dependencies)
 	case "db":
@@ -298,6 +300,9 @@ Usage:
 Scan:
   latra scan <PROJECT_OR_PROJECT_SDK> [--format text|json] [--output PATH|-]
 
+Explorer:
+  latra tui [--project PATH]
+
 Database:
   latra db
   latra db capabilities [CAPABILITY] [--command COMMAND]
@@ -325,6 +330,7 @@ Content selection:
   --revision REVISION Select a cached revision within the resolved channel
 
 Commands:
+  tui        Browse Workshop SDKs in an interactive terminal
   scan       Inspect a Workshop project or project SDK
   db         Inspect embedded capabilities, commands, and rules
   file       Print an SDK file or describe its binary format

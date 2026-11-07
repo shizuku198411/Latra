@@ -320,3 +320,52 @@ func closeRoots(roots []*os.Root) error {
 	}
 	return errors.Join(errs...)
 }
+
+// ReadDir lists the immediate children of a directory within an SDK without
+// allowing paths to escape the SDK root. It never follows a child symlink.
+// Pass "." for the SDK's top-level directory.
+func ReadDir(entry Entry, directory string) ([]fs.DirEntry, error) {
+	clean := path.Clean(strings.ReplaceAll(directory, "\\", "/"))
+	if path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
+		return nil, fmt.Errorf("unsafe SDK directory %q", directory)
+	}
+	var root *os.Root
+	if entry.ProjectRoot != "" {
+		project, err := os.OpenRoot(entry.ProjectRoot)
+		if err != nil {
+			return nil, err
+		}
+		defer project.Close()
+		root, err = project.OpenRoot(entry.ProjectRelative)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		root, err = os.OpenRoot(entry.Root)
+		if err != nil {
+			return nil, err
+		}
+	}
+	defer root.Close()
+	// Reject a symlink in any intermediate component, rather than traversing it.
+	if clean != "." {
+		parts := strings.Split(clean, "/")
+		for i := range parts {
+			part := strings.Join(parts[:i+1], "/")
+			info, err := root.Lstat(part)
+			if err != nil {
+				return nil, err
+			}
+			if !info.IsDir() {
+				return nil, fmt.Errorf("SDK directory %q is not a directory", part)
+			}
+		}
+	}
+	file, err := root.Open(clean)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return file.ReadDir(-1)
+}
