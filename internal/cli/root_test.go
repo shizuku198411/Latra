@@ -54,12 +54,6 @@ func TestRun(t *testing.T) {
 			wantStdout: "latra dev (commit: unknown, built: unknown)\n",
 		},
 		{
-			name:       "scan requires path",
-			args:       []string{"scan"},
-			wantCode:   2,
-			wantStderr: "latra: scan requires exactly one PROJECT_OR_PROJECT_SDK path",
-		},
-		{
 			name:       "unknown command",
 			args:       []string{"unknown"},
 			wantCode:   2,
@@ -91,6 +85,43 @@ func TestRun(t *testing.T) {
 				t.Errorf("stderr = %q, want substring %q", stderr.String(), tt.wantStderr)
 			}
 		})
+	}
+}
+
+func TestRunScanDefaultsAndProjectOption(t *testing.T) {
+	project := filepath.Join("..", "..", "testdata", "project-sdks", "valid-project")
+	for _, tt := range []struct {
+		name             string
+		args             []string
+		workingDirectory string
+	}{
+		{name: "omitted path uses working directory", args: []string{"scan"}, workingDirectory: project},
+		{name: "explicit project", args: []string{"scan", "--project", project}},
+		{name: "equals project", args: []string{"scan", "--project=" + project}},
+		{name: "legacy positional path", args: []string{"scan", project}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := cli.RunWithDependencies(tt.args, &stdout, &stderr, cli.Dependencies{WorkingDirectory: tt.workingDirectory})
+			if code != 0 || !strings.Contains(stdout.String(), "Kind: project") {
+				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunScanRejectsAmbiguousPaths(t *testing.T) {
+	for _, args := range [][]string{
+		{"scan", "foo", "bar"},
+		{"scan", "foo", "--project", "bar"},
+		{"scan", "--project", "foo", "bar"},
+		{"scan", "--project"},
+		{"scan", "--project="},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := runCLI(args, &stdout, &stderr); code != 2 {
+			t.Errorf("Run(%q) code = %d, want 2: %s", args, code, stderr.String())
+		}
 	}
 }
 
