@@ -19,11 +19,27 @@ Latra aims to provide:
 
 Latra reports review priority, risk, assurance, and static-analysis coverage independently. These assessments support review decisions; they do not declare an SDK safe or malicious.
 
-## Project status
+## Screenshots
 
-Latra is under active development and is not yet recommended for production enforcement. The current scope focuses on deterministic SDK inventory generation and investigation workflows.
+1. Scan and Assesment
 
-Latra is an independent project and is not affiliated with or endorsed by Canonical Ltd.
+<p>
+  <img src="./assets/latra_scan_assesment.png" alt="scan_and_assesment" width="800">
+</p>
+
+2. Explorer
+
+<p>
+  <img src="./assets/latra_explorer_1.png" alt="explorer_1" width="800">
+</p>
+
+<p>
+  <img src="./assets/latra_explorer_2.png" alt="explorer_2" width="800">
+</p>
+
+<p>
+  <img src="./assets/latra_explorer_3.png" alt="explorer_3" width="800">
+</p>
 
 ## Quick Start
 
@@ -146,7 +162,13 @@ the next section.
 
 ### Inspect a hook or file
 
-Use an SDK name and hook reported by the scan:
+Use Explorer for review SDK directories/files with TUI:
+
+```bash
+latra explorer
+```
+
+Or use an SDK name and hook reported by the scan:
 
 ```bash
 # command: latra hook <sdk> <hook>
@@ -262,3 +284,8 @@ Do not report security vulnerabilities through public issues. See [SECURITY.md](
 
 Latra is licensed under the [MIT License](LICENSE).
 
+## Project status
+
+Latra is under active development and is not yet recommended for production enforcement. The current scope focuses on deterministic SDK inventory generation and investigation workflows.
+
+Latra is an independent project and is not affiliated with or endorsed by Canonical Ltd.
