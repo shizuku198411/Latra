@@ -92,14 +92,18 @@ func runTerminalExplorer(project string, entries []tuiSDK) error {
 			} else if model.InTree {
 				n := model.Nodes[i]
 				symbol := "  "
-				if n.Symlink {
+				if n.Header {
+					line = " " + n.Name
+				} else if n.Symlink {
 					symbol = "@ "
 				} else if n.Directory && n.Expanded {
 					symbol = "▾ "
 				} else if n.Directory {
 					symbol = "▸ "
 				}
-				line = "   " + strings.Repeat("  ", n.Depth) + symbol + n.Name
+				if !n.Header {
+					line = "   " + strings.Repeat("  ", n.Depth) + symbol + n.Name
+				}
 			} else {
 				sdk := entries[i]
 				line = fmt.Sprintf("   %-23s  %-8s %-13s %s", sdk.Name, sdk.Source, sdk.Status, sdk.Channel)

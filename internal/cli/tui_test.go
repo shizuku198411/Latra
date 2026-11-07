@@ -68,11 +68,11 @@ func TestTUITreeNavigation(t *testing.T) {
 	}
 	model := tuiExplorer{SDKs: []tuiSDK{{Name: "example", Status: "local", Entry: entry}}}
 	model.enter()
-	if !model.InTree || len(model.Nodes) != 1 || model.Nodes[0].Name != "hooks" {
+	if !model.InTree || len(model.Nodes) != 4 || model.Nodes[1].Name != "[Hooks]" || model.Nodes[2].Name != "hooks" {
 		t.Fatalf("open SDK: %+v", model)
 	}
 	model.enter()
-	if len(model.Nodes) != 2 || model.Nodes[1].Name != "setup-project" {
+	if len(model.Nodes) != 5 || model.Nodes[3].Name != "setup-project" {
 		t.Fatalf("expand hooks: %+v", model.Nodes)
 	}
 	model.move(1)
@@ -83,7 +83,7 @@ func TestTUITreeNavigation(t *testing.T) {
 	model.back()
 	model.move(-1)
 	model.enter()
-	if len(model.Nodes) != 1 || model.Nodes[0].Expanded {
+	if len(model.Nodes) != 4 || model.Nodes[2].Expanded {
 		t.Fatalf("collapse hooks: %+v", model.Nodes)
 	}
 	model.back()
@@ -302,4 +302,55 @@ func TestTUIAutoFetchFailureDoesNotAbortInventory(t *testing.T) {
 		}
 	}
 	t.Fatal("Store SDK missing from inventory")
+}
+
+func TestTUIGroupedSectionsAndNavigation(t *testing.T) {
+	root := t.TempDir()
+	sdkDir := filepath.Join(root, ".workshop", "example")
+	for _, dir := range []string{"meta", "sdk/hooks", "sdk/bin"} {
+		if err := os.MkdirAll(filepath.Join(sdkDir, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, filename := range []string{"meta/sdk.yaml", "sdk/hooks/setup-base", "sdk/bin/tool", "README.md", sdkcache.ManifestPath} {
+		if err := os.WriteFile(filepath.Join(sdkDir, filename), []byte("hello"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entry, err := sdkcache.ResolveProject(root, "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := tuiExplorer{SDKs: []tuiSDK{{Name: "example", Status: "local", Entry: entry}}}
+	m.enter()
+	names := make([]string, 0, len(m.Nodes))
+	for _, n := range m.Nodes {
+		names = append(names, n.Name)
+	}
+	expected := []string{"[SDK Metadata]", "meta", "[Hooks]", "sdk", "[Files]", "sdk", "README.md"}
+	if strings.Join(names, "|") != strings.Join(expected, "|") {
+		t.Fatalf("sections: %v", names)
+	}
+	if m.SelectedNode != 1 {
+		t.Fatalf("selection=%d", m.SelectedNode)
+	}
+	m.move(1) // skip Hooks header
+	if m.SelectedNode != 3 {
+		t.Fatalf("selection=%d", m.SelectedNode)
+	}
+	m.enter() // SDK under Hooks
+	if m.Nodes[4].Path != "sdk/hooks" {
+		t.Fatalf("hook branch: %+v", m.Nodes)
+	}
+	m.enter() // collapse
+	m.move(1) // skip Files header
+	if m.Nodes[m.SelectedNode].Group != "files" {
+		t.Fatalf("selection=%+v", m.Nodes[m.SelectedNode])
+	}
+	m.enter()
+	for _, n := range m.Nodes {
+		if n.Group == "files" && n.Path == "sdk/hooks" {
+			t.Fatalf("hooks leaked into files: %+v", m.Nodes)
+		}
+	}
 }

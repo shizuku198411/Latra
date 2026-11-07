@@ -15,6 +15,8 @@ type tuiNode struct {
 	Directory  bool
 	Symlink    bool
 	Expanded   bool
+	Header     bool
+	Group      string
 }
 
 type tuiExplorer struct {
@@ -43,18 +45,21 @@ func (m *tuiExplorer) enter() {
 			}
 			return
 		}
-		children, err := readTUINodes(item.Entry, ".", 0)
+		children, err := readTUIGroupedNodes(item.Entry)
 		if err != nil {
 			m.Message = err.Error()
 			return
 		}
-		m.Nodes, m.SelectedNode, m.InTree, m.Message = children, 0, true, ""
+		m.Nodes, m.SelectedNode, m.InTree, m.Message = children, firstTUISelectable(children), true, ""
 		return
 	}
 	if len(m.Nodes) == 0 {
 		return
 	}
 	node := m.Nodes[m.SelectedNode]
+	if node.Header {
+		return
+	}
 	if node.Symlink {
 		m.Message = "Symlink preview is disabled"
 		return
@@ -79,6 +84,12 @@ func (m *tuiExplorer) enter() {
 		return
 	}
 	children, err := readTUINodes(m.SDKs[m.SelectedSDK].Entry, node.Path, node.Depth+1)
+	if err == nil {
+		children = filterTUIGroup(children, node.Group)
+		for j := range children {
+			children[j].Group = node.Group
+		}
+	}
 	if err != nil {
 		m.Message = err.Error()
 		return
@@ -116,7 +127,13 @@ func (m *tuiExplorer) move(delta int) {
 		return
 	}
 	if m.InTree {
-		m.SelectedNode = max(0, min(count-1, m.SelectedNode+delta))
+		next := max(0, min(count-1, m.SelectedNode+delta))
+		for next >= 0 && next < count && m.Nodes[next].Header {
+			next += signTUI(delta)
+		}
+		if next >= 0 && next < count {
+			m.SelectedNode = next
+		}
 	} else {
 		m.SelectedSDK = max(0, min(count-1, m.SelectedSDK+delta))
 	}
@@ -149,4 +166,98 @@ func readTUINodes(entry sdkcache.Entry, directory string, depth int) ([]tuiNode,
 		})
 	}
 	return nodes, nil
+}
+
+// readTUIGroupedNodes divides the SDK tree into semantic sections, without
+// opening file contents or walking the full (potentially large) SDK tree.
+func readTUIGroupedNodes(entry sdkcache.Entry) ([]tuiNode, error) {
+	roots, err := readTUINodes(entry, ".", 0)
+	if err != nil {
+		return nil, err
+	}
+	var metadata, hooks, files []tuiNode
+	for _, node := range roots {
+		switch {
+		case node.Path == "sdk.yaml" || (node.Path == "meta" && node.Directory):
+			node.Group = "metadata"
+			metadata = append(metadata, node)
+		case node.Path == "hooks" && node.Directory:
+			node.Group = "hooks"
+			hooks = append(hooks, node)
+		case node.Path == "sdk" && node.Directory:
+			children, err := readTUINodes(entry, "sdk", 1)
+			if err != nil {
+				return nil, err
+			}
+			hasHooks, hasFiles := false, false
+			for _, child := range children {
+				if child.Name == "hooks" && child.Directory {
+					hasHooks = true
+				} else {
+					hasFiles = true
+				}
+			}
+			if hasHooks {
+				hookNode := node
+				hookNode.Group = "hooks"
+				hooks = append(hooks, hookNode)
+			}
+			if hasFiles {
+				fileNode := node
+				fileNode.Group = "files"
+				files = append(files, fileNode)
+			}
+			if !hasHooks && !hasFiles {
+				node.Group = "files"
+				files = append(files, node)
+			}
+		default:
+			node.Group = "files"
+			files = append(files, node)
+		}
+	}
+	result := make([]tuiNode, 0, len(roots)+4)
+	for _, section := range []struct {
+		title string
+		nodes []tuiNode
+	}{
+		{"SDK Metadata", metadata}, {"Hooks", hooks}, {"Files", files},
+	} {
+		result = append(result, tuiNode{Name: "[" + section.title + "]", Header: true, Depth: 0})
+		result = append(result, section.nodes...)
+	}
+	return result, nil
+}
+
+func filterTUIGroup(nodes []tuiNode, group string) []tuiNode {
+	if group != "files" && group != "hooks" {
+		return nodes
+	}
+	result := nodes[:0]
+	for _, node := range nodes {
+		if node.Path == "sdk/hooks" && group == "files" {
+			continue
+		}
+		if node.Path != "sdk/hooks" && path.Dir(node.Path) == "sdk" && group == "hooks" {
+			continue
+		}
+		result = append(result, node)
+	}
+	return result
+}
+
+func firstTUISelectable(nodes []tuiNode) int {
+	for i, node := range nodes {
+		if !node.Header {
+			return i
+		}
+	}
+	return 0
+}
+
+func signTUI(n int) int {
+	if n < 0 {
+		return -1
+	}
+	return 1
 }
