@@ -132,11 +132,11 @@ func runTerminalExplorer(project string, entries []tuiSDK) error {
 		} else if !model.InTree && len(entries) > 0 {
 			b.WriteString(fitLine(" Workshop: "+entries[model.SelectedSDK].Workshops, width) + "\r\n")
 		}
-		help := " ↑/↓ or j/k: move    Enter: open SDK    q / Esc: quit"
+		help := " ↑/↓: move    Enter/→: open SDK    ←/Esc: quit"
 		if model.Preview != nil {
-			help = " ↑/↓ or j/k: scroll    Esc: file tree    q: quit"
+			help = " ↑/↓: scroll    ←/Esc: file tree    q: quit"
 		} else if model.InTree {
-			help = " ↑/↓ or j/k: move    Enter: open / toggle    Esc: SDK list    q: quit"
+			help = " ↑/↓: move    Enter/→: open / toggle    ←/Esc: SDK list    q: quit"
 		}
 		b.WriteString(fitLine(help, width))
 		fmt.Fprint(tty, b.String())
@@ -162,12 +162,8 @@ func runTerminalExplorer(project string, entries []tuiSDK) error {
 			return nil
 		case '\r', '\n':
 			model.enter()
-		case 'j':
-			move = 1
-		case 'k':
-			move = -1
 		case 27:
-			// ANSI arrow keys: ESC [ A/B. A lone Esc also exits.
+			// ANSI arrow keys: ESC [ A/B/C/D. A lone Esc also exits.
 			if reader.Buffered() == 0 && !ttyInputReady(fd, 80*time.Millisecond) {
 				if model.InTree {
 					model.back()
@@ -180,10 +176,19 @@ func runTerminalExplorer(project string, entries []tuiSDK) error {
 				return nil
 			}
 			direction, _ := reader.ReadByte()
-			if direction == 'A' {
+			switch direction {
+			case 'A':
 				move = -1
-			} else if direction == 'B' {
+			case 'B':
 				move = 1
+			case 'C':
+				model.enter()
+			case 'D':
+				if model.InTree {
+					model.back()
+				} else {
+					return nil
+				}
 			}
 		}
 		model.move(move)
