@@ -128,22 +128,22 @@ func runTUI(args []string, stdout, stderr io.Writer, dependencies Dependencies) 
 				return usageError(stderr, "--project requires a path")
 			}
 		default:
-			return usageError(stderr, "unknown tui option %q", a)
+			return usageError(stderr, "unknown explorer option %q", a)
 		}
 	}
 	absolute, entries, err := loadTUIInventoryWithResolver(project, dependencies.CacheRoot, dependencies.StoreResolver, func(name string) {
-		fmt.Fprintf(stderr, "latra: tui: downloading SDK %q...\n", name)
+		fmt.Fprintf(stderr, "latra: explorer: downloading SDK %q...\n", name)
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "latra: tui: %v\n", err)
+		fmt.Fprintf(stderr, "latra: explorer: %v\n", err)
 		return exitError
 	}
 	// TUI requires the process's own terminal, not a redirected output stream.
 	if err := runTerminalExplorer(absolute, entries); err != nil {
 		if errors.Is(err, errNotTerminal) {
-			fmt.Fprintln(stderr, "latra: tui requires an interactive terminal")
+			fmt.Fprintln(stderr, "latra: explorer requires an interactive terminal")
 		} else {
-			fmt.Fprintf(stderr, "latra: tui: %v\n", err)
+			fmt.Fprintf(stderr, "latra: explorer: %v\n", err)
 		}
 		return exitError
 	}

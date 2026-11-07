@@ -41,7 +41,7 @@ func TestTUIInventoryUsesExistingProjectScanner(t *testing.T) {
 
 func TestTUIRequiresProjectBeforeTerminal(t *testing.T) {
 	var out, errout bytes.Buffer
-	code := RunWithDependencies([]string{"tui", "--project", t.TempDir()}, &out, &errout, Dependencies{})
+	code := RunWithDependencies([]string{"explorer", "--project", t.TempDir()}, &out, &errout, Dependencies{})
 	if code != exitError || !strings.Contains(errout.String(), ".workshop") {
 		t.Fatalf("code=%d stderr=%q", code, errout.String())
 	}
@@ -49,7 +49,7 @@ func TestTUIRequiresProjectBeforeTerminal(t *testing.T) {
 
 func TestTUIRejectsUnknownOption(t *testing.T) {
 	var out, errout bytes.Buffer
-	if code := RunWithDependencies([]string{"tui", "--bad"}, &out, &errout, Dependencies{}); code != exitUsage {
+	if code := RunWithDependencies([]string{"explorer", "--bad"}, &out, &errout, Dependencies{}); code != exitUsage {
 		t.Fatalf("code=%d", code)
 	}
 }
