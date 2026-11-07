@@ -184,6 +184,12 @@ func runScan(args []string, stdout, stderr io.Writer, dependencies Dependencies)
 	if err != nil {
 		return usageError(stderr, "%v", err)
 	}
+	if options.path == "" {
+		options.path = dependencies.WorkingDirectory
+		if options.path == "" {
+			options.path = "."
+		}
+	}
 	progress := startScanProgress(stderr, !options.quiet && isTerminalWriter(stderr))
 	result, err := source.ScanWithResolver(context.Background(), options.path, sdk.DefaultLimits(), dependencies.StoreResolver)
 	if err != nil {
@@ -239,6 +245,24 @@ func parseScanOptions(args []string) (scanOptions, error) {
 			options.output = args[index]
 		case strings.HasPrefix(argument, "--output="):
 			options.output = strings.TrimPrefix(argument, "--output=")
+		case argument == "--project":
+			index++
+			if index >= len(args) || args[index] == "" {
+				return options, fmt.Errorf("--project requires a path")
+			}
+			if options.path != "" {
+				return options, fmt.Errorf("scan accepts only one project path")
+			}
+			options.path = args[index]
+		case strings.HasPrefix(argument, "--project="):
+			path := strings.TrimPrefix(argument, "--project=")
+			if path == "" {
+				return options, fmt.Errorf("--project requires a path")
+			}
+			if options.path != "" {
+				return options, fmt.Errorf("scan accepts only one project path")
+			}
+			options.path = path
 		case argument == "--no-color":
 			options.noColor = true
 		case argument == "--quiet":
@@ -250,11 +274,8 @@ func parseScanOptions(args []string) (scanOptions, error) {
 		case options.path == "":
 			options.path = argument
 		default:
-			return options, fmt.Errorf("scan requires exactly one PROJECT_OR_PROJECT_SDK path")
+			return options, fmt.Errorf("scan accepts only one project path")
 		}
-	}
-	if options.path == "" {
-		return options, fmt.Errorf("scan requires exactly one PROJECT_OR_PROJECT_SDK path")
 	}
 	if options.format != report.FormatText && options.format != report.FormatJSON {
 		return options, fmt.Errorf("invalid format %q; use text or json", options.format)
@@ -298,7 +319,7 @@ Usage:
   latra <command>
 
 Scan:
-  latra scan <PROJECT_OR_PROJECT_SDK> [--format text|json] [--output PATH|-]
+  latra scan [PROJECT_OR_PROJECT_SDK] [--project PATH] [--format text|json] [--output PATH|-]
 
 Explorer:
   latra explorer [--project PATH]
@@ -325,7 +346,7 @@ Options:
   --verbose           Include complete SDK, file, hook, and analysis details
 
 Content selection:
-  --project PATH      Resolve the SDK from PATH's Workshop definitions (default: .)
+  --project PATH      Use PATH as the Workshop project or SDK (default: .)
   --channel CHANNEL   Override the Workshop-declared Store channel
   --revision REVISION Select a cached revision within the resolved channel
 
