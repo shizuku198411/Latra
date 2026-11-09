@@ -62,6 +62,12 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		err      error
 	}
 	scanDone := make(chan scanOutcome, 1)
+	model.Scanning = true
+	model.Message = "Scanning..."
+	go func() {
+		document, scanErr := scanExplorer(project, resolver)
+		scanDone <- scanOutcome{document: document, err: scanErr}
+	}()
 	draw := func() {
 		var size struct{ Row, Col, X, Y uint16 }
 		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&size)))
@@ -179,7 +185,6 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		} else if model.InTree {
 			help = " ↑/↓: move    Enter/→: open / toggle    ←/Esc: SDK list    q: quit"
 		}
-		help += "    s: scan"
 		b.WriteString(fitLine(help, width))
 		fmt.Fprint(tty, b.String())
 	}
@@ -209,15 +214,6 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		switch key {
 		case 'q', 3:
 			return nil
-		case 's':
-			if !model.Scanning {
-				model.Scanning = true
-				model.Message = "Scanning..."
-				go func() {
-					document, scanErr := scanExplorer(project, resolver)
-					scanDone <- scanOutcome{document: document, err: scanErr}
-				}()
-			}
 		case '\r', '\n':
 			model.enter()
 		case 27:
