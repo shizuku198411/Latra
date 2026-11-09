@@ -62,7 +62,7 @@ func ScanWithResolver(ctx context.Context, input string, limits sdk.Limits, reso
 		return nil, closeErr
 	}
 	if workshopErr == nil {
-		return readProject(ctx, absolute, limits, resolver)
+		return readProject(ctx, absolute, limits, resolver, false)
 	}
 	if !errors.Is(workshopErr, fs.ErrNotExist) {
 		return nil, fmt.Errorf("inspect .workshop: %w", workshopErr)
@@ -77,4 +77,11 @@ func ScanWithResolver(ctx context.Context, input string, limits sdk.Limits, reso
 		Root: absolute,
 		SDKs: []sdk.SDK{*resolved},
 	}, nil
+}
+
+// DiscoverProject returns the Explorer inventory without fetching SDKs.
+// Unsupported try-/sketch entries remain visible, while system and agent
+// are omitted. ScanWithResolver excludes all four special SDK categories.
+func DiscoverProject(ctx context.Context, projectPath string, limits sdk.Limits) (*Result, error) {
+	return readProject(ctx, projectPath, limits, nil, true)
 }

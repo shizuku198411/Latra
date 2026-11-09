@@ -44,7 +44,7 @@ func loadTUIInventoryWithResolver(project, cacheRoot string, resolver source.Sto
 	if !workshopDir.IsDir() {
 		return "", nil, fmt.Errorf("%s is not a Workshop project: .workshop is not a directory", absolute)
 	}
-	result, err := source.ScanWithResolver(context.Background(), absolute, sdk.DefaultLimits(), nil)
+	result, err := source.DiscoverProject(context.Background(), absolute, sdk.DefaultLimits())
 	if err != nil {
 		return "", nil, err
 	}

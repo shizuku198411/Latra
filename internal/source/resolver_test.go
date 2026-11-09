@@ -190,30 +190,56 @@ func TestScanWithResolverKeepsProjectResultsWhenStoreResolutionFails(t *testing.
 	}
 }
 
-func TestScanClassifiesSDKSourceTypes(t *testing.T) {
+func TestScanExcludesWorkshopSpecialSDKs(t *testing.T) {
 	t.Parallel()
 
 	project := t.TempDir()
 	writeSourceFile(t, filepath.Join(project, ".workshop", "local", "sdk.yaml"), "name: local\n")
-	writeSourceFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: store-sdk\n  - name: project-local\n  - name: try-preview\n  - name: system\n")
+	writeSourceFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: store-sdk\n  - name: project-local\n  - name: try-preview\n  - name: system\n  - name: sketch\n  - name: agent\n")
 
-	result, err := source.Scan(project, sdk.DefaultLimits())
+	resolver := &fakeStoreResolver{}
+	result, err := source.ScanWithResolver(context.Background(), project, sdk.DefaultLimits(), resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wants := map[string]sdk.Source{
-		"store-sdk": sdk.SourceStore,
-		"local":     sdk.SourceProject,
-		"preview":   sdk.SourceTry,
-		"system":    sdk.SourceSystem,
-	}
+	wants := map[string]sdk.Source{"store-sdk": sdk.SourceStore, "local": sdk.SourceProject}
 	if len(result.SDKs) != len(wants) {
-		t.Fatalf("SDK count = %d, want %d", len(result.SDKs), len(wants))
+		t.Fatalf("SDKs = %#v, want only store-sdk and local", result.SDKs)
 	}
 	for name, want := range wants {
 		if got := findSDK(t, result, name).Source; got != want {
 			t.Errorf("SDK %q source = %q, want %q", name, got, want)
 		}
+	}
+	if len(resolver.requests) != 1 || resolver.requests[0].Name != "store-sdk" {
+		t.Fatalf("Store requests = %#v", resolver.requests)
+	}
+
+	inventory, err := source.DiscoverProject(context.Background(), project, sdk.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.SDKs) != 4 {
+		t.Fatalf("Explorer SDKs = %#v, want 4", inventory.SDKs)
+	}
+	if got := findSDK(t, inventory, "preview"); got.Source != sdk.SourceTry {
+		t.Fatalf("try SDK = %#v", got)
+	}
+	if got := findSDK(t, inventory, "sketch"); got.Source != sdk.SourceSketch {
+		t.Fatalf("sketch SDK = %#v", got)
+	}
+}
+
+func TestStoreSDKNamesExcludesSpecialNames(t *testing.T) {
+	t.Parallel()
+	project := t.TempDir()
+	writeSourceFile(t, filepath.Join(project, ".workshop", "dev.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: go\n  - name: system\n  - name: sketch\n  - name: agent\n  - name: try-preview\n")
+	names, err := source.StoreSDKNames(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "go" {
+		t.Fatalf("StoreSDKNames = %#v", names)
 	}
 }
 

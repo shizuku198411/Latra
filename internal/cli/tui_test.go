@@ -393,3 +393,26 @@ func TestExplorerScanIncompleteRetainsReport(t *testing.T) {
 		t.Fatalf("incomplete scan not retained: %+v", model)
 	}
 }
+
+func TestTUIInventorySpecialSDKVisibility(t *testing.T) {
+	project := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(project, ".workshop"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	definition := "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: system\n  - name: agent\n  - name: sketch\n  - name: try-preview\n"
+	if err := os.WriteFile(filepath.Join(project, ".workshop", "dev.yaml"), []byte(definition), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, items, err := loadTUIInventory(project, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("SDK list = %#v, want try and sketch", items)
+	}
+	for _, item := range items {
+		if item.Status != "unsupported" || (item.Source != "try" && item.Source != "sketch") {
+			t.Fatalf("unexpected SDK: %#v", item)
+		}
+	}
+}
