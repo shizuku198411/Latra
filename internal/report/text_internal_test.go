@@ -73,3 +73,25 @@ func TestAssuranceDisplayLevelsUsePositiveLanguage(t *testing.T) {
 		}
 	}
 }
+
+func TestColorReviewPrioritySelected(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		level      string
+		background string
+	}{
+		{"critical", "\x1b[101m"},
+		{"high", "\x1b[41m"},
+		{"medium", "\x1b[43m"},
+		{"low", "\x1b[46m"},
+		{"info", "\x1b[42m"},
+	} {
+		t.Run(tc.level, func(t *testing.T) {
+			got := ColorReviewPrioritySelected(" ❯ setup-base", tc.level)
+			want := tc.background + ansiWhite + " ❯ setup-base" + ansiReset
+			if got != want {
+				t.Errorf("selected risk style = %q, want %q", got, want)
+			}
+		})
+	}
+}

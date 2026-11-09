@@ -6,6 +6,7 @@ import (
 	"path"
 	"sort"
 
+	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
 )
 
@@ -27,6 +28,8 @@ type tuiExplorer struct {
 	Nodes        []tuiNode
 	Message      string
 	Preview      *tuiPreview
+	Scan         *report.Document
+	Scanning     bool
 }
 
 func (m *tuiExplorer) enter() {

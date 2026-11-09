@@ -191,13 +191,12 @@ func runScan(args []string, stdout, stderr io.Writer, dependencies Dependencies)
 		}
 	}
 	progress := startScanProgress(stderr, !options.quiet && isTerminalWriter(stderr))
-	result, err := source.ScanWithResolver(context.Background(), options.path, sdk.DefaultLimits(), dependencies.StoreResolver)
-	if err != nil {
+	result, parseErr := scanAndParse(context.Background(), options.path, dependencies.StoreResolver)
+	if result == nil {
 		progress.stop(false)
-		fmt.Fprintf(stderr, "latra: scan failed: %v\n", err)
+		fmt.Fprintf(stderr, "latra: scan failed: %v\n", parseErr)
 		return exitError
 	}
-	parseErr := source.ParseHooks(result, shell.NewParser())
 	if parseErr != nil && options.output != "-" {
 		progress.stop(false)
 		fmt.Fprintf(stderr, "latra: scan incomplete: %v\n", parseErr)
@@ -213,6 +212,16 @@ func runScan(args []string, stdout, stderr io.Writer, dependencies Dependencies)
 		return exitError
 	}
 	return exitOK
+}
+
+// scanAndParse is shared by the scan command and the interactive Explorer.
+// A hook parse error retains the partially analyzed result for reporting.
+func scanAndParse(ctx context.Context, path string, resolver source.StoreResolver) (*source.Result, error) {
+	result, err := source.ScanWithResolver(ctx, path, sdk.DefaultLimits(), resolver)
+	if err != nil {
+		return nil, err
+	}
+	return result, source.ParseHooks(result, shell.NewParser())
 }
 
 type scanOptions struct {

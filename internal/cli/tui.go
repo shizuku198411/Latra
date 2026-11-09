@@ -139,7 +139,7 @@ func runTUI(args []string, stdout, stderr io.Writer, dependencies Dependencies) 
 		return exitError
 	}
 	// TUI requires the process's own terminal, not a redirected output stream.
-	if err := runTerminalExplorer(absolute, entries); err != nil {
+	if err := runTerminalExplorer(absolute, entries, dependencies.StoreResolver); err != nil {
 		if errors.Is(err, errNotTerminal) {
 			fmt.Fprintln(stderr, "latra: explorer requires an interactive terminal")
 		} else {
