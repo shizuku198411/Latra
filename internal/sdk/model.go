@@ -16,6 +16,8 @@ const (
 	SourceProject Source = "project"
 	SourceTry     Source = "try"
 	SourceSystem  Source = "system"
+	SourceSketch  Source = "sketch"
+	SourceAgent   Source = "agent"
 )
 
 // ResolutionState describes whether Latra obtained the SDK contents.

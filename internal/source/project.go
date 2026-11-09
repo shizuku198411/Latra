@@ -42,7 +42,7 @@ type connection struct {
 	Slot string `yaml:"slot"`
 }
 
-func readProject(ctx context.Context, projectPath string, limits sdk.Limits, resolver StoreResolver) (*Result, error) {
+func readProject(ctx context.Context, projectPath string, limits sdk.Limits, resolver StoreResolver, includeUnsupported bool) (*Result, error) {
 	root, err := os.OpenRoot(projectPath)
 	if err != nil {
 		return nil, fmt.Errorf("open project: %w", err)
@@ -93,6 +93,9 @@ func readProject(ctx context.Context, projectPath string, limits sdk.Limits, res
 			name, sourceType, err := classifyDeclaration(declaration.Name)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", relative, err)
+			}
+			if !includeInInventory(sourceType, includeUnsupported) {
+				continue
 			}
 			if seen[name] {
 				return nil, fmt.Errorf("%s: SDK %q must only be included once", relative, name)
@@ -223,9 +226,28 @@ func validateProjectDefinition(definition *projectDefinition) error {
 	return nil
 }
 
+// includeInInventory centralizes the Workshop special-SDK policy for both
+// scanning and Explorer discovery. Unsupported SDKs remain visible only in
+// Explorer; built-in/reserved entries are never shown or analyzed.
+func includeInInventory(sourceType sdk.Source, includeUnsupported bool) bool {
+	switch sourceType {
+	case sdk.SourceSystem, sdk.SourceAgent:
+		return false
+	case sdk.SourceTry, sdk.SourceSketch:
+		return includeUnsupported
+	default:
+		return true
+	}
+}
+
 func classifyDeclaration(raw string) (string, sdk.Source, error) {
-	if raw == "system" {
+	switch raw {
+	case "system":
 		return raw, sdk.SourceSystem, nil
+	case "sketch":
+		return raw, sdk.SourceSketch, nil
+	case "agent":
+		return raw, sdk.SourceAgent, nil
 	}
 	if suffix, ok := strings.CutPrefix(raw, "project-"); ok {
 		if err := sdk.ValidateName(suffix); err != nil {

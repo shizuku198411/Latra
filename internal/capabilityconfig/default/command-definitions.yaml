@@ -123,6 +123,94 @@ command-definitions:
     category: sdk-tool
     description: Rust toolchain installer and version manager.
 
+  black:
+    category: sdk-tool
+    description: Python code formatter.
+
+  cargo-audit:
+    category: sdk-tool
+    description: Rust dependency vulnerability auditing tool.
+
+  ccls:
+    category: sdk-tool
+    description: C and C++ language server.
+
+  clang-format:
+    category: sdk-tool
+    description: Clang-based C, C++, and Objective-C code formatter.
+
+  clang-tidy:
+    category: sdk-tool
+    description: Clang-based C and C++ static analysis tool.
+
+  clangd:
+    category: sdk-tool
+    description: Clang-based C and C++ language server.
+
+  clippy-driver:
+    category: sdk-tool
+    description: Rust Clippy lint driver.
+
+  eslint:
+    category: sdk-tool
+    description: JavaScript and TypeScript linter.
+
+  gofumpt:
+    category: sdk-tool
+    description: Strict Go source code formatter.
+
+  golangci-lint:
+    category: sdk-tool
+    description: Go linter runner and aggregator.
+
+  gopls:
+    category: sdk-tool
+    description: Go language server.
+
+  gradle:
+    category: sdk-tool
+    description: Gradle build automation tool.
+
+  jdtls:
+    category: sdk-tool
+    description: Eclipse JDT language server for Java.
+
+  mvn:
+    category: sdk-tool
+    description: Apache Maven build and dependency management CLI.
+
+  mypy:
+    category: sdk-tool
+    description: Python static type checker.
+
+  prettier:
+    category: sdk-tool
+    description: Source code formatter for web development languages.
+
+  pytest:
+    category: sdk-tool
+    description: Python test runner.
+
+  ruff:
+    category: sdk-tool
+    description: Python linter and formatter.
+
+  rustfmt:
+    category: sdk-tool
+    description: Rust source code formatter.
+
+  staticcheck:
+    category: sdk-tool
+    description: Go static analysis tool.
+
+  tsc:
+    category: sdk-tool
+    description: TypeScript compiler.
+
+  vitest:
+    category: sdk-tool
+    description: JavaScript and TypeScript test runner.
+
   workshop:
     category: workshop-official
     description: Canonical Workshop user CLI.

@@ -24,3 +24,19 @@ func TestTUISDKListReviewPriorityAligned(t *testing.T) {
 		t.Fatalf("priority columns differ: project=%d, store=%d\n%s\n%s", projectColumn, storeColumn, project, store)
 	}
 }
+
+func TestTUIExplorerHeaderScanStatusSurvivesNavigation(t *testing.T) {
+	model := tuiExplorer{SDKs: []tuiSDK{{Name: "go"}}, Scanning: true, ScanStatus: "Scanning..."}
+	model.Message = "Temporary navigation message"
+	model.move(1)
+	if !strings.Contains(tuiExplorerHeader(&model), "SDKs: 1  (read-only, auto-fetch missing SDKs)  Scanning...") {
+		t.Fatalf("missing scan status in header: %q", tuiExplorerHeader(&model))
+	}
+	if strings.Contains(tuiExplorerHeader(&model), model.Message) && model.Message != "" {
+		t.Fatalf("navigation message leaked into header: %q", tuiExplorerHeader(&model))
+	}
+	model.finishScan(&report.Document{}, nil)
+	if !strings.Contains(tuiExplorerHeader(&model), "Scan complete") {
+		t.Fatalf("completed status missing: %q", tuiExplorerHeader(&model))
+	}
+}

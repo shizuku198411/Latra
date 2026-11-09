@@ -52,14 +52,83 @@ on the host:
 ./scripts/install.sh
 ```
 
-Run Latra from the root of a Workshop project.
+### TUI Operation
 
-### Scan the project
+Latra provides an interactive TUI to help you inspect and investigate SDKs.  
+Launch it from your Workshop project root.
 
 ```bash
-# command: latra scan <project dir>
+latra explorer
+```
 
-latra scan .
+When the TUI starts, it automatically retrieves and scans the SDKs. Once scanning is complete, the Review Priority score is displayed for each SDK in the SDK list.
+
+```text
+ Latra / SDK Explorer
+ Project: /project/internaldocs/sample-project
+ SDKs: 2  (read-only, auto-fetch missing SDKs)
+ ────────────────────────────────────────────────────────────────────────────────────────────────────
+ ❯ kernel-dev-base          project  local                          Review Priority: 76/100
+   rust                     store    cached        latest/stable    Review Priority: 10/100
+```
+
+To verify the scan results and examine the actual SDK contents, select an SDK using Enter or the right arrow key (→).
+The Explorer displays the SDK's **Metadata**, **Hooks**, and **Files**.
+
+```text
+ Latra / SDK Explorer
+ Project: /project/internaldocs/sample-project
+ SDK: kernel-dev-base  (read-only tree)
+ ────────────────────────────────────────────────────────────────────────────────────────────────────
+ [SDK Metadata]
+     sdk.yaml
+ [Hooks]
+   ▾ hooks
+       check-health
+       setup-base
+ ❯     setup-project
+ [Files]
+```
+
+You can inspect any file, but a good starting point is to focus on the highlighted files.  
+Files flagged by Latra for further review include inline annotations that highlight the relevant commands and explain why they were flagged.
+
+```text
+ Latra / SDK Explorer
+ Project: /project/internaldocs/sample-project
+ File: hooks/setup-project  (read-only preview)
+ ────────────────────────────────────────────────────────────────────────────────────────────────────
+     1  #!/usr/bin/env bash
+     2  set -euxo pipefail
+     3  
+     4  # clone and build opensbi
+     5  OPENSBI_VERSION="v1.9"
+     6  OPENSBI_URL="https://github.com/riscv-software-src/opensbi.git"
+     7  
+     8  echo "[*] OpenSBI version: ${OPENSBI_VERSION}"
+     9  echo "[*] OpenSBI url: ${OPENSBI_URL}"
+    10  
+    11  # clone opensbi from github
+    12  if [ ! -d opensbi ]; then
+ #Risk > Remote content is written into the Workshop project, medium, score=25/100
+    13    git clone \
+    14      --depth=1 \
+    15      --branch="${OPENSBI_VERSION}" \
+    16      --single-branch \
+    17      "${OPENSBI_URL}" \
+    18      opensbi
+    19  fi
+    20  
+    21  # build firmware
+```
+
+
+### CLI Operation
+You can also scan and inspect SDKs directly from the command line.  
+Run the following command from your Workshop project root.
+
+```bash
+latra scan
 ```
 
 The default text report summarizes the detected SDKs, files, hooks, operations, capabilities, unknown commands, and diagnostics.
@@ -111,7 +180,7 @@ Observations
 
 </details>
 
-### Review the assessment
+#### Review the assessment
 
 Each scan ends with an assessment that separates detected risk, positive
 assurance, and analysis coverage:
@@ -160,15 +229,9 @@ The per-SDK `Key Risks` identifies what needs review and where it was detected. 
 `file`, and `hook` values can be passed directly to the inspection commands in
 the next section.
 
-### Inspect a hook or file
+#### Inspect a hook or file
 
-Use Explorer for review SDK directories/files with TUI:
-
-```bash
-latra explorer
-```
-
-Or use an SDK name and hook reported by the scan:
+Use an SDK name and hook reported by the scan:
 
 ```bash
 # command: latra hook <sdk> <hook>
@@ -234,7 +297,7 @@ sdkcraft-started-at: '2026-10-16T19:27:34.158961+00:00'
 
 Replace `rust`, `setup-base`, and `meta/sdk.yaml` with values from your project report. Latra resolves the SDK from the current project's `.workshop/*.yaml` definitions, including its declared channel.
 
-### Write a JSON report
+#### Write a JSON report
 
 Print the summary as JSON:
 
