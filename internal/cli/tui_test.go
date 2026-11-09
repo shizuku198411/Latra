@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
 	"github.com/shizuku198411/Latra/internal/source"
@@ -352,5 +353,43 @@ func TestTUIGroupedSectionsAndNavigation(t *testing.T) {
 		if n.Group == "files" && n.Path == "sdk/hooks" {
 			t.Fatalf("hooks leaked into files: %+v", m.Nodes)
 		}
+	}
+}
+
+func TestExplorerScanRetainsReport(t *testing.T) {
+	project := filepath.Join("..", "..", "testdata", "project-sdks", "valid-project")
+	document, err := scanExplorer(project, nil)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if document == nil || document.Input.Kind != source.InputProject || len(document.SDKs) == 0 {
+		t.Fatalf("missing scan report: %+v", document)
+	}
+	model := tuiExplorer{}
+	model.Scanning = true
+	model.finishScan(document, nil)
+	if model.Scanning || model.Scan != document || model.Message != "Scan complete" {
+		t.Fatalf("scan not retained: %+v", model)
+	}
+}
+
+func TestExplorerScanFailurePreservesLastReport(t *testing.T) {
+	previous := &report.Document{}
+	model := tuiExplorer{Scan: previous, Scanning: true}
+	model.finishScan(nil, errors.New("store unavailable"))
+	if model.Scanning || model.Scan != previous || !strings.Contains(model.Message, "store unavailable") {
+		t.Fatalf("failed scan lost previous result: %+v", model)
+	}
+	if document, err := scanExplorer(filepath.Join(t.TempDir(), "missing"), nil); document != nil || err == nil {
+		t.Fatalf("expected failed scan without a report: document=%v err=%v", document, err)
+	}
+}
+
+func TestExplorerScanIncompleteRetainsReport(t *testing.T) {
+	document := &report.Document{}
+	model := tuiExplorer{Scanning: true}
+	model.finishScan(document, errors.New("one hook could not be parsed"))
+	if model.Scanning || model.Scan != document || !strings.Contains(model.Message, "Scan incomplete") {
+		t.Fatalf("incomplete scan not retained: %+v", model)
 	}
 }

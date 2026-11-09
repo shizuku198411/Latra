@@ -12,6 +12,9 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/shizuku198411/Latra/internal/report"
+	"github.com/shizuku198411/Latra/internal/source"
 )
 
 var errNotTerminal = errors.New("not an interactive terminal")
@@ -24,7 +27,7 @@ func ioctlTermios(fd uintptr, request uintptr, term *syscall.Termios) error {
 	return nil
 }
 
-func runTerminalExplorer(project string, entries []tuiSDK) error {
+func runTerminalExplorer(project string, entries []tuiSDK, resolver source.StoreResolver) error {
 	// /dev/tty keeps the UI off redirected stdout/stderr and is both readable and writable.
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
@@ -54,6 +57,17 @@ func runTerminalExplorer(project string, entries []tuiSDK) error {
 	defer signal.Stop(signals)
 	reader := bufio.NewReader(tty)
 	model := tuiExplorer{SDKs: entries}
+	type scanOutcome struct {
+		document *report.Document
+		err      error
+	}
+	scanDone := make(chan scanOutcome, 1)
+	model.Scanning = true
+	model.Message = "Scanning..."
+	go func() {
+		document, scanErr := scanExplorer(project, resolver)
+		scanDone <- scanOutcome{document: document, err: scanErr}
+	}()
 	draw := func() {
 		var size struct{ Row, Col, X, Y uint16 }
 		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&size)))
@@ -85,7 +99,17 @@ func runTerminalExplorer(project string, entries []tuiSDK) error {
 		} else if selected >= available {
 			start = selected - available + 1
 		}
-		for i := start; i < count && i < start+available; i++ {
+		if model.Preview != nil {
+			annotations := risksForPreview(model.Scan, entries[model.SelectedSDK].Name, model.Preview.Path)
+			for _, line := range tuiPreviewRows(model.Preview, annotations, width, available) {
+				b.WriteString(line + "\r\n")
+			}
+		}
+		var treeRisks map[string]string
+		if model.InTree {
+			treeRisks = tuiTreeRisks(model.Scan, entries[model.SelectedSDK].Name)
+		}
+		for i := start; model.Preview == nil && i < count && i < start+available; i++ {
 			var line string
 			if model.Preview != nil {
 				line = " " + model.Preview.Lines[i]
@@ -106,13 +130,36 @@ func runTerminalExplorer(project string, entries []tuiSDK) error {
 				}
 			} else {
 				sdk := entries[i]
-				line = fmt.Sprintf("   %-23s  %-8s %-13s %s", sdk.Name, sdk.Source, sdk.Status, sdk.Channel)
+				line = tuiSDKListLine(sdk, model.Scan, width)
+			}
+			level := ""
+			if model.InTree && !model.Nodes[i].Header {
+				level = treeRisks[model.Nodes[i].Path]
 			}
 			if model.Preview == nil && i == selected {
-				b.WriteString("\x1b[7m")
 				line = " ❯ " + strings.TrimPrefix(line, "   ")
+				if level == "" {
+					b.WriteString("\x1b[7m")
+				}
 			}
-			b.WriteString(fitLine(line, width))
+			if level != "" {
+				// Fit before ANSI styling to preserve terminal column widths.
+				line = fitLine(line, width)
+				if i == selected {
+					line = report.ColorReviewPrioritySelected(line, level)
+				} else {
+					line = report.ColorReviewPriority(line, level)
+				}
+			}
+			if model.Preview == nil && !model.InTree {
+				b.WriteString(line) // Already fitted before adding ANSI score colors.
+			} else {
+				if level != "" {
+					b.WriteString(line)
+				} else {
+					b.WriteString(fitLine(line, width))
+				}
+			}
 			b.WriteString("\x1b[0m\r\n")
 		}
 		if count == 0 {
@@ -125,10 +172,10 @@ func runTerminalExplorer(project string, entries []tuiSDK) error {
 			}
 		}
 		b.WriteString(fmt.Sprintf("\x1b[%d;1H", max(1, height-2)))
-		if model.Preview != nil {
-			b.WriteString(fitLine(" "+model.Preview.Status, width) + "\r\n")
-		} else if model.Message != "" {
+		if model.Message != "" {
 			b.WriteString(fitLine(" "+model.Message, width) + "\r\n")
+		} else if model.Preview != nil {
+			b.WriteString(fitLine(" "+model.Preview.Status, width) + "\r\n")
 		} else if !model.InTree && len(entries) > 0 {
 			b.WriteString(fitLine(" Workshop: "+entries[model.SelectedSDK].Workshops, width) + "\r\n")
 		}
@@ -144,6 +191,9 @@ func runTerminalExplorer(project string, entries []tuiSDK) error {
 	draw()
 	for {
 		select {
+		case outcome := <-scanDone:
+			model.finishScan(outcome.document, outcome.err)
+			draw()
 		case sig := <-signals:
 			if sig == syscall.SIGWINCH {
 				draw()
@@ -151,6 +201,10 @@ func runTerminalExplorer(project string, entries []tuiSDK) error {
 			}
 			return nil
 		default:
+		}
+		// Poll so completed scans and resize signals are handled even without input.
+		if reader.Buffered() == 0 && !ttyInputReady(fd, 100*time.Millisecond) {
+			continue
 		}
 		key, err := reader.ReadByte()
 		if err != nil {
@@ -221,4 +275,27 @@ func ttyInputReady(fd uintptr, timeout time.Duration) bool {
 	tv := syscall.NsecToTimeval(timeout.Nanoseconds())
 	n, err := syscall.Select(int(fd)+1, &set, nil, nil, &tv)
 	return err == nil && n > 0
+}
+
+// tuiSDKListLine adds a per-SDK priority only when a scan and sufficient
+// terminal width are available. ANSI escapes are added after fitting the text.
+func tuiSDKListLine(item tuiSDK, document *report.Document, width int) string {
+	line := fmt.Sprintf("   %-23s  %-8s %-13s %-15s", item.Name, item.Source, item.Status, item.Channel)
+	if document == nil {
+		return fitLine(line, width)
+	}
+	for _, assessment := range document.Assessment.BySDK {
+		if assessment.SDK != item.Name {
+			continue
+		}
+		value := fmt.Sprintf("%d/100", assessment.ReviewPriority.Score)
+		prefix := "  Review Priority: "
+		// Retain a useful SDK name if the terminal is too narrow for both columns.
+		if width-len([]rune(prefix))-len(value) < 12 {
+			return fitLine(line, width)
+		}
+		left := fitLine(line, width-len([]rune(prefix))-len(value))
+		return left + prefix + report.ColorReviewPriority(value, assessment.ReviewPriority.Level)
+	}
+	return fitLine(line, width)
 }

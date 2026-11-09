@@ -299,6 +299,29 @@ func formatAssessmentScoreDisplay(score int, level, displayLevel string, positiv
 	return code + value + ansiReset
 }
 
+// ColorReviewPriority applies the same risk-level colors as the CLI assessment output.
+// The caller supplies the text so compact views can omit the parenthesized level.
+func ColorReviewPriority(value, level string) string {
+	return negativeScoreColor(level) + value + ansiReset
+}
+
+// ColorReviewPrioritySelected uses the CLI risk palette as a background for
+// the selected Explorer row, with white foreground text.
+func ColorReviewPrioritySelected(value, level string) string {
+	background := "\x1b[42m" // info / default: green
+	switch negativeScoreColor(level) {
+	case ansiBrightRed:
+		background = "\x1b[101m"
+	case ansiRed:
+		background = "\x1b[41m"
+	case ansiYellow:
+		background = "\x1b[43m"
+	case ansiCyan:
+		background = "\x1b[46m"
+	}
+	return background + ansiWhite + value + ansiReset
+}
+
 func negativeScoreColor(level string) string {
 	switch level {
 	case "critical":
