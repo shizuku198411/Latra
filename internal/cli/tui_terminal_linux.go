@@ -284,7 +284,7 @@ func ttyInputReady(fd uintptr, timeout time.Duration) bool {
 // tuiSDKListLine adds a per-SDK priority only when a scan and sufficient
 // terminal width are available. ANSI escapes are added after fitting the text.
 func tuiSDKListLine(item tuiSDK, document *report.Document, width int) string {
-	line := fmt.Sprintf("   %-23s  %-8s %-13s %s", item.Name, item.Source, item.Status, item.Channel)
+	line := fmt.Sprintf("   %-23s  %-8s %-13s %-15s", item.Name, item.Source, item.Status, item.Channel)
 	if document == nil {
 		return fitLine(line, width)
 	}
