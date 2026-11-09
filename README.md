@@ -21,13 +21,13 @@ Latra reports review priority, risk, assurance, and static-analysis coverage ind
 
 ## Screenshots
 
-1. Scan and Assesment
+1. Scan and Assesment (CLI Operation)
 
 <p>
   <img src="./assets/latra_scan_assesment.png" alt="scan_and_assesment" width="800">
 </p>
 
-2. Explorer
+2. Explorer (TUI Operation)
 
 <p>
   <img src="./assets/latra_explorer_1.png" alt="explorer_1" width="800">
