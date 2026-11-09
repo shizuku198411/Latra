@@ -101,3 +101,59 @@ func TestTUITreeRisksInheritStrongestDescendant(t *testing.T) {
 		t.Fatalf("unscanned tree should not be highlighted: %v", got)
 	}
 }
+
+func TestTUIRiskSameLineMultipleValuesAndContinuedCommand(t *testing.T) {
+	document := &report.Document{Assessment: finding.Assessment{BySDK: []finding.SDKAssessment{{SDK: "kernel-dev-base", KeyRisks: []finding.RiskHighlight{{
+		ID: "risk.remote-content-to-project", Title: "Remote content is written into the Workshop project", Severity: "medium", Score: 25,
+		Scopes: []finding.RiskScope{
+			{SDK: "kernel-dev-base", Location: &shell.Location{Path: "hooks/setup-project", StartLine: 13, StartColumn: 3}, Value: "git"},
+			{SDK: "kernel-dev-base", Location: &shell.Location{Path: "hooks/setup-project", StartLine: 13, StartColumn: 3}, Value: "opensbi"},
+		},
+	}}}}}}
+	lines := make([]string, 19)
+	for i := range lines {
+		lines[i] = " "
+	}
+	lines[12] = "   13    git clone \\"
+	lines[13] = "   14      --depth=1 \\"
+	lines[14] = "   15      --branch=\"${OPENSBI_VERSION}\" \\"
+	lines[15] = "   16      --single-branch \\"
+	lines[16] = "   17      \"${OPENSBI_URL}\" \\"
+	lines[17] = "   18      opensbi"
+	lines[18] = "   19  fi"
+	annotations := risksForPreview(document, "kernel-dev-base", "hooks/setup-project")
+	preview := &tuiPreview{Lines: lines, Scroll: 12}
+	rows := tuiPreviewRows(preview, annotations, 120, 20)
+	labels := 0
+	for _, row := range rows {
+		if strings.Contains(row, "#Risk >") {
+			labels++
+		}
+	}
+	if labels != 1 {
+		t.Fatalf("want one label, got %d: %#v", labels, rows)
+	}
+	if !strings.Contains(rows[1], "\x1b[33mgit\x1b[0m") {
+		t.Fatalf("first evidence not highlighted: %q", rows[1])
+	}
+	if !strings.Contains(rows[6], "\x1b[33mopensbi\x1b[0m") {
+		t.Fatalf("continued-line evidence not highlighted: %q", rows[6])
+	}
+	preview.Scroll = 17
+	rows = tuiPreviewRows(preview, annotations, 120, 3)
+	if len(rows) != 2 || !strings.Contains(rows[0], "\x1b[33mopensbi\x1b[0m") {
+		t.Fatalf("continued-line highlight lost after scrolling: %#v", rows)
+	}
+}
+
+func TestTUIRiskMultipleValuesOneLine(t *testing.T) {
+	preview := &tuiPreview{Lines: []string{"    1  git clone opensbi"}}
+	risks := map[int][]tuiRisk{1: {
+		{ID: "same", Title: "Remote content", Severity: "medium", Score: 25, Value: "git"},
+		{ID: "same", Title: "Remote content", Severity: "medium", Score: 25, Value: "opensbi"},
+	}}
+	rows := tuiPreviewRows(preview, risks, 100, 5)
+	if len(rows) != 2 || strings.Count(rows[0], "#Risk >") != 1 || !strings.Contains(rows[1], "\x1b[33mgit\x1b[0m") || !strings.Contains(rows[1], "\x1b[33mopensbi\x1b[0m") {
+		t.Fatalf("expected one label and two highlighted values: %#v", rows)
+	}
+}
