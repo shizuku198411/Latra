@@ -27,6 +27,7 @@ type tuiExplorer struct {
 	SelectedNode int
 	Nodes        []tuiNode
 	Message      string
+	ScanStatus   string
 	Preview      *tuiPreview
 	Scan         *report.Document
 	Scanning     bool

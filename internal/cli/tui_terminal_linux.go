@@ -63,7 +63,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 	}
 	scanDone := make(chan scanOutcome, 1)
 	model.Scanning = true
-	model.Message = "Scanning..."
+	model.ScanStatus = "Scanning..."
 	go func() {
 		document, scanErr := scanExplorer(project, resolver)
 		scanDone <- scanOutcome{document: document, err: scanErr}
@@ -78,13 +78,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		var b strings.Builder
 		b.WriteString("\x1b[H\x1b[2J\x1b[1;36m Latra / SDK Explorer\x1b[0m\r\n")
 		fmt.Fprintf(&b, " Project: %s\r\n", fitLine(project, width-10))
-		if model.Preview != nil {
-			fmt.Fprintf(&b, " File: %s  (read-only preview)\r\n", fitLine(model.Preview.Path, width-10))
-		} else if model.InTree {
-			fmt.Fprintf(&b, " SDK: %s  (read-only tree)\r\n", model.SDKs[model.SelectedSDK].Name)
-		} else {
-			fmt.Fprintf(&b, " SDKs: %d  (read-only, auto-fetch missing SDKs)\r\n", len(entries))
-		}
+		b.WriteString(fitLine(tuiExplorerHeader(&model), width) + "\r\n")
 		b.WriteString(" " + strings.Repeat("─", max(0, min(width-2, 100))) + "\r\n")
 		available := max(1, height-7)
 		selected, count := model.SelectedSDK, len(entries)
@@ -179,11 +173,11 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		} else if !model.InTree && len(entries) > 0 {
 			b.WriteString(fitLine(" Workshop: "+entries[model.SelectedSDK].Workshops, width) + "\r\n")
 		}
-		help := " ↑/↓: move    Enter/→: open SDK    ←/Esc: quit"
+		help := " ↑/↓: move    Enter/→: open SDK    Esc/←: quit"
 		if model.Preview != nil {
-			help = " ↑/↓: scroll    ←/Esc: file tree    q: quit"
+			help = " ↑/↓: scroll    Esc/←: file tree    q: quit"
 		} else if model.InTree {
-			help = " ↑/↓: move    Enter/→: open / toggle    ←/Esc: SDK list    q: quit"
+			help = " ↑/↓: move    Enter/→: open / toggle    Esc/←: SDK list    q: quit"
 		}
 		b.WriteString(fitLine(help, width))
 		fmt.Fprint(tty, b.String())
@@ -298,4 +292,21 @@ func tuiSDKListLine(item tuiSDK, document *report.Document, width int) string {
 		return left + prefix + report.ColorReviewPriority(value, assessment.ReviewPriority.Level)
 	}
 	return fitLine(line, width)
+}
+
+// tuiExplorerHeader keeps scan progress separate from transient navigation messages.
+func tuiExplorerHeader(model *tuiExplorer) string {
+	var heading string
+	switch {
+	case model.Preview != nil:
+		heading = fmt.Sprintf(" File: %s  (read-only preview)", model.Preview.Path)
+	case model.InTree:
+		heading = fmt.Sprintf(" SDK: %s  (read-only tree)", model.SDKs[model.SelectedSDK].Name)
+	default:
+		heading = fmt.Sprintf(" SDKs: %d  (read-only, auto-fetch missing SDKs)", len(model.SDKs))
+	}
+	if model.ScanStatus != "" {
+		heading += "  " + model.ScanStatus
+	}
+	return heading
 }

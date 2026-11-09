@@ -368,7 +368,7 @@ func TestExplorerScanRetainsReport(t *testing.T) {
 	model := tuiExplorer{}
 	model.Scanning = true
 	model.finishScan(document, nil)
-	if model.Scanning || model.Scan != document || model.Message != "Scan complete" {
+	if model.Scanning || model.Scan != document || model.ScanStatus != "Scan complete" {
 		t.Fatalf("scan not retained: %+v", model)
 	}
 }
@@ -377,7 +377,7 @@ func TestExplorerScanFailurePreservesLastReport(t *testing.T) {
 	previous := &report.Document{}
 	model := tuiExplorer{Scan: previous, Scanning: true}
 	model.finishScan(nil, errors.New("store unavailable"))
-	if model.Scanning || model.Scan != previous || !strings.Contains(model.Message, "store unavailable") {
+	if model.Scanning || model.Scan != previous || !strings.Contains(model.ScanStatus, "store unavailable") {
 		t.Fatalf("failed scan lost previous result: %+v", model)
 	}
 	if document, err := scanExplorer(filepath.Join(t.TempDir(), "missing"), nil); document != nil || err == nil {
@@ -389,7 +389,7 @@ func TestExplorerScanIncompleteRetainsReport(t *testing.T) {
 	document := &report.Document{}
 	model := tuiExplorer{Scanning: true}
 	model.finishScan(document, errors.New("one hook could not be parsed"))
-	if model.Scanning || model.Scan != document || !strings.Contains(model.Message, "Scan incomplete") {
+	if model.Scanning || model.Scan != document || !strings.Contains(model.ScanStatus, "Scan incomplete") {
 		t.Fatalf("incomplete scan not retained: %+v", model)
 	}
 }

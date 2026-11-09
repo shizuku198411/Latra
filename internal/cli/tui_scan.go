@@ -24,12 +24,12 @@ func (m *tuiExplorer) finishScan(document *report.Document, err error) {
 	if document != nil {
 		m.Scan = document
 		if err != nil {
-			m.Message = "Scan incomplete: " + err.Error()
+			m.ScanStatus = "Scan incomplete: " + err.Error()
 		} else {
-			m.Message = "Scan complete"
+			m.ScanStatus = "Scan complete"
 		}
 	} else if err != nil {
 		// Preserve the last successful scan when a new attempt fails.
-		m.Message = "Scan failed: " + err.Error()
+		m.ScanStatus = "Scan failed: " + err.Error()
 	}
 }
