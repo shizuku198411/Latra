@@ -89,7 +89,7 @@ func readProject(ctx context.Context, projectPath string, limits sdk.Limits, res
 		})
 
 		seen := make(map[string]bool)
-		for _, declaration := range definition.SDKs {
+		for declarationOrder, declaration := range definition.SDKs {
 			name, sourceType, err := classifyDeclaration(declaration.Name)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", relative, err)
@@ -110,6 +110,7 @@ func readProject(ctx context.Context, projectPath string, limits sdk.Limits, res
 			usage := sdk.Declaration{
 				Definition: relative,
 				Workshop:   definition.Name,
+				Order:      declarationOrder,
 				Base:       definition.Base,
 				Channel:    declaration.Channel,
 				Plugs:      declaration.Plugs,

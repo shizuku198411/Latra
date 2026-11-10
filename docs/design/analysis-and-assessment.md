@@ -207,6 +207,7 @@ The current engine supports matchers for:
 - relation-based source-to-sink flow, including bounded artifact and collection flow through temporary files;
 - bounded same-hook function argument propagation and SDK-local include expansion;
 - SDK-level state lifecycle flow from `save-state` writes to matching `restore-state` reads;
+- ordered, same-Workshop composition from an SDK Project write to a later SDK execution of the exact artifact path;
 - high-impact Project control-file modification, source deletion, executable creation, permission changes, and Git state rewrite.
 
 Assurance based on absence is only emitted when analysis is complete enough to support that conclusion. For example, an unknown command prevents `all-commands-known` and may prevent an absence-based assurance finding.

@@ -1,4 +1,18 @@
 finding-rules:
+  - id: risk.cross-sdk-project-artifact-execution
+    kind: risk
+    family: project-integrity
+    title: A later SDK executes a Project artifact written by an earlier SDK
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: cross-sdk-artifact-execution
+    message: Within one Workshop definition, an earlier SDK writes a Project artifact that a later SDK executes from the same path.
+    remediation: Remove the cross-SDK executable handoff or verify the artifact cryptographically before execution.
+    limitations:
+      - Matching requires an exact statically resolved Project path and declaration order in one Workshop definition.
+
   - id: risk.state-content-to-project
     kind: risk
     family: project-integrity

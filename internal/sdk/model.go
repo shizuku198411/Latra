@@ -95,6 +95,7 @@ type StringList []string
 type Declaration struct {
 	Definition string         `json:"definition"`
 	Workshop   string         `json:"workshop"`
+	Order      int            `json:"order"`
 	Base       string         `json:"base"`
 	Channel    string         `json:"channel,omitempty"`
 	Plugs      map[string]any `json:"plugs,omitempty"`

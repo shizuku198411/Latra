@@ -18,15 +18,16 @@ const SchemaVersion = "4"
 
 // Document is the stable, versioned JSON inventory representation.
 type Document struct {
-	SchemaVersion string               `json:"schemaVersion"`
-	Scanner       Scanner              `json:"scanner"`
-	FindingDB     finding.Database     `json:"findingDatabase"`
-	Input         Input                `json:"input"`
-	Summary       Summary              `json:"summary"`
-	Assessment    finding.Assessment   `json:"assessment"`
-	Workshops     []source.Workshop    `json:"workshops"`
-	SDKs          []SDK                `json:"sdks"`
-	Diagnostics   []DocumentDiagnostic `json:"diagnostics"`
+	SchemaVersion        string                        `json:"schemaVersion"`
+	Scanner              Scanner                       `json:"scanner"`
+	FindingDB            finding.Database              `json:"findingDatabase"`
+	Input                Input                         `json:"input"`
+	Summary              Summary                       `json:"summary"`
+	Assessment           finding.Assessment            `json:"assessment"`
+	Workshops            []source.Workshop             `json:"workshops"`
+	SDKs                 []SDK                         `json:"sdks"`
+	CompositionRelations []finding.CompositionRelation `json:"compositionRelations,omitempty"`
+	Diagnostics          []DocumentDiagnostic          `json:"diagnostics"`
 }
 
 type Scanner struct {
@@ -242,14 +243,20 @@ type DocumentDiagnostic struct {
 // NewDocument builds a deterministic report document from a scan result.
 func NewDocument(result *source.Result) Document {
 	info := buildinfo.Current()
+	compositionFindings, compositionRelations := finding.AnalyzeComposition(result.SDKs)
+	compositionBySDK := make(map[string][]finding.Finding)
+	for _, item := range compositionFindings {
+		compositionBySDK[item.Scope.SDK] = append(compositionBySDK[item.Scope.SDK], item)
+	}
 	document := Document{
-		SchemaVersion: SchemaVersion,
-		Scanner:       Scanner{Name: "latra", Version: info.Version, Commit: info.Commit, BuildDate: info.BuildDate},
-		FindingDB:     finding.DatabaseInfo(),
-		Input:         Input{Kind: result.Kind, Root: result.Root},
-		Workshops:     append([]source.Workshop{}, result.Workshops...),
-		SDKs:          []SDK{},
-		Diagnostics:   []DocumentDiagnostic{},
+		SchemaVersion:        SchemaVersion,
+		Scanner:              Scanner{Name: "latra", Version: info.Version, Commit: info.Commit, BuildDate: info.BuildDate},
+		FindingDB:            finding.DatabaseInfo(),
+		Input:                Input{Kind: result.Kind, Root: result.Root},
+		Workshops:            append([]source.Workshop{}, result.Workshops...),
+		SDKs:                 []SDK{},
+		CompositionRelations: compositionRelations,
+		Diagnostics:          []DocumentDiagnostic{},
 	}
 	sort.Slice(document.Workshops, func(i, j int) bool {
 		if document.Workshops[i].Name != document.Workshops[j].Name {
@@ -272,6 +279,7 @@ func NewDocument(result *source.Result) Document {
 			Findings:           finding.AnalyzeSDK(item),
 			LifecycleRelations: append([]sdk.LifecycleRelation{}, item.LifecycleRelations...),
 		}
+		reported.Findings = append(reported.Findings, compositionBySDK[item.Name]...)
 		assessmentInputs = append(assessmentInputs, finding.AssessmentInput{SDK: item, Findings: reported.Findings})
 		for _, diagnostic := range item.Diagnostics {
 			document.Diagnostics = append(document.Diagnostics, DocumentDiagnostic{

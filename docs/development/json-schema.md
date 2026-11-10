@@ -137,6 +137,8 @@ Statically resolved SDK-local includes are represented by `include` relations ca
 
 SDK entries may also contain `lifecycleRelations`. A `state-flow` connects a `save-state` write to a matching `restore-state` read using the statically known path below `$SDK_STATE_DIR`. Its resolution remains partial and its limitation explicitly states that channel reachability does not prove byte identity across SDK revisions.
 
+Project reports may contain top-level `compositionRelations`. A `project-artifact-execution` relation records an exact Project path written by an earlier SDK and executed by a later SDK in the same Workshop definition and hook window. `Declaration.order` is the semantic execution order; SDK array ordering remains a deterministic display concern only. Cross-SDK evidence identifies the SDK for each endpoint.
+
 The graph is a conservative static representation. It does not claim complete shell control-flow or runtime data-flow resolution.
 
 ## Findings
