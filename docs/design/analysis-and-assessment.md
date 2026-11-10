@@ -205,6 +205,7 @@ The current engine supports matchers for:
 - complete file inventory;
 - read-only health checks;
 - relation-based source-to-sink flow, including bounded artifact and collection flow through temporary files;
+- bounded same-hook function argument propagation and SDK-local include expansion;
 - high-impact Project control-file modification, source deletion, executable creation, permission changes, and Git state rewrite.
 
 Assurance based on absence is only emitted when analysis is complete enough to support that conclusion. For example, an unknown command prevents `all-commands-known` and may prevent an absence-based assurance finding.

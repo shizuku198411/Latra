@@ -77,6 +77,9 @@ const (
 	RelationRedirectFlow     RelationKind = "redirect-flow"
 	RelationArtifactFlow     RelationKind = "artifact-flow"
 	RelationCollectionFlow   RelationKind = "collection-flow"
+	RelationCall             RelationKind = "call"
+	RelationArgumentFlow     RelationKind = "argument-flow"
+	RelationInclude          RelationKind = "include"
 )
 
 // Provenance records where an artifact consumed by a relation originated.
@@ -97,6 +100,14 @@ type Relation struct {
 	Resolution      Resolution   `json:"resolution"`
 	Artifact        Value        `json:"artifact,omitzero"`
 	Provenance      []Provenance `json:"provenance,omitempty"`
+	Digest          string       `json:"digest,omitempty"`
+}
+
+// IncludedSource identifies a statically resolved SDK-local source file.
+type IncludedSource struct {
+	Path   string         `json:"path"`
+	Digest string         `json:"digest"`
+	From   shell.Location `json:"from"`
 }
 
 // Operation is Latra's parser-independent representation of shell behavior.
@@ -114,6 +125,7 @@ type Operation struct {
 	Resolution Resolution      `json:"resolution"`
 	Location   shell.Location  `json:"location"`
 	Children   []Operation     `json:"children,omitempty"`
+	Include    *IncludedSource `json:"include,omitempty"`
 
 	pipelineBoundary int
 	workingDirectory Value

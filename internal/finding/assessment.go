@@ -336,6 +336,12 @@ func coverageForSDK(item sdk.SDK) Coverage {
 			}
 		}
 	}
+	for _, diagnostic := range item.Diagnostics {
+		if strings.HasPrefix(diagnostic.Code, "include-") || diagnostic.Code == "dynamic-include" || diagnostic.Code == "external-include" {
+			coverage.Commands.Total++
+			coverage.Commands.Unresolved++
+		}
+	}
 	complete := item.State == sdk.StateResolved && !hasResourceLimitDiagnostic(item)
 	return finalizeCoverage(coverage, complete)
 }

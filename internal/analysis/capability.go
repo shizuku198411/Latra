@@ -230,6 +230,9 @@ func capabilitiesForOperation(operation Operation, context HookContext, config *
 			continue
 		}
 		for _, capability := range rule.Capabilities {
+			if capability == "dynamic-execution" && operation.Kind == OperationSource && operation.Name == "resolved-sdk-include" {
+				continue
+			}
 			add(capability, rule.ID, operation.Command, operation.Resolution)
 		}
 	}

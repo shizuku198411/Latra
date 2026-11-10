@@ -17,6 +17,7 @@ func BuildRelations(operations []Operation) []Relation {
 
 	collector := relationCollector{seen: make(map[string]bool)}
 	collector.structural(operations)
+	collector.functionCalls(operations)
 	collector.redirectFlows(operations)
 	collector.variableFlows(operations, make(map[string]variableDefinition))
 	collector.artifactFlows(operations)
@@ -34,6 +35,30 @@ func BuildRelations(operations []Operation) []Relation {
 		return left.Name < right.Name
 	})
 	return collector.relations
+}
+
+func (c *relationCollector) functionCalls(operations []Operation) {
+	var flat []*Operation
+	flattenOperationPointers(operations, &flat)
+	declarations := make(map[string]*Operation)
+	for _, operation := range flat {
+		if operation.Kind == OperationFunctionDeclaration && operation.Name != "" {
+			declarations[operation.Name] = operation
+		}
+	}
+	for _, operation := range flat {
+		if operation.Kind != OperationFunctionInvocation || operation.Command.Resolution != Resolved {
+			continue
+		}
+		if declaration := declarations[operation.Command.Literal]; declaration != nil {
+			c.add(RelationCall, operation.ID, declaration.ID, operation.Command.Literal, operation.Resolution)
+		}
+		for index := range operation.Arguments {
+			for _, child := range operation.Children {
+				c.add(RelationArgumentFlow, operation.ID, child.ID, fmt.Sprint(index+1), combineResolution(operation.Arguments[index].Resolution, child.Resolution))
+			}
+		}
+	}
 }
 
 func (c *relationCollector) redirectFlows(operations []Operation) {
@@ -223,7 +248,7 @@ func operationArtifactAccesses(operation *Operation) []artifactAccess {
 			add(literalValue(value), false, "generated")
 		}
 		if tarCreatesArchive(arguments) {
-			if value := optionPath(arguments, "-f", "--file"); value != "" && value != "-" {
+			if value := tarFilePath(arguments); value != "" && value != "-" {
 				add(literalValue(value), true, "generated")
 			}
 		}
@@ -256,6 +281,29 @@ func operationArtifactAccesses(operation *Operation) []artifactAccess {
 		}
 	}
 	return accesses
+}
+
+func tarFilePath(arguments []string) string {
+	if value := optionPath(arguments, "-f", "--file"); value != "" {
+		return value
+	}
+	for index, argument := range arguments {
+		if !strings.HasPrefix(argument, "-") || strings.HasPrefix(argument, "--") {
+			continue
+		}
+		flagIndex := strings.Index(strings.TrimPrefix(argument, "-"), "f")
+		if flagIndex < 0 {
+			continue
+		}
+		flags := strings.TrimPrefix(argument, "-")
+		if flagIndex+1 < len(flags) {
+			return flags[flagIndex+1:]
+		}
+		if index+1 < len(arguments) {
+			return arguments[index+1]
+		}
+	}
+	return ""
 }
 
 func mergeProvenance(existing, additions []Provenance) []Provenance {
@@ -336,6 +384,9 @@ func (c *relationCollector) structural(operations []Operation) {
 		for childIndex := range operation.Children {
 			child := &operation.Children[childIndex]
 			c.add(RelationContains, operation.ID, child.ID, "", child.Resolution)
+			if operation.Kind == OperationSource && operation.Include != nil {
+				c.addInclude(operation, child)
+			}
 			if child.Kind == OperationCommandSubstitution || child.Kind == OperationProcessSubstitution {
 				c.add(RelationSubstitutionFlow, child.ID, operation.ID, "stdout", child.Resolution)
 			}
@@ -349,6 +400,20 @@ func (c *relationCollector) structural(operations []Operation) {
 		}
 		c.structural(operation.Children)
 	}
+}
+
+func (c *relationCollector) addInclude(source, child *Operation) {
+	artifact := literalValue(source.Include.Path)
+	key := string(RelationInclude) + "\x00" + source.ID + "\x00" + child.ID + "\x00" + source.Include.Path
+	if c.seen[key] {
+		return
+	}
+	c.seen[key] = true
+	c.relations = append(c.relations, Relation{
+		Kind: RelationInclude, FromOperationID: source.ID, ToOperationID: child.ID, Name: "sdk-local-source",
+		Resolution: Resolved, Artifact: artifact, Digest: source.Include.Digest,
+		Provenance: []Provenance{{Kind: "sdk", SourceOps: []string{source.ID}, Paths: []Value{artifact}, Resolution: Resolved}},
+	})
 }
 
 func firstLeaf(operations []Operation) *Operation {

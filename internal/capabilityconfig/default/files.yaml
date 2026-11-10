@@ -1,4 +1,68 @@
 file-command-rules:
+  - id: file.tar-create-input-short
+    commands:
+      - tar
+    match:
+      short-flag-set:
+        - -c
+        - -f
+        - -v
+        - -z
+        - -j
+        - -J
+        - -C
+      any-short-flags:
+        - -c
+    options:
+      - name: -C
+        value-styles:
+          - next
+          - attached
+      - name: -f
+        value-styles:
+          - next
+          - attached
+    operands:
+      - selector: all
+        access: read
+
+  - id: file.tar-create-input-long
+    commands:
+      - tar
+    match:
+      any-options:
+        - name: --create
+          value-styles:
+            - none
+    options:
+      - name: -C
+        value-styles:
+          - next
+          - attached
+      - name: --directory
+        value-styles:
+          - next
+          - equals
+      - name: -f
+        value-styles:
+          - next
+          - attached
+      - name: --file
+        value-styles:
+          - next
+          - equals
+      - name: -T
+        value-styles:
+          - next
+          - attached
+      - name: --files-from
+        value-styles:
+          - next
+          - equals
+    operands:
+      - selector: all
+        access: read
+
   - id: file.find-root
     commands:
       - find

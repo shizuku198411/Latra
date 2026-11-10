@@ -62,6 +62,17 @@ func TestCoveragePenaltyRaisesReviewPriority(t *testing.T) {
 	}
 }
 
+func TestDynamicIncludeLowersCoverage(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "printf ok\n", sdk.HookSetupProject)
+	item.Diagnostics = append(item.Diagnostics, sdk.Diagnostic{Code: "dynamic-include", Severity: sdk.SeverityWarning, Phase: "include", Message: "dynamic source path"})
+	assessment := finding.AssessSDK(item, finding.AnalyzeSDK(item))
+	if assessment.Coverage.Score != 80 || assessment.Coverage.Commands.Unresolved != 1 {
+		t.Fatalf("dynamic include coverage = %#v", assessment.Coverage)
+	}
+}
+
 func TestSkippedNonRequiredContentDoesNotInvalidateCoverage(t *testing.T) {
 	t.Parallel()
 	item := analyzedSDK(t, "printf ok\n", sdk.HookSetupProject)

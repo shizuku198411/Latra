@@ -40,6 +40,7 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 					value := contextFrom(matched.hook.Analysis.Context)
 					context = &value
 				}
+				matched.evidence = append(matched.evidence, includeEvidence(matched.hook, matched.evidence)...)
 			}
 			key := rule.ID + "\x00" + item.Name + "\x00" + string(hookName) + "\x00" + matched.key
 			if seen[key] || len(matched.evidence) == 0 {
@@ -62,6 +63,43 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 	findings = suppressSubsumedFindings(findings)
 	sortFindings(findings)
 	return findings
+}
+
+func includeEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
+	if hook == nil || hook.Analysis == nil {
+		return nil
+	}
+	parents := make(map[string]string)
+	includes := make(map[string]analysis.Relation)
+	for _, relation := range hook.Analysis.Relations {
+		switch relation.Kind {
+		case analysis.RelationContains:
+			parents[relation.ToOperationID] = relation.FromOperationID
+		case analysis.RelationInclude:
+			includes[relation.ToOperationID] = relation
+		}
+	}
+	operations := operationMap(hook.Analysis.Operations)
+	seen := make(map[string]bool)
+	var additions []Evidence
+	for _, item := range evidence {
+		current := item.OperationID
+		for current != "" {
+			if relation, ok := includes[current]; ok {
+				key := relation.FromOperationID + "\x00" + relation.Artifact.Literal
+				if !seen[key] {
+					seen[key] = true
+					location := operations[relation.FromOperationID].Location
+					additions = append(additions, Evidence{Type: "include", ID: "sdk-local-include", OperationID: relation.FromOperationID,
+						FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
+						Value: relation.Artifact.Literal, NormalizedValue: relation.Digest, Resolution: relation.Resolution, Location: &location})
+				}
+				break
+			}
+			current = parents[current]
+		}
+	}
+	return additions
 }
 
 func suppressSubsumedFindings(findings []Finding) []Finding {

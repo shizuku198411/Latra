@@ -133,6 +133,8 @@ The hook-level `relations` array connects operation IDs:
 
 Each capability includes `operationId`, linking the inferred behavior to its source operation. Relations and capabilities also carry `resolution`; consumers must preserve uncertainty rather than treating `PartiallyResolved` or `Unknown` as conclusive flow. `artifact-flow` and `collection-flow` relations additionally record the normalized artifact and its provenance so reports can explain a Project input transformed through temporary files before reaching a sink.
 
+Statically resolved SDK-local includes are represented by `include` relations carrying the inventory path and digest. Operations from the included file retain their own source locations, while Finding evidence also records the calling `source` location. Function calls use bounded expansion and expose `call` and `argument-flow` relations; unresolved or resource-limited includes remain dynamic and emit diagnostics.
+
 The graph is a conservative static representation. It does not claim complete shell control-flow or runtime data-flow resolution.
 
 ## Findings
