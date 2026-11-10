@@ -38,7 +38,9 @@ func Analyze(hook string, parsed *shell.Result) Result {
 		nextStatementGroup: &nextStatementGroup,
 	}
 	result.Operations = b.statements(parsed.Program.Stmts)
-	result.Relations = BuildRelations(result.Operations)
+	BuildRelations(result.Operations) // Assign stable IDs before alias edges are created.
+	aliases := ResolvePathAliases(result.Operations)
+	result.Relations = append(BuildRelations(result.Operations), aliases...)
 	result.Capabilities = ExtractCapabilities(result.Operations, result.Context)
 	return result
 }
@@ -49,8 +51,23 @@ func Rebuild(result *Result) {
 	if result == nil {
 		return
 	}
-	result.Relations = BuildRelations(result.Operations)
+	aliases := filterAliasRelations(result.Relations)
+	if len(aliases) == 0 {
+		BuildRelations(result.Operations)
+		aliases = ResolvePathAliases(result.Operations)
+	}
+	result.Relations = append(BuildRelations(result.Operations), aliases...)
 	result.Capabilities = ExtractCapabilities(result.Operations, result.Context)
+}
+
+func filterAliasRelations(relations []Relation) []Relation {
+	var aliases []Relation
+	for _, relation := range relations {
+		if relation.Kind == RelationAlias {
+			aliases = append(aliases, relation)
+		}
+	}
+	return aliases
 }
 
 func (b *builder) statements(statements []*syntax.Stmt) []Operation {

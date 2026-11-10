@@ -139,6 +139,8 @@ SDK entries may also contain `lifecycleRelations`. A `state-flow` connects a `sa
 
 Project reports may contain top-level `compositionRelations`. A `project-artifact-execution` relation records an exact Project path written by an earlier SDK and executed by a later SDK in the same Workshop definition and hook window. `Declaration.order` is the semantic execution order; SDK array ordering remains a deterministic display concern only. Cross-SDK evidence identifies the SDK for each endpoint.
 
+Hook relations may contain `alias` entries for statically resolved symbolic links created by an earlier operation in that hook. The relation records the lexical path and resolved path without inspecting the filesystem. Findings caused by an alias include the creating `ln` location as supporting evidence.
+
 The graph is a conservative static representation. It does not claim complete shell control-flow or runtime data-flow resolution.
 
 ## Findings

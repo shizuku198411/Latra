@@ -167,6 +167,48 @@ func TestProjectSourceDeletionIsHighRisk(t *testing.T) {
 	}
 }
 
+func TestProjectAliasReusesMutationFindings(t *testing.T) {
+	t.Parallel()
+
+	content := `ln -s /project /tmp/workspace
+cp /tmp/ci.yml /tmp/workspace/.github/workflows/alias.yml
+rm -rf /tmp/workspace/src
+`
+	findings := finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject))
+	control := findFinding(findings, "risk.project-control-file-modification")
+	deletion := findFinding(findings, "risk.project-source-deletion")
+	if control == nil || control.Evidence[0].NormalizedValue != "/project/.github/workflows/alias.yml" {
+		t.Fatalf("alias control modification = %#v; all = %#v", control, findings)
+	}
+	if deletion == nil || deletion.Evidence[0].NormalizedValue != "/project/src" {
+		t.Fatalf("alias source deletion = %#v; all = %#v", deletion, findings)
+	}
+	for _, got := range []*finding.Finding{control, deletion} {
+		var alias bool
+		for _, evidence := range got.Evidence {
+			alias = alias || evidence.Type == "alias" && evidence.NormalizedValue != ""
+		}
+		if !alias {
+			t.Errorf("missing alias evidence: %#v", got.Evidence)
+		}
+	}
+}
+
+func TestNonProjectAndCyclicAliasesDoNotCreateProjectFindings(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"ln -s /tmp/source /tmp/workspace\ncp /tmp/ci.yml /tmp/workspace/.github/workflows/alias.yml\n",
+		"ln -s /tmp/b /tmp/a\nln -s /tmp/a /tmp/b\ncp /tmp/ci.yml /tmp/a/.github/workflows/alias.yml\n",
+		"ln -s /project /tmp/workspace\nrm /tmp/workspace\ncp /tmp/ci.yml /tmp/workspace/.github/workflows/alias.yml\n",
+	} {
+		findings := finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject))
+		if got := findFinding(findings, "risk.project-control-file-modification"); got != nil {
+			t.Errorf("non-Project/invalidated alias matched control modification: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
 func TestProjectExecutableCreationRequiresWriteAndChmod(t *testing.T) {
 	t.Parallel()
 

@@ -1,4 +1,8 @@
 command-definitions:
+  ln:
+    category: filesystem-utility
+    description: Creates hard or symbolic filesystem links.
+
   "[":
     category: shell-builtin
     description: POSIX test shell builtin.

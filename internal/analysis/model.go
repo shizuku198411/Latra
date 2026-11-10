@@ -80,6 +80,7 @@ const (
 	RelationCall             RelationKind = "call"
 	RelationArgumentFlow     RelationKind = "argument-flow"
 	RelationInclude          RelationKind = "include"
+	RelationAlias            RelationKind = "alias"
 )
 
 // Provenance records where an artifact consumed by a relation originated.
