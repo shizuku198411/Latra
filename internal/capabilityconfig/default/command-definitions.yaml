@@ -131,6 +131,10 @@ command-definitions:
     category: sdk-tool
     description: Rust dependency vulnerability auditing tool.
 
+  clang:
+    category: sdk-tool
+    description: C language compiler.
+
   ccls:
     category: sdk-tool
     description: C and C++ language server.
