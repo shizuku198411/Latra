@@ -3,6 +3,7 @@ package analysis_test
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/shizuku198411/Latra/internal/analysis"
@@ -632,8 +633,14 @@ cp -t /project/out /root/.ssh/id_one /root/.ssh/id_two
 	if counts["project-read|path.project.read"] != 4 {
 		t.Errorf("project reads = %d, want 4; all: %#v", counts["project-read|path.project.read"], counts)
 	}
-	if counts["project-write|path.project.write"] != 2 {
-		t.Errorf("project writes = %d, want 2; all: %#v", counts["project-write|path.project.write"], counts)
+	projectWrites := 0
+	for key, count := range counts {
+		if strings.HasPrefix(key, "project-write|path.project") && strings.HasSuffix(key, ".write") {
+			projectWrites += count
+		}
+	}
+	if projectWrites != 2 {
+		t.Errorf("project writes = %d, want 2; all: %#v", projectWrites, counts)
 	}
 }
 

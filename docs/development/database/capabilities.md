@@ -100,6 +100,13 @@ file targets. They are defined in `path-classes.yaml`; only classes mapped in
 | `state` | Persisted Workshop SDK state. |
 | `sdk` | SDK-owned files and paths derived from the `SDK` variable. |
 | `project` | Files under `/project`. |
+| `project-vcs-control` | Project Git configuration, submodule metadata, and repository hooks. |
+| `project-ci-control` | Project continuous-integration workflow and pipeline definitions. |
+| `project-build-control` | Project build and package lifecycle configuration. |
+| `project-dependency-control` | Project dependency manifests and lock files. |
+| `project-execution-control` | Project scripts and development task configuration that can run commands later. |
+| `project-source` | Project source trees whose deletion affects repository integrity. |
+| `project-generated` | Well-known Project build-output directories such as `build`, `dist`, `out`, and `target`. |
 | `root-home` | Files under `/root`. |
 | `user-home` | Files under `/home/workshop`. |
 | `runtime` | Runtime state under `/run`. |

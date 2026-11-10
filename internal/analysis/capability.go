@@ -14,6 +14,13 @@ type PathClass string
 const (
 	PathSDK                       PathClass = "sdk"
 	PathProject                   PathClass = "project"
+	PathProjectVCSControl         PathClass = "project-vcs-control"
+	PathProjectCIControl          PathClass = "project-ci-control"
+	PathProjectBuildControl       PathClass = "project-build-control"
+	PathProjectDependencyControl  PathClass = "project-dependency-control"
+	PathProjectExecutionControl   PathClass = "project-execution-control"
+	PathProjectSource             PathClass = "project-source"
+	PathProjectGenerated          PathClass = "project-generated"
 	PathUserHome                  PathClass = "user-home"
 	PathRootHome                  PathClass = "root-home"
 	PathState                     PathClass = "state"
@@ -81,6 +88,22 @@ func classifyPath(value Value, context HookContext, config *capabilityconfig.Con
 	}
 	if value.Resolution != Resolved && matchesKnownFragment(value, config.PathClasses[string(PathPersistence)]) {
 		return PathPersistence
+	}
+	if isProjectPath(path) {
+		relative := strings.TrimPrefix(strings.TrimPrefix(path, "/project"), "/")
+		for _, class := range []PathClass{
+			PathProjectVCSControl,
+			PathProjectCIControl,
+			PathProjectBuildControl,
+			PathProjectDependencyControl,
+			PathProjectExecutionControl,
+			PathProjectSource,
+			PathProjectGenerated,
+		} {
+			if matchesPath(relative, config.PathClasses[string(class)]) {
+				return class
+			}
+		}
 	}
 	if matchesExactOrPrefix(path, config.PathClasses[string(PathProject)]) {
 		return PathProject

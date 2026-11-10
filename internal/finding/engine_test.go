@@ -124,6 +124,107 @@ func TestProjectInPlaceModificationIsRisk(t *testing.T) {
 	}
 }
 
+func TestProjectControlFileModificationIsHighRisk(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"printf payload > Makefile\n",
+		"printf payload > /project/.github/workflows/ci.yml\n",
+		"printf payload > /project/.git/config\n",
+		"cp /tmp/tool /project/scripts/build.sh\n",
+	} {
+		got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-control-file-modification")
+		if got == nil || got.Severity != "high" || got.Weight != 50 {
+			t.Fatalf("project control modification = %#v for %q", got, content)
+		}
+	}
+
+	for _, content := range []string{
+		"printf generated > dist/package.txt\n",
+		"git clone https://example.invalid/repo vendor/repo\n",
+		"printf generated > /tmp/Makefile\n",
+	} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-control-file-modification"); got != nil {
+			t.Errorf("benign/non-project write matched control modification: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
+func TestProjectSourceDeletionIsHighRisk(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{"rm -rf src\n", "rm -- /project/Makefile\n"} {
+		got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-source-deletion")
+		if got == nil || got.Severity != "high" {
+			t.Fatalf("project deletion = %#v for %q", got, content)
+		}
+	}
+
+	for _, content := range []string{"rm -rf dist\n", "rm -f /tmp/Makefile\n"} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-source-deletion"); got != nil {
+			t.Errorf("generated/non-project deletion matched: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
+func TestProjectExecutableCreationRequiresWriteAndChmod(t *testing.T) {
+	t.Parallel()
+
+	positive := "printf '#!/bin/sh' > scripts/tool.sh\nchmod +x scripts/tool.sh\n"
+	got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, positive, sdk.HookSetupProject)), "risk.project-executable-created")
+	if got == nil || got.Severity != "high" || len(got.Evidence) != 2 {
+		t.Fatalf("project executable finding = %#v", got)
+	}
+
+	for _, content := range []string{
+		"chmod +x scripts/existing.sh\n",
+		"printf '#!/bin/sh' > scripts/tool.sh\n",
+		"printf '#!/bin/sh' > /tmp/tool\nchmod +x /tmp/tool\n",
+	} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-executable-created"); got != nil {
+			t.Errorf("uncorrelated executable matched: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
+func TestProjectPermissionModificationIsRisk(t *testing.T) {
+	t.Parallel()
+
+	got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, "chmod 0600 config.txt\n", sdk.HookSetupProject)), "risk.project-permission-modification")
+	if got == nil || got.Severity != "medium" || got.Weight != 25 {
+		t.Fatalf("project permission finding = %#v", got)
+	}
+	if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, "chmod 0600 /tmp/config.txt\n", sdk.HookSetupProject)), "risk.project-permission-modification"); got != nil {
+		t.Fatalf("non-project permission matched: %#v", got)
+	}
+}
+
+func TestProjectVCSStateRewriteIsHighRisk(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"git reset --hard HEAD\n",
+		"git -C /project clean -ffdx\n",
+		"git remote set-url origin https://example.invalid/repo.git\n",
+		"git update-index --skip-worktree package.json\n",
+	} {
+		got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-vcs-state-rewrite")
+		if got == nil || got.Severity != "high" || got.Weight != 50 {
+			t.Fatalf("VCS rewrite = %#v for %q", got, content)
+		}
+	}
+
+	for _, content := range []string{
+		"git status\n",
+		"git diff\n",
+		"git -C /tmp/repo reset --hard HEAD\n",
+	} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-vcs-state-rewrite"); got != nil {
+			t.Errorf("read-only/non-project Git matched: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
 func TestToolchainSearchOrderHijackRequiresCorrelatedBehavior(t *testing.T) {
 	t.Parallel()
 

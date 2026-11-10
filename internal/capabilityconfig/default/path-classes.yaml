@@ -103,6 +103,71 @@ path-classes:
       - /project
     prefixes:
       - /project/
+  project-vcs-control:
+    exact:
+      - .git/config
+      - .gitmodules
+    prefixes:
+      - .git/hooks/
+  project-ci-control:
+    exact:
+      - .gitlab-ci.yml
+      - Jenkinsfile
+    prefixes:
+      - .github/workflows/
+  project-build-control:
+    exact:
+      - Makefile
+      - CMakeLists.txt
+      - meson.build
+      - package.json
+      - pyproject.toml
+    basenames:
+      - Makefile
+      - CMakeLists.txt
+      - meson.build
+      - build.gradle
+      - build.gradle.kts
+      - package.json
+      - pyproject.toml
+  project-dependency-control:
+    basenames:
+      - Cargo.lock
+      - Gemfile.lock
+      - go.mod
+      - go.sum
+      - package-lock.json
+      - pnpm-lock.yaml
+      - poetry.lock
+      - requirements.txt
+      - uv.lock
+      - yarn.lock
+  project-execution-control:
+    exact:
+      - .envrc
+      - .vscode/tasks.json
+      - justfile
+    prefixes:
+      - .devcontainer/
+      - scripts/
+    suffixes:
+      - .sh
+  project-source:
+    exact:
+      - src
+    prefixes:
+      - src/
+  project-generated:
+    exact:
+      - build
+      - dist
+      - out
+      - target
+    prefixes:
+      - build/
+      - dist/
+      - out/
+      - target/
   root-home:
     exact:
       - /root

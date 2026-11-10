@@ -105,6 +105,9 @@ func validate(config *Config) error {
 		"relation-flow": true, "path-write": true, "persistence-write": true,
 		"profile-environment-write": true, "repository-persistence": true,
 		"project-in-place-modification": true, "toolchain-search-order-hijack": true,
+		"project-control-modification": true, "project-deletion": true,
+		"project-executable-created": true, "project-permission-modification": true,
+		"project-vcs-state-rewrite": true,
 	}
 	for _, rule := range config.Rules {
 		if !identifierPattern.MatchString(rule.ID) || seen[rule.ID] {
