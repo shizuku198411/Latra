@@ -1050,7 +1050,7 @@ func matchRelationFlows(item sdk.SDK, rule findingconfig.Rule) []match {
 						sinks = []analysis.Capability{{OperationID: reachable.id, Operation: sink.Kind, Resolution: sink.Resolution, Location: sink.Location}}
 					}
 					for _, sinkCapability := range sinks {
-						matches = append(matches, flowMatch(hook, rule, sourceCapability, sinkCapability, reachable.resolution))
+						matches = append(matches, flowMatch(hook, rule, sourceCapability, sinkCapability, reachable.resolution, reachable.path))
 					}
 				}
 			}
@@ -1062,10 +1062,12 @@ func matchRelationFlows(item sdk.SDK, rule findingconfig.Rule) []match {
 type reachableOperation struct {
 	id         string
 	resolution analysis.Resolution
+	path       []analysis.Relation
 }
 
 func reachableSinks(sourceID string, sourceResolution analysis.Resolution, relations []analysis.Relation, flowKinds []string) []reachableOperation {
 	best := map[string]analysis.Resolution{sourceID: sourceResolution}
+	paths := map[string][]analysis.Relation{sourceID: nil}
 	queue := []string{sourceID}
 	for len(queue) > 0 {
 		current := queue[0]
@@ -1088,13 +1090,14 @@ func reachableSinks(sourceID string, sourceResolution analysis.Resolution, relat
 				continue
 			}
 			best[next] = resolution
+			paths[next] = append(append([]analysis.Relation{}, paths[current]...), relation)
 			queue = append(queue, next)
 		}
 	}
 	reachable := make([]reachableOperation, 0, len(best)-1)
 	for id, resolution := range best {
 		if id != sourceID {
-			reachable = append(reachable, reachableOperation{id: id, resolution: resolution})
+			reachable = append(reachable, reachableOperation{id: id, resolution: resolution, path: paths[id]})
 		}
 	}
 	sort.Slice(reachable, func(i, j int) bool { return reachable[i].id < reachable[j].id })
@@ -1107,22 +1110,31 @@ func sameOperationFlow(hook *sdk.Hook, rule findingconfig.Rule, source analysis.
 		if sink.OperationID == "" || sink.OperationID != source.OperationID || sink.Kind == source.Kind {
 			continue
 		}
-		matches = append(matches, flowMatch(hook, rule, source, sink, combinedResolution(source.Resolution, sink.Resolution)))
+		matches = append(matches, flowMatch(hook, rule, source, sink, combinedResolution(source.Resolution, sink.Resolution), nil))
 	}
 	return matches
 }
 
-func flowMatch(hook *sdk.Hook, rule findingconfig.Rule, source, sink analysis.Capability, relationResolution analysis.Resolution) match {
+func flowMatch(hook *sdk.Hook, rule findingconfig.Rule, source, sink analysis.Capability, relationResolution analysis.Resolution, path []analysis.Relation) match {
 	resolution := combinedResolution(combinedResolution(source.Resolution, sink.Resolution), relationResolution)
 	fromLocation, toLocation := source.Location, sink.Location
-	return match{hook: hook, key: source.OperationID + "->" + sink.OperationID + ":" + capabilityTargetKey(source) + ":" + capabilityTargetKey(sink), confidence: confidenceFor(resolution), evidence: []Evidence{
+	evidence := []Evidence{
 		{Type: "capability", ID: source.Kind, OperationID: source.OperationID, Value: source.Target.Literal,
 			NormalizedValue: source.NormalizedTarget.Literal, NormalizedCandidates: append([]string{}, source.NormalizedTarget.Candidates...),
 			Resolution: source.Resolution, Location: &fromLocation},
-		{Type: "data-flow", ID: sinkEvidenceID(rule), OperationID: sink.OperationID, FromOperationID: source.OperationID, ToOperationID: sink.OperationID,
-			Value: sink.Target.Literal, NormalizedValue: sink.NormalizedTarget.Literal, NormalizedCandidates: append([]string{}, sink.NormalizedTarget.Candidates...),
-			Resolution: resolution, Location: &toLocation},
-	}}
+	}
+	for _, relation := range path {
+		if relation.Kind != analysis.RelationArtifactFlow && relation.Kind != analysis.RelationCollectionFlow {
+			continue
+		}
+		evidence = append(evidence, Evidence{Type: "artifact-flow", ID: string(relation.Kind), OperationID: relation.ToOperationID,
+			FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
+			Value: relation.Artifact.Literal, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution})
+	}
+	evidence = append(evidence, Evidence{Type: "data-flow", ID: sinkEvidenceID(rule), OperationID: sink.OperationID, FromOperationID: source.OperationID, ToOperationID: sink.OperationID,
+		Value: sink.Target.Literal, NormalizedValue: sink.NormalizedTarget.Literal, NormalizedCandidates: append([]string{}, sink.NormalizedTarget.Candidates...),
+		Resolution: resolution, Location: &toLocation})
+	return match{hook: hook, key: source.OperationID + "->" + sink.OperationID + ":" + capabilityTargetKey(source) + ":" + capabilityTargetKey(sink), confidence: confidenceFor(resolution), evidence: evidence}
 }
 
 func capabilityTargetKey(capability analysis.Capability) string {

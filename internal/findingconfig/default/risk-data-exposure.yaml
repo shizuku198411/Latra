@@ -33,6 +33,9 @@ finding-rules:
         - pipeline
         - substitution-flow
         - variable-flow
+        - redirect-flow
+        - artifact-flow
+        - collection-flow
       source-capability: project-read
       sink-capability: external-send
       same-operation: true
@@ -54,6 +57,9 @@ finding-rules:
         - pipeline
         - substitution-flow
         - variable-flow
+        - redirect-flow
+        - artifact-flow
+        - collection-flow
       source-capability: project-sensitive-file-read
       sink-capability: external-send
       same-operation: true

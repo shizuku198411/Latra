@@ -1,4 +1,49 @@
 file-command-rules:
+  - id: file.tar-create-output
+    commands:
+      - tar
+    match:
+      short-flag-set:
+        - -c
+        - -f
+        - -v
+        - -z
+        - -j
+        - -J
+      any-short-flags:
+        - -c
+    option-operands:
+      - options:
+          - name: -f
+            value-styles:
+              - next
+              - attached
+          - name: --file
+            value-styles:
+              - next
+              - equals
+        access: write
+
+  - id: file.tar-create-output-long
+    commands:
+      - tar
+    match:
+      any-options:
+        - name: --create
+          value-styles:
+            - none
+    option-operands:
+      - options:
+          - name: -f
+            value-styles:
+              - next
+              - attached
+          - name: --file
+            value-styles:
+              - next
+              - equals
+        access: write
+
   - id: file.curl-output
     commands:
       - curl

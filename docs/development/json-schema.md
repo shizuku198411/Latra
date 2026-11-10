@@ -131,7 +131,7 @@ The hook-level `relations` array connects operation IDs:
 | `variable-flow` | A variable assignment may supply a later reference in the same lexical scope. |
 | `redirect-flow` | Standard output from a producing command is written by an output redirect in the same shell statement. |
 
-Each capability includes `operationId`, linking the inferred behavior to its source operation. Relations and capabilities also carry `resolution`; consumers must preserve uncertainty rather than treating `PartiallyResolved` or `Unknown` as conclusive flow.
+Each capability includes `operationId`, linking the inferred behavior to its source operation. Relations and capabilities also carry `resolution`; consumers must preserve uncertainty rather than treating `PartiallyResolved` or `Unknown` as conclusive flow. `artifact-flow` and `collection-flow` relations additionally record the normalized artifact and its provenance so reports can explain a Project input transformed through temporary files before reaching a sink.
 
 The graph is a conservative static representation. It does not claim complete shell control-flow or runtime data-flow resolution.
 

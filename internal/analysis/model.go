@@ -75,7 +75,18 @@ const (
 	RelationSubstitutionFlow RelationKind = "substitution-flow"
 	RelationVariableFlow     RelationKind = "variable-flow"
 	RelationRedirectFlow     RelationKind = "redirect-flow"
+	RelationArtifactFlow     RelationKind = "artifact-flow"
+	RelationCollectionFlow   RelationKind = "collection-flow"
 )
+
+// Provenance records where an artifact consumed by a relation originated.
+// It deliberately describes derivation rather than byte-for-byte identity.
+type Provenance struct {
+	Kind       string     `json:"kind"`
+	SourceOps  []string   `json:"sourceOperations,omitempty"`
+	Paths      []Value    `json:"paths,omitempty"`
+	Resolution Resolution `json:"resolution"`
+}
 
 // Relation connects two operations in the per-hook analysis graph.
 type Relation struct {
@@ -84,6 +95,8 @@ type Relation struct {
 	ToOperationID   string       `json:"toOperationId"`
 	Name            string       `json:"name,omitempty"`
 	Resolution      Resolution   `json:"resolution"`
+	Artifact        Value        `json:"artifact,omitzero"`
+	Provenance      []Provenance `json:"provenance,omitempty"`
 }
 
 // Operation is Latra's parser-independent representation of shell behavior.

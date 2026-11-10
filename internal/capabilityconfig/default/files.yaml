@@ -1,4 +1,42 @@
 file-command-rules:
+  - id: file.find-root
+    commands:
+      - find
+    options:
+      - name: -type
+        value-styles:
+          - next
+      - name: -name
+        value-styles:
+          - next
+      - name: -path
+        value-styles:
+          - next
+      - name: -maxdepth
+        value-styles:
+          - next
+      - name: -mindepth
+        value-styles:
+          - next
+    operands:
+      - selector: first
+        access: read
+
+  - id: file.tar-files-from
+    commands:
+      - tar
+    option-operands:
+      - options:
+          - name: -T
+            value-styles:
+              - next
+              - attached
+          - name: --files-from
+            value-styles:
+              - next
+              - equals
+        access: read
+
   - id: file.copy-normal
     commands:
       - cp
