@@ -135,6 +135,8 @@ Each capability includes `operationId`, linking the inferred behavior to its sou
 
 Statically resolved SDK-local includes are represented by `include` relations carrying the inventory path and digest. Operations from the included file retain their own source locations, while Finding evidence also records the calling `source` location. Function calls use bounded expansion and expose `call` and `argument-flow` relations; unresolved or resource-limited includes remain dynamic and emit diagnostics.
 
+SDK entries may also contain `lifecycleRelations`. A `state-flow` connects a `save-state` write to a matching `restore-state` read using the statically known path below `$SDK_STATE_DIR`. Its resolution remains partial and its limitation explicitly states that channel reachability does not prove byte identity across SDK revisions.
+
 The graph is a conservative static representation. It does not claim complete shell control-flow or runtime data-flow resolution.
 
 ## Findings

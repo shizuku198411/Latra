@@ -225,6 +225,47 @@ func TestProjectVCSStateRewriteIsHighRisk(t *testing.T) {
 	}
 }
 
+func TestStateLifecycleRisks(t *testing.T) {
+	t.Parallel()
+
+	save := analyzedSDK(t, `cp /project/.env "$SDK_STATE_DIR/archive/project.env"
+cp /project/scripts/restore.sh "$SDK_STATE_DIR/restore.sh"
+`, sdk.HookSaveState)
+	restore := analyzedSDK(t, `install -m 0755 "$SDK_STATE_DIR/restore.sh" /project/scripts/post-restore.sh
+cp "$SDK_STATE_DIR/archive/project.env" /project/.restored-environment
+`, sdk.HookRestoreState)
+	save.Hooks = append(save.Hooks, restore.Hooks...)
+	findings := finding.AnalyzeSDK(save)
+	secret := findFinding(findings, "risk.project-secret-persisted-to-state")
+	project := findFinding(findings, "risk.state-content-to-project")
+	if secret == nil || secret.Severity != "high" {
+		t.Fatalf("secret state finding = %#v; all = %#v", secret, findings)
+	}
+	if project == nil || project.Severity != "high" || len(project.Evidence) < 3 {
+		t.Fatalf("state Project finding = %#v; all = %#v", project, findings)
+	}
+	if project.Evidence[1].ID != "state-flow" || project.Evidence[2].NormalizedValue != "/project/scripts/post-restore.sh" {
+		t.Errorf("state flow evidence = %#v", project.Evidence)
+	}
+}
+
+func TestOrdinaryStateCacheRestoreIsNotHighRisk(t *testing.T) {
+	t.Parallel()
+
+	save := analyzedSDK(t, `cp /tmp/compiler-cache "$SDK_STATE_DIR/compiler-cache"
+`, sdk.HookSaveState)
+	restore := analyzedSDK(t, `cp "$SDK_STATE_DIR/compiler-cache" /project/.cache/compiler-cache
+`, sdk.HookRestoreState)
+	save.Hooks = append(save.Hooks, restore.Hooks...)
+	findings := finding.AnalyzeSDK(save)
+	if got := findFinding(findings, "risk.project-secret-persisted-to-state"); got != nil {
+		t.Errorf("ordinary cache matched secret persistence: %#v", got)
+	}
+	if got := findFinding(findings, "risk.state-content-to-project"); got != nil {
+		t.Errorf("ordinary cache matched control restoration: %#v", got)
+	}
+}
+
 func TestToolchainSearchOrderHijackRequiresCorrelatedBehavior(t *testing.T) {
 	t.Parallel()
 

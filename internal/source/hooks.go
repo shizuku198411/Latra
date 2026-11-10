@@ -55,11 +55,82 @@ func ParseHooks(result *Result, parser *shell.Parser) error {
 				incomplete++
 			}
 		}
+		item.LifecycleRelations = buildStateLifecycleRelations(item.Hooks)
 	}
 	if incomplete > 0 {
 		return &HookParseError{Count: incomplete}
 	}
 	return nil
+}
+
+func buildStateLifecycleRelations(hooks []sdk.Hook) []sdk.LifecycleRelation {
+	type occurrence struct {
+		hook       sdk.HookName
+		capability analysis.Capability
+		path       analysis.Value
+	}
+	var writes, reads []occurrence
+	for _, hook := range hooks {
+		if hook.Analysis == nil {
+			continue
+		}
+		for _, capability := range hook.Analysis.Capabilities {
+			statePath, ok := canonicalStatePath(capability.Target)
+			if !ok {
+				continue
+			}
+			switch {
+			case hook.Name == sdk.HookSaveState && capability.Kind == "state-write":
+				writes = append(writes, occurrence{hook: hook.Name, capability: capability, path: statePath})
+			case hook.Name == sdk.HookRestoreState && capability.Kind == "state-read":
+				reads = append(reads, occurrence{hook: hook.Name, capability: capability, path: statePath})
+			}
+		}
+	}
+	var relations []sdk.LifecycleRelation
+	seen := make(map[string]bool)
+	for _, write := range writes {
+		for _, read := range reads {
+			if write.path.Literal == "" || write.path.Literal != read.path.Literal {
+				continue
+			}
+			key := write.capability.OperationID + "\x00" + read.capability.OperationID + "\x00" + write.path.Literal
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			relations = append(relations, sdk.LifecycleRelation{
+				Kind: "state-flow", FromHook: write.hook, ToHook: read.hook,
+				FromOperationID: write.capability.OperationID, ToOperationID: read.capability.OperationID,
+				StatePath: write.path, Resolution: analysis.PartiallyResolved,
+				Limitation: "State channel reachability may span SDK revisions; content identity is not asserted.",
+			})
+		}
+	}
+	return relations
+}
+
+func canonicalStatePath(value analysis.Value) (analysis.Value, bool) {
+	var suffix strings.Builder
+	foundState := false
+	for _, part := range value.Parts {
+		switch part.Kind {
+		case analysis.PartVariableReference:
+			if part.Name != "SDK_STATE_DIR" {
+				return analysis.Value{}, false
+			}
+			foundState = true
+		case analysis.PartLiteral, analysis.PartQuotedLiteral:
+			suffix.WriteString(part.Text)
+		default:
+			return analysis.Value{}, false
+		}
+	}
+	if !foundState {
+		return analysis.Value{}, false
+	}
+	cleaned := path.Clean("/" + strings.TrimPrefix(suffix.String(), "/"))
+	return analysis.Value{Parts: append([]analysis.ValuePart{}, value.Parts...), Resolution: analysis.PartiallyResolved, Literal: cleaned}, true
 }
 
 func sdkTextFiles(item sdk.SDK) map[string]sdk.File {

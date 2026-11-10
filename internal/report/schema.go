@@ -180,19 +180,20 @@ type ProjectAccessSummary struct {
 }
 
 type SDK struct {
-	Name         string              `json:"name"`
-	Source       sdk.Source          `json:"source"`
-	State        sdk.ResolutionState `json:"state"`
-	Channel      string              `json:"channel,omitempty"`
-	Root         string              `json:"root,omitempty"`
-	Digest       string              `json:"digest,omitempty"`
-	MetadataPath string              `json:"metadataPath,omitempty"`
-	Metadata     *sdk.Metadata       `json:"metadata,omitempty"`
-	Declarations []sdk.Declaration   `json:"declarations"`
-	Files        []File              `json:"files"`
-	Hooks        []Hook              `json:"hooks"`
-	Diagnostics  []sdk.Diagnostic    `json:"diagnostics,omitempty"`
-	Findings     []finding.Finding   `json:"findings"`
+	Name               string                  `json:"name"`
+	Source             sdk.Source              `json:"source"`
+	State              sdk.ResolutionState     `json:"state"`
+	Channel            string                  `json:"channel,omitempty"`
+	Root               string                  `json:"root,omitempty"`
+	Digest             string                  `json:"digest,omitempty"`
+	MetadataPath       string                  `json:"metadataPath,omitempty"`
+	Metadata           *sdk.Metadata           `json:"metadata,omitempty"`
+	Declarations       []sdk.Declaration       `json:"declarations"`
+	Files              []File                  `json:"files"`
+	Hooks              []Hook                  `json:"hooks"`
+	Diagnostics        []sdk.Diagnostic        `json:"diagnostics,omitempty"`
+	Findings           []finding.Finding       `json:"findings"`
+	LifecycleRelations []sdk.LifecycleRelation `json:"lifecycleRelations,omitempty"`
 }
 
 type File struct {
@@ -264,11 +265,12 @@ func NewDocument(result *source.Result) Document {
 		reported := SDK{
 			Name: item.Name, Source: item.Source, State: item.State, Channel: item.Channel,
 			Root: item.Root, Digest: item.Digest, MetadataPath: item.MetadataPath, Metadata: item.Metadata,
-			Declarations: append([]sdk.Declaration{}, item.Declarations...),
-			Files:        reportFiles(item.Files),
-			Hooks:        []Hook{},
-			Diagnostics:  append([]sdk.Diagnostic{}, item.Diagnostics...),
-			Findings:     finding.AnalyzeSDK(item),
+			Declarations:       append([]sdk.Declaration{}, item.Declarations...),
+			Files:              reportFiles(item.Files),
+			Hooks:              []Hook{},
+			Diagnostics:        append([]sdk.Diagnostic{}, item.Diagnostics...),
+			Findings:           finding.AnalyzeSDK(item),
+			LifecycleRelations: append([]sdk.LifecycleRelation{}, item.LifecycleRelations...),
 		}
 		assessmentInputs = append(assessmentInputs, finding.AssessmentInput{SDK: item, Findings: reported.Findings})
 		for _, diagnostic := range item.Diagnostics {

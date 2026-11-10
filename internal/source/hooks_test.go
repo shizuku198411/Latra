@@ -99,6 +99,28 @@ func TestParseHooksStopsIncludeCycle(t *testing.T) {
 	}
 }
 
+func TestParseHooksBuildsStateLifecycleRelation(t *testing.T) {
+	t.Parallel()
+
+	result := &source.Result{SDKs: []sdk.SDK{{
+		Name: "fixture", State: sdk.StateResolved,
+		Hooks: []sdk.Hook{
+			{Name: sdk.HookSaveState, Path: "hooks/save-state", Content: []byte("cp /project/tool.sh \"$SDK_STATE_DIR/tool.sh\"\n")},
+			{Name: sdk.HookRestoreState, Path: "hooks/restore-state", Content: []byte("cp \"$SDK_STATE_DIR/tool.sh\" /project/scripts/tool.sh\n")},
+		},
+	}}}
+	if err := source.ParseHooks(result, shell.NewParser()); err != nil {
+		t.Fatal(err)
+	}
+	relations := result.SDKs[0].LifecycleRelations
+	if len(relations) != 1 || relations[0].Kind != "state-flow" || relations[0].StatePath.Literal != "/tool.sh" || relations[0].Resolution != analysis.PartiallyResolved {
+		t.Fatalf("lifecycle relations = %#v", relations)
+	}
+	if relations[0].Limitation == "" {
+		t.Error("state relation must describe revision/content limitation")
+	}
+}
+
 func TestParseHooksReportsIncompleteSource(t *testing.T) {
 	t.Parallel()
 

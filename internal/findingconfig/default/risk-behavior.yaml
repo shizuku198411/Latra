@@ -1,4 +1,28 @@
 finding-rules:
+  - id: risk.state-content-to-project
+    kind: risk
+    family: project-integrity
+    title: Persisted SDK state can modify Project execution controls
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: state-to-project
+      hook-names:
+        - restore-state
+      state-mounted: true
+      project-mounted: true
+      path-classes:
+        - project-vcs-control
+        - project-ci-control
+        - project-build-control
+        - project-dependency-control
+        - project-execution-control
+    message: Content reachable through persisted SDK state is restored into a Project control or execution path.
+    remediation: Validate and authenticate state content before restoring it, and never restore executable or control files into the Project.
+    limitations:
+      - State channel reachability does not assert byte identity across SDK revisions.
+
   - id: risk.unknown-command-root
     kind: risk
     family: remote-execution

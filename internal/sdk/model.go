@@ -136,18 +136,32 @@ type Hook struct {
 	Analysis *analysis.Result `json:"analysis,omitempty"`
 }
 
+// LifecycleRelation connects state capabilities across lifecycle hooks. It
+// records channel reachability, not byte identity across SDK revisions.
+type LifecycleRelation struct {
+	Kind            string              `json:"kind"`
+	FromHook        HookName            `json:"fromHook"`
+	ToHook          HookName            `json:"toHook"`
+	FromOperationID string              `json:"fromOperationId"`
+	ToOperationID   string              `json:"toOperationId"`
+	StatePath       analysis.Value      `json:"statePath"`
+	Resolution      analysis.Resolution `json:"resolution"`
+	Limitation      string              `json:"limitation,omitempty"`
+}
+
 // SDK is the source-resolution result consumed by later analysis stages.
 type SDK struct {
-	Name         string          `json:"name"`
-	Source       Source          `json:"source"`
-	State        ResolutionState `json:"state"`
-	Channel      string          `json:"channel,omitempty"`
-	Root         string          `json:"root,omitempty"`
-	MetadataPath string          `json:"metadataPath,omitempty"`
-	Metadata     *Metadata       `json:"metadata,omitempty"`
-	Hooks        []Hook          `json:"hooks,omitempty"`
-	Files        []File          `json:"files,omitempty"`
-	Digest       string          `json:"digest,omitempty"`
-	Declarations []Declaration   `json:"declarations,omitempty"`
-	Diagnostics  []Diagnostic    `json:"diagnostics,omitempty"`
+	Name               string              `json:"name"`
+	Source             Source              `json:"source"`
+	State              ResolutionState     `json:"state"`
+	Channel            string              `json:"channel,omitempty"`
+	Root               string              `json:"root,omitempty"`
+	MetadataPath       string              `json:"metadataPath,omitempty"`
+	Metadata           *Metadata           `json:"metadata,omitempty"`
+	Hooks              []Hook              `json:"hooks,omitempty"`
+	Files              []File              `json:"files,omitempty"`
+	Digest             string              `json:"digest,omitempty"`
+	Declarations       []Declaration       `json:"declarations,omitempty"`
+	Diagnostics        []Diagnostic        `json:"diagnostics,omitempty"`
+	LifecycleRelations []LifecycleRelation `json:"lifecycleRelations,omitempty"`
 }

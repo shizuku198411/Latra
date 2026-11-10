@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+cp /project/.env "$SDK_STATE_DIR/project.env"

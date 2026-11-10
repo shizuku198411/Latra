@@ -187,6 +187,10 @@ func evaluate(item sdk.SDK, rule findingconfig.Rule) []match {
 		return matchProjectPermissionModification(item, rule)
 	case "project-vcs-state-rewrite":
 		return matchProjectVCSStateRewrite(item, rule)
+	case "project-secret-to-state":
+		return matchProjectSecretToState(item, rule)
+	case "state-to-project":
+		return matchStateToProject(item, rule)
 	case "unknown-command":
 		return matchUnknownCommands(item, rule)
 	case "parse-status":
@@ -225,6 +229,145 @@ func evaluate(item sdk.SDK, rule findingconfig.Rule) []match {
 		return matchReadOnlyHealth(item, rule)
 	case "relation-flow":
 		return matchRelationFlows(item, rule)
+	}
+	return nil
+}
+
+func matchProjectSecretToState(item sdk.SDK, rule findingconfig.Rule) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if hook.Name != sdk.HookSaveState || hook.Analysis == nil || !hookMatches(hook, rule) {
+			continue
+		}
+		byOperation := capabilityOccurrencesByOperation(hook.Analysis.Capabilities)
+		for operationID, capabilities := range byOperation {
+			var secrets, writes []analysis.Capability
+			for _, capability := range capabilities {
+				switch capability.Kind {
+				case "project-sensitive-file-read":
+					secrets = append(secrets, capability)
+				case "state-write":
+					writes = append(writes, capability)
+				}
+			}
+			for _, secret := range secrets {
+				for _, write := range writes {
+					statePath, ok := stateCapabilityPath(write)
+					if !ok {
+						continue
+					}
+					secretLocation, writeLocation := secret.Location, write.Location
+					matches = append(matches, match{hook: hook, key: operationID + ":" + statePath, confidence: "medium", evidence: []Evidence{
+						{Type: "capability", ID: "project-sensitive-file-read", OperationID: operationID, Value: secret.Target.Literal, NormalizedValue: capabilityTarget(secret), Resolution: secret.Resolution, Location: &secretLocation},
+						{Type: "lifecycle-flow", ID: "project-secret-to-state", OperationID: operationID, FromOperationID: operationID, ToOperationID: operationID, Value: write.Target.Literal, NormalizedValue: statePath, Resolution: analysis.PartiallyResolved, Location: &writeLocation},
+					}})
+				}
+			}
+		}
+	}
+	return matches
+}
+
+func matchStateToProject(item sdk.SDK, rule findingconfig.Rule) []match {
+	relations := item.LifecycleRelations
+	if len(relations) == 0 {
+		relations = inferredStateLifecycleRelations(item)
+	}
+	var matches []match
+	for _, relation := range relations {
+		if relation.Kind != "state-flow" {
+			continue
+		}
+		saveHook := sdkHook(item, relation.FromHook)
+		restoreHook := sdkHook(item, relation.ToHook)
+		if saveHook == nil || restoreHook == nil || restoreHook.Analysis == nil || !hookMatches(restoreHook, rule) {
+			continue
+		}
+		var stateWrite analysis.Capability
+		for _, capability := range saveHook.Analysis.Capabilities {
+			if capability.Kind == "state-write" && capability.OperationID == relation.FromOperationID {
+				stateWrite = capability
+				break
+			}
+		}
+		for _, capability := range restoreHook.Analysis.Capabilities {
+			if capability.Kind != "project-write" || capability.OperationID != relation.ToOperationID {
+				continue
+			}
+			class := analysis.ClassifyPath(capability.NormalizedTarget)
+			if !contains(rule.Matcher.PathClasses, string(class)) {
+				continue
+			}
+			writeLocation, projectLocation := stateWrite.Location, capability.Location
+			matches = append(matches, match{hook: restoreHook, key: relation.FromOperationID + "->" + relation.ToOperationID + ":" + relation.StatePath.Literal, confidence: confidenceFor(relation.Resolution), evidence: []Evidence{
+				{Type: "capability", ID: "state-write", OperationID: relation.FromOperationID, Value: stateWrite.Target.Literal, NormalizedValue: relation.StatePath.Literal, Resolution: stateWrite.Resolution, Location: &writeLocation},
+				{Type: "lifecycle-flow", ID: "state-flow", OperationID: relation.ToOperationID, FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID, Value: relation.StatePath.Literal, NormalizedValue: relation.StatePath.Literal, Resolution: relation.Resolution},
+				{Type: "capability", ID: "state-content-project-write", OperationID: relation.ToOperationID, FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID, Value: capability.Target.Literal, NormalizedValue: capabilityTarget(capability), Resolution: capability.Resolution, Location: &projectLocation},
+			}})
+		}
+	}
+	return matches
+}
+
+func inferredStateLifecycleRelations(item sdk.SDK) []sdk.LifecycleRelation {
+	var writes, reads []analysis.Capability
+	for _, hook := range item.Hooks {
+		if hook.Analysis == nil {
+			continue
+		}
+		for _, capability := range hook.Analysis.Capabilities {
+			if hook.Name == sdk.HookSaveState && capability.Kind == "state-write" {
+				writes = append(writes, capability)
+			}
+			if hook.Name == sdk.HookRestoreState && capability.Kind == "state-read" {
+				reads = append(reads, capability)
+			}
+		}
+	}
+	var relations []sdk.LifecycleRelation
+	for _, write := range writes {
+		writePath, writeOK := stateCapabilityPath(write)
+		for _, read := range reads {
+			readPath, readOK := stateCapabilityPath(read)
+			if writeOK && readOK && writePath == readPath {
+				relations = append(relations, sdk.LifecycleRelation{Kind: "state-flow", FromHook: sdk.HookSaveState, ToHook: sdk.HookRestoreState,
+					FromOperationID: write.OperationID, ToOperationID: read.OperationID,
+					StatePath: analysis.Value{Literal: writePath, Resolution: analysis.PartiallyResolved}, Resolution: analysis.PartiallyResolved,
+					Limitation: "State channel reachability may span SDK revisions; content identity is not asserted."})
+			}
+		}
+	}
+	return relations
+}
+
+func stateCapabilityPath(capability analysis.Capability) (string, bool) {
+	var suffix strings.Builder
+	found := false
+	for _, part := range capability.Target.Parts {
+		switch part.Kind {
+		case analysis.PartVariableReference:
+			if part.Name != "SDK_STATE_DIR" {
+				return "", false
+			}
+			found = true
+		case analysis.PartLiteral, analysis.PartQuotedLiteral:
+			suffix.WriteString(part.Text)
+		default:
+			return "", false
+		}
+	}
+	if !found {
+		return "", false
+	}
+	return filepath.Clean("/" + strings.TrimPrefix(suffix.String(), "/")), true
+}
+
+func sdkHook(item sdk.SDK, name sdk.HookName) *sdk.Hook {
+	for index := range item.Hooks {
+		if item.Hooks[index].Name == name {
+			return &item.Hooks[index]
+		}
 	}
 	return nil
 }

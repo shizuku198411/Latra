@@ -108,6 +108,7 @@ func validate(config *Config) error {
 		"project-control-modification": true, "project-deletion": true,
 		"project-executable-created": true, "project-permission-modification": true,
 		"project-vcs-state-rewrite": true,
+		"project-secret-to-state":   true, "state-to-project": true,
 	}
 	for _, rule := range config.Rules {
 		if !identifierPattern.MatchString(rule.ID) || seen[rule.ID] {
