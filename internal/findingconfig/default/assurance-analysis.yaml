@@ -2,26 +2,29 @@ finding-rules:
   - id: assurance.all-hooks-parsed
     kind: assurance
     family: analysis-quality
-    title: All hooks parsed without recovery
+    title: All standard hook files parsed without recovery
     strength: medium
     confidence: high
     weight: 30
     match:
       type: all-hooks-parsed
-    message: Every detected hook was parsed without syntax recovery.
+    message: Every detected standard hook file parsed without syntax recovery.
+    limitations:
+      - This does not imply that sourced files, function calls, lifecycle flows, or cross-SDK effects were semantically resolved.
 
   - id: assurance.all-commands-known
     kind: assurance
     family: analysis-quality
-    title: All resolved commands are known
+    title: All resolved command names are known
     strength: low
     confidence: high
     weight: 10
     match:
       type: all-commands-known
-    message: Every resolved command invocation is covered by the embedded command database.
+    message: Every resolved command name is covered by the embedded command database.
     limitations:
       - Database coverage does not establish that command arguments are safe.
+      - A known command name does not imply complete command, data-flow, lifecycle, or composition semantics.
 
   - id: assurance.no-dynamic-execution
     kind: assurance

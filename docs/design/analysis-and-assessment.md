@@ -209,6 +209,7 @@ The current engine supports matchers for:
 - SDK-level state lifecycle flow from `save-state` writes to matching `restore-state` reads;
 - ordered, same-Workshop composition from an SDK Project write to a later SDK execution of the exact artifact path;
 - bounded static path-alias resolution for symbolic links created earlier in the same hook;
+- explicit semantic coverage dimensions and classification gates for unresolved behavior;
 - high-impact Project control-file modification, source deletion, executable creation, permission changes, and Git state rewrite.
 
 Assurance based on absence is only emitted when analysis is complete enough to support that conclusion. For example, an unknown command prevents `all-commands-known` and may prevent an absence-based assurance finding.
@@ -341,10 +342,17 @@ When there are no command operations, the command score is `100`.
 ### Combined coverage
 
 ```text
-coverage_score = round(0.6 * hook_score + 0.4 * command_score)
+base_coverage_score = round(0.6 * hook_score + 0.4 * command_score)
+coverage_score = min(base_coverage_score, semantic_coverage_score)
 ```
 
 Coverage is `sufficient` only when its score is at least `80` and no hook failed to parse. Otherwise it is `insufficient`.
+
+### Semantic coverage
+
+Semantic coverage reports `dataFlow`, `includedSources`, `functions`, `lifecycle`, `composition`, and `aliases` independently. Each dimension records applicable behavior, resolved behavior, and stable gap records. A critical gap deducts 25 points from semantic coverage and prevents a controlled classification. Examples include an unresolved include, an unexpanded function call, an external send with unlinked provenance, an unlinked state channel, unavailable SDK execution order, or a dynamic symbolic-link declaration.
+
+Semantic coverage is an upper bound on the existing syntax/command score. Fully resolved semantics therefore leave existing scores unchanged, while a semantic gap cannot be hidden by complete parsing or a known command name.
 
 An unresolved SDK or a resource limit affecting metadata, a standard hook, archive integrity, or complete archive traversal forces coverage to `0` and `insufficient`. Skipping only non-essential file content does not invalidate hook and command coverage.
 
@@ -371,6 +379,7 @@ Classification is evaluated in this order:
 
 | Condition | Classification |
 | --- | --- |
+| Critical semantic gap exists | `requires-semantic-review` |
 | Coverage is insufficient | `insufficient-evidence` |
 | Risk is at least 80 | `high-priority-review` |
 | Risk is at least 50 and assurance is at least 60 | `powerful-but-controlled` |

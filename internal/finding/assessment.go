@@ -2,6 +2,7 @@ package finding
 
 import (
 	"math"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,12 +52,226 @@ type FileCoverage struct {
 	ContentSkipped  int `json:"contentSkipped"`
 }
 
+type SemanticGap struct {
+	Code        string       `json:"code"`
+	Dimension   string       `json:"dimension"`
+	Severity    string       `json:"severity"`
+	Hook        sdk.HookName `json:"hook,omitempty"`
+	OperationID string       `json:"operationId,omitempty"`
+	Message     string       `json:"message"`
+}
+
+type SemanticDimension struct {
+	Applicable int `json:"applicable"`
+	Resolved   int `json:"resolved"`
+	Gaps       int `json:"gaps"`
+}
+
+type SemanticCoverage struct {
+	Score           int               `json:"score"`
+	Level           string            `json:"level"`
+	CriticalGaps    int               `json:"criticalGaps"`
+	DataFlow        SemanticDimension `json:"dataFlow"`
+	IncludedSources SemanticDimension `json:"includedSources"`
+	Functions       SemanticDimension `json:"functions"`
+	Lifecycle       SemanticDimension `json:"lifecycle"`
+	Composition     SemanticDimension `json:"composition"`
+	Aliases         SemanticDimension `json:"aliases"`
+	Gaps            []SemanticGap     `json:"gaps"`
+}
+
+func semanticCoverageForSDK(item sdk.SDK) SemanticCoverage {
+	coverage := SemanticCoverage{Gaps: []SemanticGap{}}
+	for _, declaration := range item.Declarations {
+		coverage.Composition.Applicable++
+		if declaration.Definition != "" && declaration.Workshop != "" && declaration.Order >= 0 {
+			coverage.Composition.Resolved++
+		} else {
+			addSemanticGap(&coverage, &coverage.Composition, SemanticGap{Code: "missing-sdk-execution-order", Dimension: "composition", Severity: "critical", Message: "SDK declaration order is unavailable for cross-SDK composition."})
+		}
+	}
+
+	stateWrites, stateReads := 0, 0
+	for _, hook := range item.Hooks {
+		if hook.Analysis == nil {
+			continue
+		}
+		capabilities := capabilityOccurrencesByOperation(hook.Analysis.Capabilities)
+		incomingFlow := make(map[string]bool)
+		for _, relation := range hook.Analysis.Relations {
+			switch relation.Kind {
+			case analysis.RelationPipeline, analysis.RelationSubstitutionFlow, analysis.RelationVariableFlow,
+				analysis.RelationRedirectFlow, analysis.RelationArtifactFlow, analysis.RelationCollectionFlow:
+				incomingFlow[relation.ToOperationID] = true
+			}
+		}
+		for _, operation := range flatten(hook.Analysis.Operations) {
+			switch operation.Kind {
+			case analysis.OperationSource:
+				coverage.IncludedSources.Applicable++
+				if operation.Include != nil {
+					coverage.IncludedSources.Resolved++
+				} else {
+					addSemanticGap(&coverage, &coverage.IncludedSources, SemanticGap{Code: "unresolved-include", Dimension: "included-sources", Severity: "critical", Hook: hook.Name, OperationID: operation.ID, Message: "A sourced file could not be resolved and analyzed from SDK inventory."})
+				}
+			case analysis.OperationFunctionInvocation:
+				coverage.Functions.Applicable++
+				resolved := len(operation.Children) > 0
+				for _, argument := range operation.Arguments {
+					resolved = resolved && argument.Resolution == analysis.Resolved
+				}
+				if resolved {
+					coverage.Functions.Resolved++
+				} else {
+					addSemanticGap(&coverage, &coverage.Functions, SemanticGap{Code: "unresolved-function-call", Dimension: "functions", Severity: "critical", Hook: hook.Name, OperationID: operation.ID, Message: "A function invocation or its positional arguments could not be fully expanded."})
+				}
+			}
+			if isSymbolicLinkOperation(operation) {
+				coverage.Aliases.Applicable++
+				if resolvedAliasDeclaration(operation) {
+					coverage.Aliases.Resolved++
+				} else {
+					addSemanticGap(&coverage, &coverage.Aliases, SemanticGap{Code: "unresolved-path-alias", Dimension: "aliases", Severity: "critical", Hook: hook.Name, OperationID: operation.ID, Message: "A symbolic-link alias target or link path could not be resolved statically."})
+				}
+			}
+		}
+		for operationID, occurrences := range capabilities {
+			hasExternalSend, hasLocalSource := false, false
+			for _, capability := range occurrences {
+				if capability.Kind == "state-read" {
+					stateReads++
+				}
+				switch capability.Kind {
+				case "external-send":
+					hasExternalSend = true
+				case "project-read", "project-sensitive-file-read", "state-read":
+					hasLocalSource = true
+				case "state-write":
+					stateWrites++
+				}
+			}
+			if hasExternalSend {
+				coverage.DataFlow.Applicable++
+				if hasLocalSource || incomingFlow[operationID] {
+					coverage.DataFlow.Resolved++
+				} else {
+					addSemanticGap(&coverage, &coverage.DataFlow, SemanticGap{Code: "unlinked-external-send", Dimension: "data-flow", Severity: "critical", Hook: hook.Name, OperationID: operationID, Message: "An external-send input could not be linked to a modeled provenance source."})
+				}
+			}
+		}
+	}
+	if stateWrites > 0 && stateReads > 0 {
+		coverage.Lifecycle.Applicable++
+		if len(item.LifecycleRelations) > 0 {
+			coverage.Lifecycle.Resolved++
+		} else {
+			addSemanticGap(&coverage, &coverage.Lifecycle, SemanticGap{Code: "unlinked-state-channel", Dimension: "lifecycle", Severity: "critical", Message: "State writes and reads exist but no lifecycle state channel could be linked."})
+		}
+	}
+	for _, diagnostic := range item.Diagnostics {
+		if diagnostic.Phase != "include" || hasSemanticGap(coverage.Gaps, diagnostic.Code) {
+			continue
+		}
+		addSemanticGap(&coverage, &coverage.IncludedSources, SemanticGap{Code: diagnostic.Code, Dimension: "included-sources", Severity: "critical", Message: diagnostic.Message})
+	}
+	finalizeSemanticCoverage(&coverage)
+	return coverage
+}
+
+func addSemanticGap(coverage *SemanticCoverage, dimension *SemanticDimension, gap SemanticGap) {
+	dimension.Gaps++
+	coverage.Gaps = append(coverage.Gaps, gap)
+	if gap.Severity == "critical" {
+		coverage.CriticalGaps++
+	}
+}
+
+func hasSemanticGap(gaps []SemanticGap, code string) bool {
+	for _, gap := range gaps {
+		if gap.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func finalizeSemanticCoverage(coverage *SemanticCoverage) {
+	if coverage.Gaps == nil {
+		coverage.Gaps = []SemanticGap{}
+	}
+	penalty := 0
+	for _, gap := range coverage.Gaps {
+		if gap.Severity == "critical" {
+			penalty += 25
+		} else {
+			penalty += 10
+		}
+	}
+	coverage.Score = max(0, 100-penalty)
+	if coverage.CriticalGaps == 0 && coverage.Score >= 80 {
+		coverage.Level = "sufficient"
+	} else {
+		coverage.Level = "insufficient"
+	}
+}
+
+func addSemanticCoverage(target *SemanticCoverage, value SemanticCoverage) {
+	target.DataFlow.Applicable += value.DataFlow.Applicable
+	target.DataFlow.Resolved += value.DataFlow.Resolved
+	target.DataFlow.Gaps += value.DataFlow.Gaps
+	target.IncludedSources.Applicable += value.IncludedSources.Applicable
+	target.IncludedSources.Resolved += value.IncludedSources.Resolved
+	target.IncludedSources.Gaps += value.IncludedSources.Gaps
+	target.Functions.Applicable += value.Functions.Applicable
+	target.Functions.Resolved += value.Functions.Resolved
+	target.Functions.Gaps += value.Functions.Gaps
+	target.Lifecycle.Applicable += value.Lifecycle.Applicable
+	target.Lifecycle.Resolved += value.Lifecycle.Resolved
+	target.Lifecycle.Gaps += value.Lifecycle.Gaps
+	target.Composition.Applicable += value.Composition.Applicable
+	target.Composition.Resolved += value.Composition.Resolved
+	target.Composition.Gaps += value.Composition.Gaps
+	target.Aliases.Applicable += value.Aliases.Applicable
+	target.Aliases.Resolved += value.Aliases.Resolved
+	target.Aliases.Gaps += value.Aliases.Gaps
+	target.CriticalGaps += value.CriticalGaps
+	target.Gaps = append(target.Gaps, value.Gaps...)
+	finalizeSemanticCoverage(target)
+}
+
+func isSymbolicLinkOperation(operation analysis.Operation) bool {
+	if operation.Kind != analysis.OperationCommand || filepath.Base(operation.Command.Literal) != "ln" {
+		return false
+	}
+	for _, argument := range operation.Arguments {
+		if argument.Resolution == analysis.Resolved && (argument.Literal == "--symbolic" || strings.HasPrefix(argument.Literal, "-") && !strings.HasPrefix(argument.Literal, "--") && strings.Contains(strings.TrimPrefix(argument.Literal, "-"), "s")) {
+			return true
+		}
+	}
+	return false
+}
+
+func resolvedAliasDeclaration(operation analysis.Operation) bool {
+	operands := 0
+	for _, argument := range operation.Arguments {
+		if argument.Resolution != analysis.Resolved {
+			return false
+		}
+		if argument.Literal == "--" || strings.HasPrefix(argument.Literal, "-") && argument.Literal != "-" {
+			continue
+		}
+		operands++
+	}
+	return operands == 2
+}
+
 type Coverage struct {
-	Score    int             `json:"score"`
-	Level    string          `json:"level"`
-	Hooks    HookCoverage    `json:"hooks"`
-	Commands CommandCoverage `json:"commands"`
-	Files    FileCoverage    `json:"files"`
+	Score     int              `json:"score"`
+	Level     string           `json:"level"`
+	Hooks     HookCoverage     `json:"hooks"`
+	Commands  CommandCoverage  `json:"commands"`
+	Files     FileCoverage     `json:"files"`
+	Semantics SemanticCoverage `json:"semantics"`
 }
 
 type SDKAssessment struct {
@@ -289,7 +504,7 @@ func familyCap(kind Kind, family string) int {
 }
 
 func coverageForSDK(item sdk.SDK) Coverage {
-	coverage := Coverage{Files: FileCoverage{Inventoried: len(item.Files)}}
+	coverage := Coverage{Files: FileCoverage{Inventoried: len(item.Files)}, Semantics: semanticCoverageForSDK(item)}
 	for _, file := range item.Files {
 		if file.Skipped {
 			coverage.Files.ContentSkipped++
@@ -360,7 +575,7 @@ func finalizeCoverage(coverage Coverage, complete bool) Coverage {
 	if coverage.Commands.Total > 0 {
 		commandScore = 100 * float64(coverage.Commands.Known) / float64(coverage.Commands.Total)
 	}
-	coverage.Score = rounded(.6*hookScore + .4*commandScore)
+	coverage.Score = min(rounded(.6*hookScore+.4*commandScore), coverage.Semantics.Score)
 	if coverage.Score >= 80 && coverage.Hooks.Failed == 0 {
 		coverage.Level = "sufficient"
 	} else {
@@ -382,12 +597,15 @@ func addCoverage(target *Coverage, value Coverage) {
 	target.Files.ContentAnalyzed += value.Files.ContentAnalyzed
 	target.Files.BinaryOnly += value.Files.BinaryOnly
 	target.Files.ContentSkipped += value.Files.ContentSkipped
+	addSemanticCoverage(&target.Semantics, value.Semantics)
 }
 
 func finalizeAssessment(classification *string, priority *Score, risk, assurance ScoredAxis, coverage Coverage) {
 	priority.Score = max(risk.Score, 100-coverage.Score)
 	priority.Level = riskLevel(priority.Score)
 	switch {
+	case coverage.Semantics.CriticalGaps > 0:
+		*classification = "requires-semantic-review"
 	case coverage.Level != "sufficient":
 		*classification = "insufficient-evidence"
 	case risk.Score >= 80:

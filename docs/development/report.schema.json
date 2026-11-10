@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/shizuku198411/Latra/blob/main/docs/development/report.schema.json",
   "title": "Latra scan report",
-  "description": "Schema for compact and verbose Latra scan reports with schemaVersion 4.",
+  "description": "Schema for compact and verbose Latra scan reports with schemaVersion 5.",
   "oneOf": [
     { "$ref": "#/$defs/compactReport" },
     { "$ref": "#/$defs/fullReport" }
@@ -13,7 +13,7 @@
       "additionalProperties": false,
       "required": ["schemaVersion", "scanner", "findingDatabase", "input", "workshops", "summary", "assessment", "diagnostics"],
       "properties": {
-        "schemaVersion": { "const": "4" },
+        "schemaVersion": { "const": "5" },
         "scanner": { "$ref": "#/$defs/scanner" },
         "findingDatabase": { "$ref": "#/$defs/findingDatabase" },
         "input": { "$ref": "#/$defs/input" },
@@ -34,7 +34,7 @@
       "additionalProperties": false,
       "required": ["schemaVersion", "scanner", "findingDatabase", "input", "summary", "assessment", "workshops", "sdks", "diagnostics"],
       "properties": {
-        "schemaVersion": { "const": "4" },
+        "schemaVersion": { "const": "5" },
         "scanner": { "$ref": "#/$defs/scanner" },
         "findingDatabase": { "$ref": "#/$defs/findingDatabase" },
         "input": { "$ref": "#/$defs/input" },
@@ -47,6 +47,10 @@
         "sdks": {
           "type": "array",
           "items": { "$ref": "#/$defs/sdk" }
+        },
+        "compositionRelations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/compositionRelation" }
         },
         "diagnostics": {
           "type": "array",
@@ -153,7 +157,7 @@
     },
     "classification": {
       "type": "string",
-      "enum": ["expected-and-controlled", "powerful-but-controlled", "weakly-controlled", "high-priority-review", "insufficient-evidence"]
+      "enum": ["expected-and-controlled", "powerful-but-controlled", "weakly-controlled", "high-priority-review", "insufficient-evidence", "requires-semantic-review"]
     },
     "riskHighlight": {
       "type": "object",
@@ -219,13 +223,54 @@
     "coverage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["score", "level", "hooks", "commands", "files"],
+      "required": ["score", "level", "hooks", "commands", "files", "semantics"],
       "properties": {
         "score": { "type": "integer", "minimum": 0, "maximum": 100 },
         "level": { "type": "string", "enum": ["sufficient", "insufficient"] },
         "hooks": { "$ref": "#/$defs/hookCoverage" },
         "commands": { "$ref": "#/$defs/commandCoverage" },
-        "files": { "$ref": "#/$defs/fileCoverage" }
+        "files": { "$ref": "#/$defs/fileCoverage" },
+        "semantics": { "$ref": "#/$defs/semanticCoverage" }
+      }
+    },
+    "semanticCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "level", "criticalGaps", "dataFlow", "includedSources", "functions", "lifecycle", "composition", "aliases", "gaps"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "level": { "type": "string", "enum": ["sufficient", "insufficient"] },
+        "criticalGaps": { "$ref": "#/$defs/nonNegativeInteger" },
+        "dataFlow": { "$ref": "#/$defs/semanticDimension" },
+        "includedSources": { "$ref": "#/$defs/semanticDimension" },
+        "functions": { "$ref": "#/$defs/semanticDimension" },
+        "lifecycle": { "$ref": "#/$defs/semanticDimension" },
+        "composition": { "$ref": "#/$defs/semanticDimension" },
+        "aliases": { "$ref": "#/$defs/semanticDimension" },
+        "gaps": { "type": "array", "items": { "$ref": "#/$defs/semanticGap" } }
+      }
+    },
+    "semanticDimension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicable", "resolved", "gaps"],
+      "properties": {
+        "applicable": { "$ref": "#/$defs/nonNegativeInteger" },
+        "resolved": { "$ref": "#/$defs/nonNegativeInteger" },
+        "gaps": { "$ref": "#/$defs/nonNegativeInteger" }
+      }
+    },
+    "semanticGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "dimension", "severity", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "dimension": { "type": "string", "enum": ["data-flow", "included-sources", "functions", "lifecycle", "composition", "aliases"] },
+        "severity": { "type": "string", "enum": ["warning", "critical"] },
+        "hook": { "$ref": "#/$defs/hookName" },
+        "operationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "message": { "type": "string" }
       }
     },
     "hookCoverage": {
@@ -550,6 +595,10 @@
         "findings": {
           "type": "array",
           "items": { "$ref": "#/$defs/finding" }
+        },
+        "lifecycleRelations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/lifecycleRelation" }
         }
       }
     },
@@ -579,10 +628,11 @@
     "declaration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["definition", "workshop", "base"],
+      "required": ["definition", "workshop", "order", "base"],
       "properties": {
         "definition": { "type": "string" },
         "workshop": { "type": "string" },
+        "order": { "$ref": "#/$defs/nonNegativeInteger" },
         "base": { "type": "string" },
         "channel": { "type": "string" },
         "plugs": { "$ref": "#/$defs/freeFormObject" },
@@ -730,7 +780,8 @@
         "children": {
           "type": "array",
           "items": { "$ref": "#/$defs/operation" }
-        }
+        },
+        "include": { "$ref": "#/$defs/includedSource" }
       }
     },
     "operationRelation": {
@@ -740,12 +791,58 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["contains", "sequence", "pipeline", "substitution-flow", "variable-flow", "redirect-flow"]
+            "enum": [
+              "contains",
+              "sequence",
+              "pipeline",
+              "substitution-flow",
+              "variable-flow",
+              "redirect-flow",
+              "call",
+              "argument-flow",
+              "include",
+              "collection-flow",
+              "artifact-flow",
+              "alias"
+            ]
         },
         "fromOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
         "toOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
         "name": { "type": "string" },
+        "resolution": { "$ref": "#/$defs/resolution" },
+        "artifact": { "$ref": "#/$defs/value" },
+        "provenance": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/provenance" }
+        },
+        "digest": { "type": "string" }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "resolution"],
+      "properties": {
+        "kind": { "type": "string" },
+        "sourceOperations": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^op-[0-9]{4,}$" }
+        },
+        "paths": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/value" }
+        },
         "resolution": { "$ref": "#/$defs/resolution" }
+      }
+    },
+    "includedSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "digest", "from"],
+      "properties": {
+        "path": { "type": "string" },
+        "digest": { "type": "string" },
+        "from": { "$ref": "#/$defs/location" }
       }
     },
     "dataReference": {
@@ -874,7 +971,8 @@
       "additionalProperties": false,
       "required": ["type"],
       "properties": {
-        "type": { "type": "string", "enum": ["operation", "capability", "context", "data-flow", "control-flow", "file", "metadata", "diagnostic"] },
+        "sdk": { "type": "string" },
+        "type": { "type": "string", "enum": ["operation", "capability", "context", "data-flow", "control-flow", "artifact-flow", "lifecycle-flow", "composition-flow", "include", "alias", "file", "metadata", "diagnostic"] },
         "id": { "type": "string" },
         "operationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
         "fromOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
@@ -884,6 +982,40 @@
         "normalizedCandidates": { "$ref": "#/$defs/stringArray" },
         "resolution": { "$ref": "#/$defs/resolution" },
         "location": { "$ref": "#/$defs/location" }
+      }
+    },
+    "lifecycleRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "fromHook", "toHook", "fromOperationId", "toOperationId", "statePath", "resolution"],
+      "properties": {
+        "kind": { "const": "state-flow" },
+        "fromHook": { "$ref": "#/$defs/hookName" },
+        "toHook": { "$ref": "#/$defs/hookName" },
+        "fromOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "toOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "statePath": { "$ref": "#/$defs/value" },
+        "resolution": { "$ref": "#/$defs/resolution" },
+        "limitation": { "type": "string" }
+      }
+    },
+    "compositionRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "workshop", "definition", "hook", "fromSdk", "toSdk", "fromOrder", "toOrder", "fromOperationId", "toOperationId", "artifact", "resolution"],
+      "properties": {
+        "kind": { "const": "project-artifact-execution" },
+        "workshop": { "type": "string" },
+        "definition": { "type": "string" },
+        "hook": { "$ref": "#/$defs/hookName" },
+        "fromSdk": { "type": "string" },
+        "toSdk": { "type": "string" },
+        "fromOrder": { "$ref": "#/$defs/nonNegativeInteger" },
+        "toOrder": { "$ref": "#/$defs/nonNegativeInteger" },
+        "fromOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "toOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
+        "artifact": { "$ref": "#/$defs/value" },
+        "resolution": { "$ref": "#/$defs/resolution" }
       }
     },
     "documentDiagnostic": {

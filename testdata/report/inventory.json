@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "4",
+  "schemaVersion": "5",
   "scanner": {
     "name": "latra",
     "version": "dev",
@@ -8,7 +8,7 @@
   },
   "findingDatabase": {
     "schemaVersion": "4",
-    "contentVersion": "2026.11.11.6",
+    "contentVersion": "2026.11.11.7",
     "source": "embedded-default"
   },
   "input": {
@@ -200,6 +200,42 @@
         "contentAnalyzed": 0,
         "binaryOnly": 0,
         "contentSkipped": 0
+      },
+      "semantics": {
+        "score": 100,
+        "level": "sufficient",
+        "criticalGaps": 0,
+        "dataFlow": {
+          "applicable": 0,
+          "resolved": 0,
+          "gaps": 0
+        },
+        "includedSources": {
+          "applicable": 0,
+          "resolved": 0,
+          "gaps": 0
+        },
+        "functions": {
+          "applicable": 0,
+          "resolved": 0,
+          "gaps": 0
+        },
+        "lifecycle": {
+          "applicable": 0,
+          "resolved": 0,
+          "gaps": 0
+        },
+        "composition": {
+          "applicable": 0,
+          "resolved": 0,
+          "gaps": 0
+        },
+        "aliases": {
+          "applicable": 0,
+          "resolved": 0,
+          "gaps": 0
+        },
+        "gaps": []
       }
     },
     "keyRisks": [],
@@ -256,6 +292,42 @@
             "contentAnalyzed": 0,
             "binaryOnly": 0,
             "contentSkipped": 0
+          },
+          "semantics": {
+            "score": 100,
+            "level": "sufficient",
+            "criticalGaps": 0,
+            "dataFlow": {
+              "applicable": 0,
+              "resolved": 0,
+              "gaps": 0
+            },
+            "includedSources": {
+              "applicable": 0,
+              "resolved": 0,
+              "gaps": 0
+            },
+            "functions": {
+              "applicable": 0,
+              "resolved": 0,
+              "gaps": 0
+            },
+            "lifecycle": {
+              "applicable": 0,
+              "resolved": 0,
+              "gaps": 0
+            },
+            "composition": {
+              "applicable": 0,
+              "resolved": 0,
+              "gaps": 0
+            },
+            "aliases": {
+              "applicable": 0,
+              "resolved": 0,
+              "gaps": 0
+            },
+            "gaps": []
           }
         },
         "keyRisks": []
@@ -382,7 +454,7 @@
           "id": "assurance.all-commands-known",
           "kind": "assurance",
           "family": "analysis-quality",
-          "title": "All resolved commands are known",
+          "title": "All resolved command names are known",
           "strength": "low",
           "confidence": "high",
           "weight": 10,
@@ -397,16 +469,17 @@
               "resolution": "Resolved"
             }
           ],
-          "message": "Every resolved command invocation is covered by the embedded command database.",
+          "message": "Every resolved command name is covered by the embedded command database.",
           "limitations": [
-            "Database coverage does not establish that command arguments are safe."
+            "Database coverage does not establish that command arguments are safe.",
+            "A known command name does not imply complete command, data-flow, lifecycle, or composition semantics."
           ]
         },
         {
           "id": "assurance.all-hooks-parsed",
           "kind": "assurance",
           "family": "analysis-quality",
-          "title": "All hooks parsed without recovery",
+          "title": "All standard hook files parsed without recovery",
           "strength": "medium",
           "confidence": "high",
           "weight": 30,
@@ -421,7 +494,10 @@
               "resolution": "Resolved"
             }
           ],
-          "message": "Every detected hook was parsed without syntax recovery."
+          "message": "Every detected standard hook file parsed without syntax recovery.",
+          "limitations": [
+            "This does not imply that sourced files, function calls, lifecycle flows, or cross-SDK effects were semantically resolved."
+          ]
         },
         {
           "id": "assurance.complete-file-inventory",
@@ -472,7 +548,7 @@
           "id": "assurance.non-root-hook",
           "kind": "assurance",
           "family": "least-privilege",
-          "title": "Hook runs without root privileges",
+          "title": "Hook runs as the Workshop user",
           "strength": "medium",
           "confidence": "high",
           "weight": 30,
@@ -494,9 +570,10 @@
               "resolution": "Resolved"
             }
           ],
-          "message": "The Workshop lifecycle runs this hook as the workshop user.",
+          "message": "The Workshop lifecycle runs this hook as the Workshop user rather than container root.",
           "limitations": [
-            "The user context can still modify mounted project and user data."
+            "The Workshop user can still modify the host-backed mounted Project and user data.",
+            "Container root may also map to a non-root host user; this assurance only describes the in-container lifecycle identity."
           ]
         }
       ]

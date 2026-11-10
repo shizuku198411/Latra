@@ -1,6 +1,6 @@
 # JSON report schema
 
-The machine-readable JSON Schema for Latra scan reports is [`report.schema.json`](report.schema.json). It uses JSON Schema Draft 2020-12 and describes report `schemaVersion` `"4"`.
+The machine-readable JSON Schema for Latra scan reports is [`report.schema.json`](report.schema.json). It uses JSON Schema Draft 2020-12 and describes report `schemaVersion` `"5"`.
 
 ## Report variants
 
@@ -15,7 +15,7 @@ The root schema uses `oneOf` to distinguish these variants. The compact form int
 
 ## Stability boundary
 
-`schemaVersion` is the compatibility boundary for report consumers. Version `1` is fixed for the original v0.1.0 report structure. Version `2` adds the operation graph used by contextual finding analysis. Version `3` distinguishes analyzed, binary-only, and resource-limited file content and exposes skipped-content totals. Version `4` adds unscored observations and normalized project-access evidence.
+`schemaVersion` is the compatibility boundary for report consumers. Version `1` is fixed for the original v0.1.0 report structure. Version `2` adds the operation graph used by contextual finding analysis. Version `3` distinguishes analyzed, binary-only, and resource-limited file content and exposes skipped-content totals. Version `4` adds unscored observations and normalized project-access evidence. Version `5` adds artifact/include/lifecycle/composition/alias relations, SDK execution order, cross-SDK evidence, and required semantic coverage dimensions.
 
 Within one schema version:
 
@@ -141,6 +141,8 @@ Project reports may contain top-level `compositionRelations`. A `project-artifac
 
 Hook relations may contain `alias` entries for statically resolved symbolic links created by an earlier operation in that hook. The relation records the lexical path and resolved path without inspecting the filesystem. Findings caused by an alias include the creating `ln` location as supporting evidence.
 
+Assessment coverage includes a `semantics` object with data-flow, included-source, function, lifecycle, composition, and alias dimensions. Each dimension reports applicable, resolved, and gap counts. Critical gaps include stable codes and operation context, cap the overall Coverage score, and prevent a controlled classification even when syntax and command-name coverage are otherwise complete.
+
 The graph is a conservative static representation. It does not claim complete shell control-flow or runtime data-flow resolution.
 
 ## Findings
@@ -165,7 +167,7 @@ Project-access observation evidence preserves both `value`, the raw shell path, 
 
 - `reviewPriority` is the headline score. Higher values require earlier review.
 - `risk` and `assurance` are independently aggregated; assurance never subtracts from risk.
-- `coverage` records how much of the relevant static input was successfully analyzed.
+- `coverage` records syntax, command-name, file, and semantic analysis completeness. Semantic completeness is split into data-flow, included-source, function, lifecycle, composition, and alias dimensions.
 - `classification` combines the three axes into a descriptive outcome rather than a malware or safety verdict.
 - `keyRisks` groups risk findings by rule and retains every SDK, hook, location, and relevant value contributing to the assessment.
 
@@ -175,7 +177,7 @@ Finding weights are multiplied by confidence (`low` 0.50, `medium` 0.75, `high` 
 reviewPriority = max(riskScore, 100 - coverageScore)
 ```
 
-The JSON form retains family contributions, complete key-risk scopes, and hook, command, and file coverage counters so consumers can explain the displayed score. File coverage includes `contentSkipped`; skipped non-essential content does not by itself make hook and command coverage insufficient. Assessment text and JSON both retain all key risks and locations.
+The JSON form retains family contributions, complete key-risk scopes, hook, command, file, and semantic coverage counters, plus stable semantic gap codes. File coverage includes `contentSkipped`; skipped non-essential content does not by itself make hook and command coverage insufficient. Assessment text and JSON both retain all key risks, semantic gaps, and locations.
 
 ## Diagnostics
 
