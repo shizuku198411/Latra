@@ -34,6 +34,7 @@ type Context struct {
 }
 
 type Evidence struct {
+	SDK                  string              `json:"sdk,omitempty"`
 	Type                 string              `json:"type"`
 	ID                   string              `json:"id,omitempty"`
 	OperationID          string              `json:"operationId,omitempty"`
@@ -44,6 +45,23 @@ type Evidence struct {
 	NormalizedCandidates []string            `json:"normalizedCandidates,omitempty"`
 	Resolution           analysis.Resolution `json:"resolution,omitempty"`
 	Location             *shell.Location     `json:"location,omitempty"`
+}
+
+// CompositionRelation connects behavior across ordered SDK declarations in a
+// single Workshop definition and lifecycle window.
+type CompositionRelation struct {
+	Kind            string              `json:"kind"`
+	Workshop        string              `json:"workshop"`
+	Definition      string              `json:"definition"`
+	Hook            sdk.HookName        `json:"hook"`
+	FromSDK         string              `json:"fromSdk"`
+	ToSDK           string              `json:"toSdk"`
+	FromOrder       int                 `json:"fromOrder"`
+	ToOrder         int                 `json:"toOrder"`
+	FromOperationID string              `json:"fromOperationId"`
+	ToOperationID   string              `json:"toOperationId"`
+	Artifact        analysis.Value      `json:"artifact"`
+	Resolution      analysis.Resolution `json:"resolution"`
 }
 
 type Finding struct {

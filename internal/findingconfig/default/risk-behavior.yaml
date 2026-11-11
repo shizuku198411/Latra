@@ -1,4 +1,42 @@
 finding-rules:
+  - id: risk.cross-sdk-project-artifact-execution
+    kind: risk
+    family: project-integrity
+    title: A later SDK executes a Project artifact written by an earlier SDK
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: cross-sdk-artifact-execution
+    message: Within one Workshop definition, an earlier SDK writes a Project artifact that a later SDK executes from the same path.
+    remediation: Remove the cross-SDK executable handoff or verify the artifact cryptographically before execution.
+    limitations:
+      - Matching requires an exact statically resolved Project path and declaration order in one Workshop definition.
+
+  - id: risk.state-content-to-project
+    kind: risk
+    family: project-integrity
+    title: Persisted SDK state can modify Project execution controls
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: state-to-project
+      hook-names:
+        - restore-state
+      state-mounted: true
+      project-mounted: true
+      path-classes:
+        - project-vcs-control
+        - project-ci-control
+        - project-build-control
+        - project-dependency-control
+        - project-execution-control
+    message: Content reachable through persisted SDK state is restored into a Project control or execution path.
+    remediation: Validate and authenticate state content before restoring it, and never restore executable or control files into the Project.
+    limitations:
+      - State channel reachability does not assert byte identity across SDK revisions.
+
   - id: risk.unknown-command-root
     kind: risk
     family: remote-execution
@@ -145,3 +183,80 @@ finding-rules:
         - device
     message: The hook accesses a device or kernel interface with potentially destructive impact.
     remediation: Confirm the exact target and use the least privileged read-only operation possible.
+
+  - id: risk.project-control-file-modification
+    kind: risk
+    family: project-integrity
+    title: Project execution or build control is modified
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: project-control-modification
+      path-classes:
+        - project-vcs-control
+        - project-ci-control
+        - project-build-control
+        - project-execution-control
+      project-mounted: true
+    message: The hook writes a Project file that controls version control, CI, builds, or future command execution.
+    remediation: Keep SDK-generated output outside Project control paths and require explicit project-owner review for control-file changes.
+
+  - id: risk.project-source-deletion
+    kind: risk
+    family: project-integrity
+    title: Project source or control data is deleted
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: project-deletion
+      path-classes:
+        - project-source
+        - project-vcs-control
+        - project-ci-control
+        - project-build-control
+        - project-dependency-control
+        - project-execution-control
+      project-mounted: true
+    message: The hook deletes Project source or a file that controls version control, CI, builds, dependencies, or execution.
+    remediation: Remove destructive Project operations from SDK hooks and perform any cleanup only in dedicated generated-output directories.
+
+  - id: risk.project-executable-created
+    kind: risk
+    family: project-integrity
+    title: An SDK-written Project file is made executable
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: project-executable-created
+      project-mounted: true
+    message: The hook writes a file under the Project and then grants it executable permission.
+    remediation: Do not install SDK-controlled executables into the mounted Project; keep tools under the SDK-owned path.
+
+  - id: risk.project-permission-modification
+    kind: risk
+    family: project-integrity
+    title: Project file permissions are modified
+    severity: medium
+    confidence: high
+    weight: 25
+    match:
+      type: project-permission-modification
+      project-mounted: true
+    message: The hook changes permissions on a path under the mounted Project.
+    remediation: Preserve project-owned permissions unless the project explicitly requires and reviews the change.
+
+  - id: risk.project-vcs-state-rewrite
+    kind: risk
+    family: project-integrity
+    title: Project version-control state is rewritten
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: project-vcs-state-rewrite
+      project-mounted: true
+    message: The hook performs a Git operation that can discard files, change repository sources, or conceal working-tree changes.
+    remediation: Do not rewrite repository state from an SDK hook; leave destructive or source-changing Git operations to the project owner.

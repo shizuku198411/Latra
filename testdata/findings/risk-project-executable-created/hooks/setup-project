@@ -1,0 +1,3 @@
+printf '%s\n' '#!/bin/sh' > scripts/tool.sh
+chmod +x scripts/tool.sh
+

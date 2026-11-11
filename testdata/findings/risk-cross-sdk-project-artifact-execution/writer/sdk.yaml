@@ -1,0 +1,3 @@
+name: writer
+title: Cross-SDK writer fixture
+summary: Writes a Project artifact for a later SDK

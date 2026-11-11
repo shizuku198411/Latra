@@ -26,6 +26,14 @@ func TestEveryEmbeddedFindingHasMatchingSDKFixture(t *testing.T) {
 		wantDirectories = append(wantDirectories, fixtureName)
 		t.Run(rule.ID, func(t *testing.T) {
 			t.Parallel()
+			if rule.Matcher.Type == "cross-sdk-artifact-execution" {
+				items := loadCompositionFixture(t, filepath.Join(root, fixtureName))
+				findings, _ := finding.AnalyzeComposition(items)
+				if got := findFinding(findings, rule.ID); got == nil {
+					t.Fatalf("composition fixture %q did not emit %q; findings = %#v", fixtureName, rule.ID, findings)
+				}
+				return
+			}
 			item := loadFindingFixture(t, filepath.Join(root, fixtureName), fixtureName)
 			applyExternalFindingState(&item, rule.ID)
 			findings := finding.AnalyzeSDK(item)
@@ -50,6 +58,17 @@ func TestEveryEmbeddedFindingHasMatchingSDKFixture(t *testing.T) {
 	if strings.Join(gotDirectories, "\n") != strings.Join(wantDirectories, "\n") {
 		t.Fatalf("finding fixture directories do not match embedded rules\n got: %v\nwant: %v", gotDirectories, wantDirectories)
 	}
+}
+
+func loadCompositionFixture(t *testing.T, directory string) []sdk.SDK {
+	t.Helper()
+	var items []sdk.SDK
+	for order, name := range []string{"writer", "runner"} {
+		item := loadFindingFixture(t, filepath.Join(directory, name), name)
+		item.Declarations = []sdk.Declaration{{Definition: ".workshop/fixture.yaml", Workshop: "fixture", Order: order}}
+		items = append(items, item)
+	}
+	return items
 }
 
 func loadFindingFixture(t *testing.T, directory, name string) sdk.SDK {

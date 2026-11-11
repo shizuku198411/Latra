@@ -105,6 +105,11 @@ func validate(config *Config) error {
 		"relation-flow": true, "path-write": true, "persistence-write": true,
 		"profile-environment-write": true, "repository-persistence": true,
 		"project-in-place-modification": true, "toolchain-search-order-hijack": true,
+		"project-control-modification": true, "project-deletion": true,
+		"project-executable-created": true, "project-permission-modification": true,
+		"project-vcs-state-rewrite": true,
+		"project-secret-to-state":   true, "state-to-project": true,
+		"cross-sdk-artifact-execution": true,
 	}
 	for _, rule := range config.Rules {
 		if !identifierPattern.MatchString(rule.ID) || seen[rule.ID] {
@@ -160,7 +165,7 @@ func validateRelationMatcher(rule Rule) error {
 		return fmt.Errorf("rule %q has no relation kinds or same-operation flow", rule.ID)
 	}
 	for _, kind := range matcher.RelationKinds {
-		if !contains([]string{"pipeline", "substitution-flow", "variable-flow", "redirect-flow"}, kind) {
+		if !contains([]string{"pipeline", "substitution-flow", "variable-flow", "redirect-flow", "artifact-flow", "collection-flow"}, kind) {
 			return fmt.Errorf("rule %q has invalid relation kind %q", rule.ID, kind)
 		}
 	}

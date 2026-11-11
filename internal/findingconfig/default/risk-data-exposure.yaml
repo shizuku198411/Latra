@@ -1,4 +1,21 @@
 finding-rules:
+  - id: risk.project-secret-persisted-to-state
+    kind: risk
+    family: data-exposure
+    title: Project-sensitive data is persisted into SDK state
+    severity: high
+    confidence: high
+    weight: 50
+    match:
+      type: project-secret-to-state
+      hook-names:
+        - save-state
+      state-mounted: true
+    message: Sensitive Project data can be carried into persisted SDK state across revisions.
+    remediation: Do not persist Project secrets in SDK state; store only minimal, non-sensitive cache data.
+    limitations:
+      - State channel reachability does not assert byte identity across SDK revisions.
+
   - id: risk.remote-content-to-project
     kind: risk
     family: supply-chain
@@ -33,6 +50,9 @@ finding-rules:
         - pipeline
         - substitution-flow
         - variable-flow
+        - redirect-flow
+        - artifact-flow
+        - collection-flow
       source-capability: project-read
       sink-capability: external-send
       same-operation: true
@@ -54,6 +74,9 @@ finding-rules:
         - pipeline
         - substitution-flow
         - variable-flow
+        - redirect-flow
+        - artifact-flow
+        - collection-flow
       source-capability: project-sensitive-file-read
       sink-capability: external-send
       same-operation: true

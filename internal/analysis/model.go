@@ -75,7 +75,22 @@ const (
 	RelationSubstitutionFlow RelationKind = "substitution-flow"
 	RelationVariableFlow     RelationKind = "variable-flow"
 	RelationRedirectFlow     RelationKind = "redirect-flow"
+	RelationArtifactFlow     RelationKind = "artifact-flow"
+	RelationCollectionFlow   RelationKind = "collection-flow"
+	RelationCall             RelationKind = "call"
+	RelationArgumentFlow     RelationKind = "argument-flow"
+	RelationInclude          RelationKind = "include"
+	RelationAlias            RelationKind = "alias"
 )
+
+// Provenance records where an artifact consumed by a relation originated.
+// It deliberately describes derivation rather than byte-for-byte identity.
+type Provenance struct {
+	Kind       string     `json:"kind"`
+	SourceOps  []string   `json:"sourceOperations,omitempty"`
+	Paths      []Value    `json:"paths,omitempty"`
+	Resolution Resolution `json:"resolution"`
+}
 
 // Relation connects two operations in the per-hook analysis graph.
 type Relation struct {
@@ -84,6 +99,16 @@ type Relation struct {
 	ToOperationID   string       `json:"toOperationId"`
 	Name            string       `json:"name,omitempty"`
 	Resolution      Resolution   `json:"resolution"`
+	Artifact        Value        `json:"artifact,omitzero"`
+	Provenance      []Provenance `json:"provenance,omitempty"`
+	Digest          string       `json:"digest,omitempty"`
+}
+
+// IncludedSource identifies a statically resolved SDK-local source file.
+type IncludedSource struct {
+	Path   string         `json:"path"`
+	Digest string         `json:"digest"`
+	From   shell.Location `json:"from"`
 }
 
 // Operation is Latra's parser-independent representation of shell behavior.
@@ -101,6 +126,7 @@ type Operation struct {
 	Resolution Resolution      `json:"resolution"`
 	Location   shell.Location  `json:"location"`
 	Children   []Operation     `json:"children,omitempty"`
+	Include    *IncludedSource `json:"include,omitempty"`
 
 	pipelineBoundary int
 	workingDirectory Value

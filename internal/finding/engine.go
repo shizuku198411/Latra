@@ -40,6 +40,8 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 					value := contextFrom(matched.hook.Analysis.Context)
 					context = &value
 				}
+				matched.evidence = append(matched.evidence, includeEvidence(matched.hook, matched.evidence)...)
+				matched.evidence = append(matched.evidence, aliasEvidence(matched.hook, matched.evidence)...)
 			}
 			key := rule.ID + "\x00" + item.Name + "\x00" + string(hookName) + "\x00" + matched.key
 			if seen[key] || len(matched.evidence) == 0 {
@@ -64,11 +66,90 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 	return findings
 }
 
+func aliasEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
+	if hook == nil || hook.Analysis == nil {
+		return nil
+	}
+	operationIDs := make(map[string]bool)
+	for _, item := range evidence {
+		operationIDs[item.OperationID] = true
+	}
+	operations := operationMap(hook.Analysis.Operations)
+	seen := make(map[string]bool)
+	var additions []Evidence
+	for _, relation := range hook.Analysis.Relations {
+		if relation.Kind != analysis.RelationAlias || !operationIDs[relation.ToOperationID] {
+			continue
+		}
+		key := relation.FromOperationID + "\x00" + relation.ToOperationID + "\x00" + relation.Name
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		location := operations[relation.FromOperationID].Location
+		additions = append(additions, Evidence{Type: "alias", ID: "static-path-alias", OperationID: relation.ToOperationID,
+			FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
+			Value: relation.Name, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution, Location: &location})
+	}
+	return additions
+}
+
+func includeEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
+	if hook == nil || hook.Analysis == nil {
+		return nil
+	}
+	parents := make(map[string]string)
+	includes := make(map[string]analysis.Relation)
+	for _, relation := range hook.Analysis.Relations {
+		switch relation.Kind {
+		case analysis.RelationContains:
+			parents[relation.ToOperationID] = relation.FromOperationID
+		case analysis.RelationInclude:
+			includes[relation.ToOperationID] = relation
+		}
+	}
+	operations := operationMap(hook.Analysis.Operations)
+	seen := make(map[string]bool)
+	var additions []Evidence
+	for _, item := range evidence {
+		current := item.OperationID
+		for current != "" {
+			if relation, ok := includes[current]; ok {
+				key := relation.FromOperationID + "\x00" + relation.Artifact.Literal
+				if !seen[key] {
+					seen[key] = true
+					location := operations[relation.FromOperationID].Location
+					additions = append(additions, Evidence{Type: "include", ID: "sdk-local-include", OperationID: relation.FromOperationID,
+						FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
+						Value: relation.Artifact.Literal, NormalizedValue: relation.Digest, Resolution: relation.Resolution, Location: &location})
+				}
+				break
+			}
+			current = parents[current]
+		}
+	}
+	return additions
+}
+
 func suppressSubsumedFindings(findings []Finding) []Finding {
 	secretFlows := make(map[string]bool)
+	controlOperations := make(map[string]bool)
+	executablePermissionOperations := make(map[string]bool)
 	for _, item := range findings {
 		if item.ID == "risk.project-secret-exfiltration" {
 			secretFlows[findingFlowKey(item)] = true
+		}
+		if item.ID == "risk.project-control-file-modification" {
+			for _, evidence := range item.Evidence {
+				controlOperations[item.Scope.SDK+"\x00"+string(item.Scope.Hook)+"\x00"+evidence.OperationID] = true
+			}
+		}
+		if item.ID == "risk.project-executable-created" {
+			for _, evidence := range item.Evidence {
+				if evidence.ID == "project-executable-permission" {
+					executablePermissionOperations[item.Scope.SDK+"\x00"+string(item.Scope.Hook)+"\x00"+evidence.OperationID] = true
+				}
+			}
 		}
 	}
 	filtered := findings[:0]
@@ -76,9 +157,25 @@ func suppressSubsumedFindings(findings []Finding) []Finding {
 		if item.ID == "risk.project-data-exfiltration" && secretFlows[findingFlowKey(item)] {
 			continue
 		}
+		if item.ID == "risk.project-file-modification" && findingUsesOperation(item, controlOperations) {
+			continue
+		}
+		if item.ID == "risk.project-permission-modification" && findingUsesOperation(item, executablePermissionOperations) {
+			continue
+		}
 		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+func findingUsesOperation(item Finding, operations map[string]bool) bool {
+	for _, evidence := range item.Evidence {
+		key := item.Scope.SDK + "\x00" + string(item.Scope.Hook) + "\x00" + evidence.OperationID
+		if operations[key] {
+			return true
+		}
+	}
+	return false
 }
 
 func findingFlowKey(item Finding) string {
@@ -109,6 +206,20 @@ func evaluate(item sdk.SDK, rule findingconfig.Rule) []match {
 		return matchProjectInPlaceModification(item, rule)
 	case "toolchain-search-order-hijack":
 		return matchToolchainSearchOrderHijack(item, rule)
+	case "project-control-modification":
+		return matchProjectControlModification(item, rule)
+	case "project-deletion":
+		return matchProjectDeletion(item, rule)
+	case "project-executable-created":
+		return matchProjectExecutableCreated(item, rule)
+	case "project-permission-modification":
+		return matchProjectPermissionModification(item, rule)
+	case "project-vcs-state-rewrite":
+		return matchProjectVCSStateRewrite(item, rule)
+	case "project-secret-to-state":
+		return matchProjectSecretToState(item, rule)
+	case "state-to-project":
+		return matchStateToProject(item, rule)
 	case "unknown-command":
 		return matchUnknownCommands(item, rule)
 	case "parse-status":
@@ -147,6 +258,145 @@ func evaluate(item sdk.SDK, rule findingconfig.Rule) []match {
 		return matchReadOnlyHealth(item, rule)
 	case "relation-flow":
 		return matchRelationFlows(item, rule)
+	}
+	return nil
+}
+
+func matchProjectSecretToState(item sdk.SDK, rule findingconfig.Rule) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if hook.Name != sdk.HookSaveState || hook.Analysis == nil || !hookMatches(hook, rule) {
+			continue
+		}
+		byOperation := capabilityOccurrencesByOperation(hook.Analysis.Capabilities)
+		for operationID, capabilities := range byOperation {
+			var secrets, writes []analysis.Capability
+			for _, capability := range capabilities {
+				switch capability.Kind {
+				case "project-sensitive-file-read":
+					secrets = append(secrets, capability)
+				case "state-write":
+					writes = append(writes, capability)
+				}
+			}
+			for _, secret := range secrets {
+				for _, write := range writes {
+					statePath, ok := stateCapabilityPath(write)
+					if !ok {
+						continue
+					}
+					secretLocation, writeLocation := secret.Location, write.Location
+					matches = append(matches, match{hook: hook, key: operationID + ":" + statePath, confidence: "medium", evidence: []Evidence{
+						{Type: "capability", ID: "project-sensitive-file-read", OperationID: operationID, Value: secret.Target.Literal, NormalizedValue: capabilityTarget(secret), Resolution: secret.Resolution, Location: &secretLocation},
+						{Type: "lifecycle-flow", ID: "project-secret-to-state", OperationID: operationID, FromOperationID: operationID, ToOperationID: operationID, Value: write.Target.Literal, NormalizedValue: statePath, Resolution: analysis.PartiallyResolved, Location: &writeLocation},
+					}})
+				}
+			}
+		}
+	}
+	return matches
+}
+
+func matchStateToProject(item sdk.SDK, rule findingconfig.Rule) []match {
+	relations := item.LifecycleRelations
+	if len(relations) == 0 {
+		relations = inferredStateLifecycleRelations(item)
+	}
+	var matches []match
+	for _, relation := range relations {
+		if relation.Kind != "state-flow" {
+			continue
+		}
+		saveHook := sdkHook(item, relation.FromHook)
+		restoreHook := sdkHook(item, relation.ToHook)
+		if saveHook == nil || restoreHook == nil || restoreHook.Analysis == nil || !hookMatches(restoreHook, rule) {
+			continue
+		}
+		var stateWrite analysis.Capability
+		for _, capability := range saveHook.Analysis.Capabilities {
+			if capability.Kind == "state-write" && capability.OperationID == relation.FromOperationID {
+				stateWrite = capability
+				break
+			}
+		}
+		for _, capability := range restoreHook.Analysis.Capabilities {
+			if capability.Kind != "project-write" || capability.OperationID != relation.ToOperationID {
+				continue
+			}
+			class := analysis.ClassifyPath(capability.NormalizedTarget)
+			if !contains(rule.Matcher.PathClasses, string(class)) {
+				continue
+			}
+			writeLocation, projectLocation := stateWrite.Location, capability.Location
+			matches = append(matches, match{hook: restoreHook, key: relation.FromOperationID + "->" + relation.ToOperationID + ":" + relation.StatePath.Literal, confidence: confidenceFor(relation.Resolution), evidence: []Evidence{
+				{Type: "capability", ID: "state-write", OperationID: relation.FromOperationID, Value: stateWrite.Target.Literal, NormalizedValue: relation.StatePath.Literal, Resolution: stateWrite.Resolution, Location: &writeLocation},
+				{Type: "lifecycle-flow", ID: "state-flow", OperationID: relation.ToOperationID, FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID, Value: relation.StatePath.Literal, NormalizedValue: relation.StatePath.Literal, Resolution: relation.Resolution},
+				{Type: "capability", ID: "state-content-project-write", OperationID: relation.ToOperationID, FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID, Value: capability.Target.Literal, NormalizedValue: capabilityTarget(capability), Resolution: capability.Resolution, Location: &projectLocation},
+			}})
+		}
+	}
+	return matches
+}
+
+func inferredStateLifecycleRelations(item sdk.SDK) []sdk.LifecycleRelation {
+	var writes, reads []analysis.Capability
+	for _, hook := range item.Hooks {
+		if hook.Analysis == nil {
+			continue
+		}
+		for _, capability := range hook.Analysis.Capabilities {
+			if hook.Name == sdk.HookSaveState && capability.Kind == "state-write" {
+				writes = append(writes, capability)
+			}
+			if hook.Name == sdk.HookRestoreState && capability.Kind == "state-read" {
+				reads = append(reads, capability)
+			}
+		}
+	}
+	var relations []sdk.LifecycleRelation
+	for _, write := range writes {
+		writePath, writeOK := stateCapabilityPath(write)
+		for _, read := range reads {
+			readPath, readOK := stateCapabilityPath(read)
+			if writeOK && readOK && writePath == readPath {
+				relations = append(relations, sdk.LifecycleRelation{Kind: "state-flow", FromHook: sdk.HookSaveState, ToHook: sdk.HookRestoreState,
+					FromOperationID: write.OperationID, ToOperationID: read.OperationID,
+					StatePath: analysis.Value{Literal: writePath, Resolution: analysis.PartiallyResolved}, Resolution: analysis.PartiallyResolved,
+					Limitation: "State channel reachability may span SDK revisions; content identity is not asserted."})
+			}
+		}
+	}
+	return relations
+}
+
+func stateCapabilityPath(capability analysis.Capability) (string, bool) {
+	var suffix strings.Builder
+	found := false
+	for _, part := range capability.Target.Parts {
+		switch part.Kind {
+		case analysis.PartVariableReference:
+			if part.Name != "SDK_STATE_DIR" {
+				return "", false
+			}
+			found = true
+		case analysis.PartLiteral, analysis.PartQuotedLiteral:
+			suffix.WriteString(part.Text)
+		default:
+			return "", false
+		}
+	}
+	if !found {
+		return "", false
+	}
+	return filepath.Clean("/" + strings.TrimPrefix(suffix.String(), "/")), true
+}
+
+func sdkHook(item sdk.SDK, name sdk.HookName) *sdk.Hook {
+	for index := range item.Hooks {
+		if item.Hooks[index].Name == name {
+			return &item.Hooks[index]
+		}
 	}
 	return nil
 }
@@ -196,6 +446,258 @@ func isInPlaceEditor(operation analysis.Operation) bool {
 		}
 	}
 	return false
+}
+
+func matchProjectControlModification(item sdk.SDK, rule findingconfig.Rule) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if !hookMatches(hook, rule) || hook.Analysis == nil {
+			continue
+		}
+		for _, capability := range hook.Analysis.Capabilities {
+			class := analysis.ClassifyPath(capability.NormalizedTarget)
+			if class == analysis.PathProjectSensitive && isProjectVCSControlPath(capabilityTarget(capability)) {
+				class = analysis.PathProjectVCSControl
+			}
+			if capability.Kind != "project-write" || !contains(rule.Matcher.PathClasses, string(class)) {
+				continue
+			}
+			location := capability.Location
+			matches = append(matches, match{hook: hook, key: capability.OperationID + ":" + capabilityTarget(capability), confidence: confidenceFor(capability.Resolution), evidence: []Evidence{{
+				Type: "capability", ID: "project-control-file-modification", OperationID: capability.OperationID,
+				Value: capability.Target.Literal, NormalizedValue: capabilityTarget(capability),
+				Resolution: capability.Resolution, Location: &location,
+			}}})
+		}
+	}
+	return matches
+}
+
+func isProjectVCSControlPath(value string) bool {
+	cleaned := filepath.ToSlash(filepath.Clean(value))
+	return cleaned == "/project/.git/config" || cleaned == "/project/.gitmodules" || strings.HasPrefix(cleaned, "/project/.git/hooks/")
+}
+
+func matchProjectDeletion(item sdk.SDK, rule findingconfig.Rule) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if !hookMatches(hook, rule) || hook.Analysis == nil {
+			continue
+		}
+		for _, operation := range flatten(hook.Analysis.Operations) {
+			if operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved {
+				continue
+			}
+			command := filepath.Base(operation.Command.Literal)
+			if command != "rm" && command != "unlink" && command != "rmdir" {
+				continue
+			}
+			for _, target := range commandPathOperands(operation.Arguments) {
+				normalized := normalizeProjectOperand(target, hook.Name)
+				class := analysis.ClassifyPath(normalized)
+				if !contains(rule.Matcher.PathClasses, string(class)) {
+					continue
+				}
+				location := operation.Location
+				matches = append(matches, match{hook: hook, key: operation.ID + ":" + normalized.Literal, confidence: confidenceFor(normalized.Resolution), evidence: []Evidence{{
+					Type: "operation", ID: "project-file-delete", OperationID: operation.ID,
+					Value: target.Literal, NormalizedValue: normalized.Literal, Resolution: normalized.Resolution,
+					Location: &location,
+				}}})
+			}
+		}
+	}
+	return matches
+}
+
+func matchProjectExecutableCreated(item sdk.SDK, rule findingconfig.Rule) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if !hookMatches(hook, rule) || hook.Analysis == nil {
+			continue
+		}
+		writes := make(map[string]analysis.Capability)
+		for _, capability := range hook.Analysis.Capabilities {
+			if capability.Kind == "project-write" && capability.Resolution == analysis.Resolved {
+				writes[filepath.Clean(capabilityTarget(capability))] = capability
+			}
+		}
+		for _, operation := range flatten(hook.Analysis.Operations) {
+			target, addsExecutable := chmodProjectTarget(operation, hook.Name)
+			if !addsExecutable || target.Literal == "" {
+				continue
+			}
+			writer, ok := writes[filepath.Clean(target.Literal)]
+			if !ok {
+				continue
+			}
+			writerLocation, chmodLocation := writer.Location, operation.Location
+			matches = append(matches, match{hook: hook, key: writer.OperationID + ":" + operation.ID, confidence: "high", evidence: []Evidence{
+				{Type: "capability", ID: "project-executable-write", OperationID: writer.OperationID, Value: writer.Target.Literal, NormalizedValue: capabilityTarget(writer), Resolution: writer.Resolution, Location: &writerLocation},
+				{Type: "operation", ID: "project-executable-permission", OperationID: operation.ID, Value: target.Literal, NormalizedValue: target.Literal, Resolution: target.Resolution, Location: &chmodLocation},
+			}})
+		}
+	}
+	return matches
+}
+
+func matchProjectPermissionModification(item sdk.SDK, rule findingconfig.Rule) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if !hookMatches(hook, rule) || hook.Analysis == nil {
+			continue
+		}
+		for _, operation := range flatten(hook.Analysis.Operations) {
+			target, _ := chmodProjectTarget(operation, hook.Name)
+			if target.Literal == "" {
+				continue
+			}
+			location := operation.Location
+			matches = append(matches, match{hook: hook, key: operation.ID + ":" + target.Literal, confidence: confidenceFor(target.Resolution), evidence: []Evidence{{
+				Type: "operation", ID: "project-permission-modification", OperationID: operation.ID,
+				Value: target.Literal, NormalizedValue: target.Literal, Resolution: target.Resolution, Location: &location,
+			}}})
+		}
+	}
+	return matches
+}
+
+func matchProjectVCSStateRewrite(item sdk.SDK, rule findingconfig.Rule) []match {
+	var matches []match
+	for index := range item.Hooks {
+		hook := &item.Hooks[index]
+		if !hookMatches(hook, rule) || hook.Analysis == nil {
+			continue
+		}
+		for _, operation := range flatten(hook.Analysis.Operations) {
+			kind, root, ok := gitProjectMutation(operation, hook.Name)
+			if !ok {
+				continue
+			}
+			location := operation.Location
+			matches = append(matches, match{hook: hook, key: operation.ID + ":" + kind, confidence: "high", evidence: []Evidence{{
+				Type: "operation", ID: "project-vcs-state-rewrite", OperationID: operation.ID,
+				Value: strings.Join(argumentLiterals(operation.Arguments), " "), NormalizedValue: root,
+				Resolution: analysis.Resolved, Location: &location,
+			}}})
+		}
+	}
+	return matches
+}
+
+func commandPathOperands(arguments []analysis.Value) []analysis.Value {
+	var operands []analysis.Value
+	optionsEnded := false
+	for _, argument := range arguments {
+		if argument.Resolution != analysis.Resolved {
+			continue
+		}
+		if !optionsEnded && argument.Literal == "--" {
+			optionsEnded = true
+			continue
+		}
+		if !optionsEnded && strings.HasPrefix(argument.Literal, "-") && argument.Literal != "-" {
+			continue
+		}
+		operands = append(operands, argument)
+	}
+	return operands
+}
+
+func normalizeProjectOperand(value analysis.Value, hook sdk.HookName) analysis.Value {
+	if value.Resolution != analysis.Resolved || value.Literal == "" {
+		return analysis.Value{Resolution: analysis.Unknown, Literal: value.Literal, Parts: value.Parts}
+	}
+	normalized := filepath.Clean(value.Literal)
+	if !filepath.IsAbs(normalized) && hook == sdk.HookSetupProject {
+		normalized = filepath.Join("/project", normalized)
+	}
+	value.Literal = normalized
+	return value
+}
+
+func chmodProjectTarget(operation analysis.Operation, hook sdk.HookName) (analysis.Value, bool) {
+	if operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved || filepath.Base(operation.Command.Literal) != "chmod" {
+		return analysis.Value{}, false
+	}
+	arguments := argumentLiterals(operation.Arguments)
+	addsExecutable := false
+	for _, argument := range arguments {
+		if strings.Contains(argument, "+x") || strings.Contains(argument, "+X") {
+			addsExecutable = true
+		}
+	}
+	operands := commandPathOperands(operation.Arguments)
+	if len(operands) < 2 {
+		return analysis.Value{}, addsExecutable
+	}
+	target := normalizeProjectOperand(operands[len(operands)-1], hook)
+	if target.Literal != "/project" && !strings.HasPrefix(target.Literal, "/project/") {
+		return analysis.Value{}, addsExecutable
+	}
+	return target, addsExecutable
+}
+
+func gitProjectMutation(operation analysis.Operation, hook sdk.HookName) (string, string, bool) {
+	if operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved || filepath.Base(operation.Command.Literal) != "git" {
+		return "", "", false
+	}
+	arguments := argumentLiterals(operation.Arguments)
+	root := ""
+	var command []string
+	for index := 0; index < len(arguments); index++ {
+		argument := arguments[index]
+		if argument == "-C" && index+1 < len(arguments) {
+			root = arguments[index+1]
+			index++
+			continue
+		}
+		if strings.HasPrefix(argument, "--git-dir=") || strings.HasPrefix(argument, "--work-tree=") {
+			continue
+		}
+		command = append(command, argument)
+	}
+	if root == "" && hook == sdk.HookSetupProject {
+		root = "/project"
+	}
+	root = filepath.Clean(root)
+	if root != "/project" && !strings.HasPrefix(root, "/project/") {
+		return "", "", false
+	}
+	if len(command) == 0 {
+		return "", "", false
+	}
+	switch command[0] {
+	case "reset":
+		if contains(command[1:], "--hard") {
+			return "reset-hard", root, true
+		}
+	case "clean":
+		for _, argument := range command[1:] {
+			if argument == "--force" || strings.HasPrefix(argument, "-") && strings.Contains(strings.TrimPrefix(argument, "-"), "f") {
+				return "clean-force", root, true
+			}
+		}
+	case "checkout", "restore":
+		if contains(command, "--") || len(command) > 1 {
+			return command[0] + "-files", root, true
+		}
+	case "remote":
+		if len(command) > 1 && (command[1] == "set-url" || command[1] == "add" || command[1] == "remove" || command[1] == "rename") {
+			return "remote-" + command[1], root, true
+		}
+	case "update-index":
+		for _, argument := range command[1:] {
+			if strings.HasPrefix(argument, "--skip-worktree") || strings.HasPrefix(argument, "--assume-unchanged") || strings.HasPrefix(argument, "--index-info") {
+				return "update-index", root, true
+			}
+		}
+	}
+	return "", "", false
 }
 
 func matchToolchainSearchOrderHijack(item sdk.SDK, rule findingconfig.Rule) []match {
@@ -758,7 +1260,7 @@ func matchRelationFlows(item sdk.SDK, rule findingconfig.Rule) []match {
 						sinks = []analysis.Capability{{OperationID: reachable.id, Operation: sink.Kind, Resolution: sink.Resolution, Location: sink.Location}}
 					}
 					for _, sinkCapability := range sinks {
-						matches = append(matches, flowMatch(hook, rule, sourceCapability, sinkCapability, reachable.resolution))
+						matches = append(matches, flowMatch(hook, rule, sourceCapability, sinkCapability, reachable.resolution, reachable.path))
 					}
 				}
 			}
@@ -770,10 +1272,12 @@ func matchRelationFlows(item sdk.SDK, rule findingconfig.Rule) []match {
 type reachableOperation struct {
 	id         string
 	resolution analysis.Resolution
+	path       []analysis.Relation
 }
 
 func reachableSinks(sourceID string, sourceResolution analysis.Resolution, relations []analysis.Relation, flowKinds []string) []reachableOperation {
 	best := map[string]analysis.Resolution{sourceID: sourceResolution}
+	paths := map[string][]analysis.Relation{sourceID: nil}
 	queue := []string{sourceID}
 	for len(queue) > 0 {
 		current := queue[0]
@@ -796,13 +1300,14 @@ func reachableSinks(sourceID string, sourceResolution analysis.Resolution, relat
 				continue
 			}
 			best[next] = resolution
+			paths[next] = append(append([]analysis.Relation{}, paths[current]...), relation)
 			queue = append(queue, next)
 		}
 	}
 	reachable := make([]reachableOperation, 0, len(best)-1)
 	for id, resolution := range best {
 		if id != sourceID {
-			reachable = append(reachable, reachableOperation{id: id, resolution: resolution})
+			reachable = append(reachable, reachableOperation{id: id, resolution: resolution, path: paths[id]})
 		}
 	}
 	sort.Slice(reachable, func(i, j int) bool { return reachable[i].id < reachable[j].id })
@@ -815,22 +1320,31 @@ func sameOperationFlow(hook *sdk.Hook, rule findingconfig.Rule, source analysis.
 		if sink.OperationID == "" || sink.OperationID != source.OperationID || sink.Kind == source.Kind {
 			continue
 		}
-		matches = append(matches, flowMatch(hook, rule, source, sink, combinedResolution(source.Resolution, sink.Resolution)))
+		matches = append(matches, flowMatch(hook, rule, source, sink, combinedResolution(source.Resolution, sink.Resolution), nil))
 	}
 	return matches
 }
 
-func flowMatch(hook *sdk.Hook, rule findingconfig.Rule, source, sink analysis.Capability, relationResolution analysis.Resolution) match {
+func flowMatch(hook *sdk.Hook, rule findingconfig.Rule, source, sink analysis.Capability, relationResolution analysis.Resolution, path []analysis.Relation) match {
 	resolution := combinedResolution(combinedResolution(source.Resolution, sink.Resolution), relationResolution)
 	fromLocation, toLocation := source.Location, sink.Location
-	return match{hook: hook, key: source.OperationID + "->" + sink.OperationID + ":" + capabilityTargetKey(source) + ":" + capabilityTargetKey(sink), confidence: confidenceFor(resolution), evidence: []Evidence{
+	evidence := []Evidence{
 		{Type: "capability", ID: source.Kind, OperationID: source.OperationID, Value: source.Target.Literal,
 			NormalizedValue: source.NormalizedTarget.Literal, NormalizedCandidates: append([]string{}, source.NormalizedTarget.Candidates...),
 			Resolution: source.Resolution, Location: &fromLocation},
-		{Type: "data-flow", ID: sinkEvidenceID(rule), OperationID: sink.OperationID, FromOperationID: source.OperationID, ToOperationID: sink.OperationID,
-			Value: sink.Target.Literal, NormalizedValue: sink.NormalizedTarget.Literal, NormalizedCandidates: append([]string{}, sink.NormalizedTarget.Candidates...),
-			Resolution: resolution, Location: &toLocation},
-	}}
+	}
+	for _, relation := range path {
+		if relation.Kind != analysis.RelationArtifactFlow && relation.Kind != analysis.RelationCollectionFlow {
+			continue
+		}
+		evidence = append(evidence, Evidence{Type: "artifact-flow", ID: string(relation.Kind), OperationID: relation.ToOperationID,
+			FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
+			Value: relation.Artifact.Literal, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution})
+	}
+	evidence = append(evidence, Evidence{Type: "data-flow", ID: sinkEvidenceID(rule), OperationID: sink.OperationID, FromOperationID: source.OperationID, ToOperationID: sink.OperationID,
+		Value: sink.Target.Literal, NormalizedValue: sink.NormalizedTarget.Literal, NormalizedCandidates: append([]string{}, sink.NormalizedTarget.Candidates...),
+		Resolution: resolution, Location: &toLocation})
+	return match{hook: hook, key: source.OperationID + "->" + sink.OperationID + ":" + capabilityTargetKey(source) + ":" + capabilityTargetKey(sink), confidence: confidenceFor(resolution), evidence: evidence}
 }
 
 func capabilityTargetKey(capability analysis.Capability) string {

@@ -237,6 +237,7 @@ func writeAssessmentScores(writer io.Writer, priority finding.Score, risk, assur
 		{label: "Risk:", score: risk.Score, level: risk.Level},
 		{label: "Assurance:", score: assurance.Score, level: assurance.Level, positive: true, assurance: true},
 		{label: "Coverage:", score: coverage.Score, level: coverage.Level, positive: true},
+		{label: "Semantic:", score: coverage.Semantics.Score, level: coverage.Semantics.Level, positive: true},
 	}
 	for _, item := range items {
 		displayLevel := item.level
@@ -248,6 +249,11 @@ func writeAssessmentScores(writer io.Writer, priority finding.Score, risk, assur
 		if _, err := fmt.Fprintf(writer, "%s%-16s %s%s %s\n", indent, item.label,
 			formatAssessmentScoreDisplay(item.score, item.level, displayLevel, item.positive, color), padding,
 			formatAssessmentBar(item.score, item.level, item.positive, color)); err != nil {
+			return err
+		}
+	}
+	for _, gap := range coverage.Semantics.Gaps {
+		if _, err := fmt.Fprintf(writer, "%s  Semantic gap [%s/%s]: %s\n", indent, gap.Dimension, gap.Code, gap.Message); err != nil {
 			return err
 		}
 	}

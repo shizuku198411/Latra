@@ -68,8 +68,8 @@ When the TUI starts, it automatically retrieves and scans the SDKs. Once scannin
  Project: /project/internaldocs/sample-project
  SDKs: 2  (read-only, auto-fetch missing SDKs)
  ────────────────────────────────────────────────────────────────────────────────────────────────────
- ❯ kernel-dev-base          project  local                          Review Priority: 76/100
-   rust                     store    cached        latest/stable    Review Priority: 10/100
+ ❯ kernel-dev-base          project  local                          Review Priority: 68/100
+   rust                     store    cached        latest/stable    Review Priority: 25/100
 ```
 
 To verify the scan results and examine the actual SDK contents, select an SDK using Enter or the right arrow key (→).
@@ -91,7 +91,7 @@ The Explorer displays the SDK's **Metadata**, **Hooks**, and **Files**.
 ```
 
 You can inspect any file, but a good starting point is to focus on the highlighted files.  
-Files flagged by Latra for further review include inline annotations that highlight the relevant commands and explain why they were flagged.
+Files flagged by Latra for further review include inline Risk or Semantic Gap annotations that identify the relevant source lines and explain why they were flagged.
 
 ```text
  Latra / SDK Explorer
@@ -148,34 +148,34 @@ Workshops
 
 Summary
   SDKs: 2 (2 resolved, 0 unresolved)
-    Resolved: project-toolchain, rust
+    Resolved: kernel-dev-base, rust
     Unresolved: -
   Files: 26
-    project-toolchain (5): hooks/check-health, hooks/setup-base, hooks/setup-project, sdk.yaml, ... and more files (1)
+    kernel-dev-base (5): hooks/check-health, hooks/setup-base, hooks/setup-project, sdk.yaml, ... and more files (1)
     rust (21): meta/sdk.yaml, sdk/hooks/check-health, sdk/hooks/setup-base, ... and more files (18)
   Hooks: 5
-    project-toolchain (3): check-health, setup-base, setup-project
+    kernel-dev-base (3): check-health, setup-base, setup-project
     rust (2): check-health, setup-base
   Operations: 61
-    project-toolchain (47): assignment (10), command-invocation (23), control-flow (9), redirect-write (5)
+    kernel-dev-base (47): assignment (10), command-invocation (23), control-flow (9), redirect-write (5)
     rust (14): command-invocation (9), control-flow (1), redirect-read (1), redirect-write (2), source (1)
   Capabilities: 25
-    project-toolchain (14): code-execution (1), device-access (5), identity-change (2), network-access (3), network-download (1), project-write (1), system-modification (1)
+    kernel-dev-base (14): code-execution (1), device-access (5), identity-change (2), network-access (3), network-download (1), project-write (1), system-modification (1)
     rust (11): code-execution (1), destructive-operation (1), dynamic-execution (1), identity-change (2), network-access (2), persistence (2), system-modification (2)
-  Unknown Commands: 5
-    project-toolchain (5)
-      hooks/check-health (4): clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
+  Unknown Commands: 4
+    kernel-dev-base (4)
+      hooks/check-health (3): llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
       hooks/setup-project (1): make (1)
     rust (0)
-  Findings: 14 (6 risk, 8 assurance)
+  Findings: 13 (5 risk, 8 assurance)
     High-priority risks:
-      project-toolchain (high): risk.remote-content-to-project (1), risk.unknown-command-root (4)
-  Diagnostics: 0: -
+      kernel-dev-base (high): risk.remote-content-to-project (1), risk.unknown-command-root (3)
+  Diagnostics: 1: external-include (1)
 
 Observations
   Project Access: 1 (0 reads, 1 writes)
   By SDK:
-    project-toolchain: 1 (0 reads, 1 writes)
+    kernel-dev-base: 1 (0 reads, 1 writes)
 ```
 
 </details>
@@ -183,51 +183,60 @@ Observations
 #### Review the assessment
 
 Each scan ends with an assessment that separates detected risk, positive
-assurance, and analysis coverage:
+assurance, general analysis coverage, and semantic coverage:
 
 ```text
 Assessment
-  Classification: powerful-but-controlled
-  Review Priority: 79/100 (high)          [████████████████░░░░]
-  Risk:            79/100 (high)          [████████████████░░░░]
+  Classification: requires-semantic-review
+  Review Priority: 72/100 (high)          [██████████████░░░░░░]
+  Risk:            72/100 (high)          [██████████████░░░░░░]
   Assurance:       80/100 (strong)        [████████████████░░░░]
-  Coverage:        94/100 (sufficient)    [███████████████████░]
+  Coverage:        75/100 (insufficient)  [███████████████░░░░░]
+  Semantic:        75/100 (insufficient)  [███████████████░░░░░]
+    Semantic gap [included-sources/external-include]: source at rust/sdk/hooks/setup-base is not a statically resolvable SDK-local include
   By SDK:
-    project-toolchain: powerful-but-controlled
-      Review Priority: 76/100 (high)          [███████████████░░░░░]
-      Risk:            76/100 (high)          [███████████████░░░░░]
+    kernel-dev-base: powerful-but-controlled
+      Review Priority: 68/100 (high)          [██████████████░░░░░░]
+      Risk:            68/100 (high)          [██████████████░░░░░░]
       Assurance:       66/100 (strong)        [█████████████░░░░░░░]
-      Coverage:        91/100 (sufficient)    [██████████████████░░]
+      Coverage:        93/100 (sufficient)    [███████████████████░]
+      Semantic:        100/100 (sufficient)   [████████████████████]
       Key Risks:
-        risk.unknown-command-root: Unknown command runs in a root hook [medium, score=68, occurrences=4]
-          sdk=project-toolchain file=hooks/check-health:8:1 hook=check-health value="qemu-system-riscv64"
-          sdk=project-toolchain file=hooks/check-health:9:1 hook=check-health value="clang"
-          sdk=project-toolchain file=hooks/check-health:10:1 hook=check-health value="llvm-objdump"
-          sdk=project-toolchain file=hooks/check-health:11:1 hook=check-health value="llvm-objcopy"
+        risk.unknown-command-root: Unknown command runs in a root hook [medium, score=58, occurrences=3]
+          sdk=kernel-dev-base file=hooks/check-health:8:1 hook=check-health value="qemu-system-riscv64"
+          sdk=kernel-dev-base file=hooks/check-health:10:1 hook=check-health value="llvm-objdump"
+          sdk=kernel-dev-base file=hooks/check-health:11:1 hook=check-health value="llvm-objcopy"
         risk.remote-content-to-project: Remote content is written into the Workshop project [medium, score=25, occurrences=1]
-          sdk=project-toolchain file=hooks/setup-project:13:3 hook=setup-project value="git"
-          sdk=project-toolchain file=hooks/setup-project:13:3 hook=setup-project value="opensbi"
-    rust: expected-and-controlled
-      Review Priority: 10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
+          sdk=kernel-dev-base file=hooks/setup-project:13:3 hook=setup-project value="git"
+          sdk=kernel-dev-base file=hooks/setup-project:13:3 hook=setup-project value="opensbi"
+    rust: requires-semantic-review
+      Review Priority: 25/100 (medium)        [█████░░░░░░░░░░░░░░░]
       Risk:            10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
       Assurance:       68/100 (strong)        [██████████████░░░░░░]
-      Coverage:        100/100 (sufficient)   [████████████████████]
+      Coverage:        75/100 (insufficient)  [███████████████░░░░░]
+      Semantic:        75/100 (insufficient)  [███████████████░░░░░]
+        Semantic gap [included-sources/external-include]: source at rust/sdk/hooks/setup-base is not a statically resolvable SDK-local include
       Key Risks:
         risk.profile-environment-write: Shell environment profile is written during base setup [low, score=10, occurrences=1]
           sdk=rust file=sdk/hooks/setup-base:4:11 hook=setup-base value="/etc/profile.d/rust.sh"
+
+Diagnostics
+  rust: [warning] external-include (include): source at rust/sdk/hooks/setup-base is not a statically resolvable SDK-local include
 ```
 
-This result indicates that Latra analyzed the available hook and command
-evidence with sufficient coverage. The project SDK requires focused review
-because it runs unknown commands as root and writes remotely obtained content
-into the project. The Rust SDK is assessed separately as
-`expected-and-controlled`, with one low-risk static environment configuration
-write. These classifications describe the observed behavior and controls; they
-do not guarantee that either SDK is safe.
+This result indicates that the project SDK requires focused review because it
+runs unknown commands as root and writes remotely obtained content into the
+project. The Rust SDK has one low-risk static environment configuration write,
+but its absolute `source` of `/etc/profile.d/rust.sh` cannot currently be
+analyzed as an SDK-local include. That semantic gap limits both the Rust SDK and
+combined project coverage to 75 and produces the `requires-semantic-review`
+classification. These classifications describe the observed behavior, analysis
+coverage, and controls; they do not guarantee that either SDK is safe.
 
-The per-SDK `Key Risks` identifies what needs review and where it was detected. Its `sdk`,
-`file`, and `hook` values can be passed directly to the inspection commands in
-the next section.
+The per-SDK `Key Risks` and `Semantic gap` entries identify what needs review
+and why. Risk `sdk`, `file`, and `hook` values can be passed directly to the
+inspection commands in the next section. In the TUI, semantic gaps backed by an
+operation location are attached to the corresponding source line.
 
 #### Inspect a hook or file
 

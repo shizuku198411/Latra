@@ -103,9 +103,9 @@ import sys
 with open(sys.argv[1]) as report_file:
     report = json.load(report_file)
 
-assert report["schemaVersion"] == "4"
+assert report["schemaVersion"] == "5"
 assert report["findingDatabase"]["schemaVersion"] == "4"
-assert report["findingDatabase"]["contentVersion"] == "2026.11.6.3"
+assert report["findingDatabase"]["contentVersion"] == "2026.11.11.7"
 assert report["findingDatabase"]["source"] == "embedded-default"
 assert report["input"]["kind"] == "project"
 assert report["summary"]["sdks"] == {

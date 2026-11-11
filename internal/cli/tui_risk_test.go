@@ -4,8 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/finding"
 	"github.com/shizuku198411/Latra/internal/report"
+	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
 )
 
@@ -47,6 +49,39 @@ func TestTUIRiskAnnotationsMatchSDKFileAndLine(t *testing.T) {
 	rows = tuiPreviewRows(preview, risks, 100, 10)
 	if len(rows) != 1 || !strings.Contains(rows[0], "2  export") {
 		t.Fatalf("source-line scrolling: %#v", rows)
+	}
+}
+
+func TestTUISemanticGapLabelsMatchOperationLocation(t *testing.T) {
+	document := &report.Document{
+		SDKs: []report.SDK{{Name: "rust", Hooks: []report.Hook{{
+			Name: sdk.HookSetupBase,
+			Operations: []analysis.Operation{{
+				ID: "op-0004", Location: shell.Location{Path: "rust/sdk/hooks/setup-base", StartLine: 9},
+			}},
+		}}}},
+		Assessment: finding.Assessment{BySDK: []finding.SDKAssessment{{
+			SDK: "rust",
+			Coverage: finding.Coverage{Semantics: finding.SemanticCoverage{Gaps: []finding.SemanticGap{{
+				Code: "external-include", Dimension: "included-sources", Severity: "critical",
+				Hook: sdk.HookSetupBase, OperationID: "op-0004",
+				Message: "source is not a statically resolvable SDK-local include",
+			}}}},
+		}}},
+	}
+	annotations := risksForPreview(document, "rust", "sdk/hooks/setup-base")
+	if len(annotations[9]) != 1 {
+		t.Fatalf("semantic annotations = %#v", annotations)
+	}
+	lines := make([]string, 9)
+	lines[8] = "    9  . /etc/profile.d/rust.sh"
+	rows := tuiPreviewRows(&tuiPreview{Lines: lines, Scroll: 8}, annotations, 120, 3)
+	if len(rows) != 2 || !strings.Contains(rows[0], "#Semantic Gap > [included-sources/external-include]") {
+		t.Fatalf("semantic label rows = %#v", rows)
+	}
+	levels := tuiTreeRisks(document, "rust")
+	if levels["sdk/hooks/setup-base"] != "critical" || levels["sdk/hooks"] != "critical" {
+		t.Fatalf("semantic tree levels = %#v", levels)
 	}
 }
 

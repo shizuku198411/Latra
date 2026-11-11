@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+cp /project/scripts/tool.sh "$SDK_STATE_DIR/tool.sh"

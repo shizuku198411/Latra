@@ -6,6 +6,7 @@ path-capabilities:
       additional-capabilities:
         - sensitive-file-read
         - project-read
+    write: {id: path.project-sensitive.write, capability: project-write}
   user-sensitive:
     read:
       id: path.user-sensitive.read
@@ -19,6 +20,27 @@ path-capabilities:
   project:
     read: {id: path.project.read, capability: project-read}
     write: {id: path.project.write, capability: project-write}
+  project-vcs-control:
+    read: {id: path.project-vcs-control.read, capability: project-read}
+    write: {id: path.project-vcs-control.write, capability: project-write}
+  project-ci-control:
+    read: {id: path.project-ci-control.read, capability: project-read}
+    write: {id: path.project-ci-control.write, capability: project-write}
+  project-build-control:
+    read: {id: path.project-build-control.read, capability: project-read}
+    write: {id: path.project-build-control.write, capability: project-write}
+  project-dependency-control:
+    read: {id: path.project-dependency-control.read, capability: project-read}
+    write: {id: path.project-dependency-control.write, capability: project-write}
+  project-execution-control:
+    read: {id: path.project-execution-control.read, capability: project-read}
+    write: {id: path.project-execution-control.write, capability: project-write}
+  project-source:
+    read: {id: path.project-source.read, capability: project-read}
+    write: {id: path.project-source.write, capability: project-write}
+  project-generated:
+    read: {id: path.project-generated.read, capability: project-read}
+    write: {id: path.project-generated.write, capability: project-write}
   sensitive:
     read:
       id: path.sensitive.read

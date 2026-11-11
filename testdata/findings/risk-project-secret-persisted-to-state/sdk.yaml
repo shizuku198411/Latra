@@ -1,0 +1,3 @@
+name: risk-project-secret-persisted-to-state
+title: Project secret persisted to state fixture
+summary: Exercises Project-sensitive data copied into SDK state

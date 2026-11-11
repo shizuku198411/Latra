@@ -27,12 +27,12 @@ finding-rules:
         - state-write
     message: A write target is limited to the persisted SDK state path.
     limitations:
-      - Persisted content may still affect later restore behavior.
+      - Path scoping does not establish that persisted content is safe or prevent it from affecting later restore behavior.
 
   - id: assurance.non-root-hook
     kind: assurance
     family: least-privilege
-    title: Hook runs without root privileges
+    title: Hook runs as the Workshop user
     strength: medium
     confidence: high
     weight: 30
@@ -42,6 +42,7 @@ finding-rules:
       project-mounted: true
       interfaces-active: true
       state-mounted: false
-    message: The Workshop lifecycle runs this hook as the workshop user.
+    message: The Workshop lifecycle runs this hook as the Workshop user rather than container root.
     limitations:
-      - The user context can still modify mounted project and user data.
+      - The Workshop user can still modify the host-backed mounted Project and user data.
+      - Container root may also map to a non-root host user; this assurance only describes the in-container lifecycle identity.

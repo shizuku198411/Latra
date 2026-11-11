@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"bytes"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,11 +12,13 @@ import (
 )
 
 const candidateLimit = 8
+const maxFunctionExpansionDepth = 8
 
 type builder struct {
 	sourceName         string
 	variables          map[string]Value
-	functions          map[string]bool
+	functions          map[string]*syntax.FuncDecl
+	functionDepth      int
 	workingDirectory   Value
 	nextStatementGroup *int
 }
@@ -30,14 +33,41 @@ func Analyze(hook string, parsed *shell.Result) Result {
 	b := &builder{
 		sourceName:         parsed.Path,
 		variables:          make(map[string]Value),
-		functions:          make(map[string]bool),
+		functions:          make(map[string]*syntax.FuncDecl),
 		workingDirectory:   initialWorkingDirectory(hook),
 		nextStatementGroup: &nextStatementGroup,
 	}
 	result.Operations = b.statements(parsed.Program.Stmts)
-	result.Relations = BuildRelations(result.Operations)
+	BuildRelations(result.Operations) // Assign stable IDs before alias edges are created.
+	aliases := ResolvePathAliases(result.Operations)
+	result.Relations = append(BuildRelations(result.Operations), aliases...)
 	result.Capabilities = ExtractCapabilities(result.Operations, result.Context)
 	return result
+}
+
+// Rebuild refreshes IDs, relations, and capabilities after a trusted caller
+// attaches statically resolved operations such as SDK-local includes.
+func Rebuild(result *Result) {
+	if result == nil {
+		return
+	}
+	aliases := filterAliasRelations(result.Relations)
+	if len(aliases) == 0 {
+		BuildRelations(result.Operations)
+		aliases = ResolvePathAliases(result.Operations)
+	}
+	result.Relations = append(BuildRelations(result.Operations), aliases...)
+	result.Capabilities = ExtractCapabilities(result.Operations, result.Context)
+}
+
+func filterAliasRelations(relations []Relation) []Relation {
+	var aliases []Relation
+	for _, relation := range relations {
+		if relation.Kind == RelationAlias {
+			aliases = append(aliases, relation)
+		}
+	}
+	return aliases
 }
 
 func (b *builder) statements(statements []*syntax.Stmt) []Operation {
@@ -86,7 +116,7 @@ func (b *builder) statement(statement *syntax.Stmt) []Operation {
 		name := ""
 		if command.Name != nil {
 			name = command.Name.Value
-			b.functions[name] = true
+			b.functions[name] = command
 		}
 		child := b.child().statement(command.Body)
 		operations = append(operations, Operation{
@@ -149,7 +179,7 @@ func (b *builder) call(call *syntax.CallExpr) []Operation {
 	kind := OperationCommand
 	if command.Resolution != Resolved {
 		kind = OperationCommand
-	} else if b.functions[command.Literal] {
+	} else if b.functions[command.Literal] != nil {
 		kind = OperationFunctionInvocation
 	} else if command.Literal == "eval" {
 		kind = OperationEval
@@ -166,6 +196,21 @@ func (b *builder) call(call *syntax.CallExpr) []Operation {
 	}
 	for _, word := range call.Args {
 		operation.Children = append(operation.Children, b.substitutions(word)...)
+	}
+	if kind == OperationFunctionInvocation && b.functionDepth < maxFunctionExpansionDepth {
+		if declaration := b.functions[command.Literal]; declaration != nil {
+			callee := b.child()
+			callee.functionDepth++
+			for index, argument := range arguments {
+				if index >= 9 {
+					break
+				}
+				callee.variables[fmt.Sprint(index+1)] = argument
+			}
+			callee.variables["@"] = positionalArgumentsValue(arguments)
+			callee.variables["*"] = positionalArgumentsValue(arguments)
+			operation.Children = append(operation.Children, callee.statement(declaration.Body)...)
+		}
 	}
 	operations = append(operations, operation)
 	if command.Resolution == Resolved && filepath.Base(command.Literal) == "cd" {
@@ -451,10 +496,33 @@ func (b *builder) child() *builder {
 	return &builder{
 		sourceName:         b.sourceName,
 		variables:          cloneValues(b.variables),
-		functions:          cloneSet(b.functions),
+		functions:          cloneFunctions(b.functions),
+		functionDepth:      b.functionDepth,
 		workingDirectory:   b.workingDirectory,
 		nextStatementGroup: b.nextStatementGroup,
 	}
+}
+
+func positionalArgumentsValue(arguments []Value) Value {
+	if len(arguments) == 0 {
+		return literalValue("")
+	}
+	var values []string
+	for _, argument := range arguments {
+		if argument.Resolution != Resolved {
+			return Value{Resolution: Unknown}
+		}
+		values = append(values, argument.Literal)
+	}
+	return literalValue(strings.Join(values, " "))
+}
+
+func cloneFunctions(source map[string]*syntax.FuncDecl) map[string]*syntax.FuncDecl {
+	clone := make(map[string]*syntax.FuncDecl, len(source))
+	for name, declaration := range source {
+		clone[name] = declaration
+	}
+	return clone
 }
 
 func initialWorkingDirectory(hook string) Value {

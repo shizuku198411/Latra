@@ -8,13 +8,16 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/report"
+	"github.com/shizuku198411/Latra/internal/sdk"
+	"github.com/shizuku198411/Latra/internal/shell"
 )
 
 // tuiRisk is a view-only annotation. Source lines and their numbering remain unchanged.
 type tuiRisk struct {
-	ID, Title, Severity, Value string
-	Score                      int
+	Kind, ID, Title, Severity, Value string
+	Score                            int
 }
 
 // risksForPreview reuses the scanner's already aggregated KeyRisks and their
@@ -37,7 +40,7 @@ func risksForPreview(document *report.Document, sdkName, file string) map[int][]
 				if locationPath != path.Clean(file) {
 					continue
 				}
-				item := tuiRisk{ID: risk.ID, Title: risk.Title, Severity: risk.Severity, Score: risk.Score, Value: scope.Value}
+				item := tuiRisk{Kind: "risk", ID: risk.ID, Title: risk.Title, Severity: risk.Severity, Score: risk.Score, Value: scope.Value}
 				// Multiple evidence objects for one finding can point to the same line.
 				duplicate := false
 				for _, existing := range annotations[scope.Location.StartLine] {
@@ -51,9 +54,51 @@ func risksForPreview(document *report.Document, sdkName, file string) map[int][]
 				}
 			}
 		}
+		for _, gap := range assessment.Coverage.Semantics.Gaps {
+			location := tuiSemanticGapLocation(document, sdkName, gap.Hook, gap.OperationID)
+			if location == nil || location.StartLine < 1 || tuiRiskPath(location.Path, sdkName) != path.Clean(file) {
+				continue
+			}
+			item := tuiRisk{Kind: "semantic-gap", ID: gap.Dimension + "/" + gap.Code, Title: gap.Message, Severity: gap.Severity}
+			annotations[location.StartLine] = append(annotations[location.StartLine], item)
+		}
 		break
 	}
 	return annotations
+}
+
+func tuiSemanticGapLocation(document *report.Document, sdkName string, hook sdk.HookName, operationID string) *shell.Location {
+	if operationID == "" {
+		return nil
+	}
+	for _, item := range document.SDKs {
+		if item.Name != sdkName {
+			continue
+		}
+		for _, itemHook := range item.Hooks {
+			if hook != "" && itemHook.Name != hook {
+				continue
+			}
+			if location := tuiOperationLocation(itemHook.Operations, operationID); location != nil {
+				return location
+			}
+		}
+		break
+	}
+	return nil
+}
+
+func tuiOperationLocation(operations []analysis.Operation, operationID string) *shell.Location {
+	for _, operation := range operations {
+		if operation.ID == operationID {
+			location := operation.Location
+			return &location
+		}
+		if location := tuiOperationLocation(operation.Children, operationID); location != nil {
+			return location
+		}
+	}
+	return nil
 }
 
 // tuiRiskPath resolves the scanner's SDK-prefixed paths to Explorer paths.
@@ -90,9 +135,27 @@ func tuiTreeRisks(document *report.Document, sdkName string) map[string]string {
 				}
 			}
 		}
+		for _, gap := range assessment.Coverage.Semantics.Gaps {
+			location := tuiSemanticGapLocation(document, sdkName, gap.Hook, gap.OperationID)
+			if location == nil || location.StartLine < 1 {
+				continue
+			}
+			addTUITreeLevel(levels, tuiRiskPath(location.Path, sdkName), gap.Severity)
+		}
 		break
 	}
 	return levels
+}
+
+func addTUITreeLevel(levels map[string]string, file, level string) {
+	if file == "." || file == ".." || strings.HasPrefix(file, "../") || path.IsAbs(file) {
+		return
+	}
+	for current := file; current != "."; current = path.Dir(current) {
+		if tuiRiskSeverityRank(level) > tuiRiskSeverityRank(levels[current]) {
+			levels[current] = level
+		}
+	}
 }
 
 func tuiRiskSeverityRank(level string) int {
@@ -134,12 +197,15 @@ func tuiPreviewRows(preview *tuiPreview, annotations map[int][]tuiRisk, width, h
 			// Display its label once, but retain every value for highlighting.
 			seen := make(map[string]bool)
 			for _, risk := range atLine {
-				key := risk.ID + "\x00" + risk.Title + "\x00" + risk.Severity + fmt.Sprint(risk.Score)
+				key := risk.Kind + "\x00" + risk.ID + "\x00" + risk.Title + "\x00" + risk.Severity + fmt.Sprint(risk.Score)
 				if seen[key] {
 					continue
 				}
 				seen[key] = true
 				label := fmt.Sprintf(" #Risk > %s, %s, score=%d/100", risk.Title, risk.Severity, risk.Score)
+				if risk.Kind == "semantic-gap" {
+					label = fmt.Sprintf(" #Semantic Gap > [%s] %s", risk.ID, risk.Title)
+				}
 				rows = append(rows, report.ColorReviewPriority(fitLine(safeTUILabel(label), width), risk.Severity))
 				if len(rows) == height {
 					break
