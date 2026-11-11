@@ -92,6 +92,9 @@ func TestIncludeDiagnosticDoesNotDuplicateUnresolvedIncludeGap(t *testing.T) {
 	if len(semantics.Gaps) != 1 || semantics.Gaps[0].Code != "external-include" {
 		t.Fatalf("semantic gaps = %#v", semantics.Gaps)
 	}
+	if semantics.Gaps[0].Hook != sdk.HookSetupBase || semantics.Gaps[0].OperationID == "" {
+		t.Fatalf("semantic gap source = %#v", semantics.Gaps[0])
+	}
 }
 
 func TestUnlinkedExternalSendCreatesSemanticGap(t *testing.T) {

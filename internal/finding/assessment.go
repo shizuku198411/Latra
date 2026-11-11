@@ -174,8 +174,13 @@ func semanticCoverageForSDK(item sdk.SDK) SemanticCoverage {
 		if diagnostic.Phase != "include" {
 			continue
 		}
+		gap := SemanticGap{Code: diagnostic.Code, Dimension: "included-sources", Severity: "critical", Message: diagnostic.Message}
+		if includeDiagnostics < len(unresolvedIncludes) {
+			gap.Hook = unresolvedIncludes[includeDiagnostics].Hook
+			gap.OperationID = unresolvedIncludes[includeDiagnostics].OperationID
+		}
 		includeDiagnostics++
-		addSemanticGap(&coverage, &coverage.IncludedSources, SemanticGap{Code: diagnostic.Code, Dimension: "included-sources", Severity: "critical", Message: diagnostic.Message})
+		addSemanticGap(&coverage, &coverage.IncludedSources, gap)
 	}
 	for _, gap := range unresolvedIncludes[min(includeDiagnostics, len(unresolvedIncludes)):] {
 		addSemanticGap(&coverage, &coverage.IncludedSources, gap)
