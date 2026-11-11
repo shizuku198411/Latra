@@ -76,6 +76,24 @@ func TestDynamicIncludeLowersCoverage(t *testing.T) {
 	}
 }
 
+func TestIncludeDiagnosticDoesNotDuplicateUnresolvedIncludeGap(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, ". /etc/profile.d/rust.sh\n", sdk.HookSetupBase)
+	item.Diagnostics = append(item.Diagnostics, sdk.Diagnostic{
+		Code: "external-include", Severity: sdk.SeverityWarning, Phase: "include",
+		Message: "source at fixture/hooks/setup-base is not a statically resolvable SDK-local include",
+	})
+	assessment := finding.AssessSDK(item, finding.AnalyzeSDK(item))
+	semantics := assessment.Coverage.Semantics
+	if semantics.Score != 75 || semantics.CriticalGaps != 1 || semantics.IncludedSources.Gaps != 1 {
+		t.Fatalf("semantic coverage = %#v", semantics)
+	}
+	if len(semantics.Gaps) != 1 || semantics.Gaps[0].Code != "external-include" {
+		t.Fatalf("semantic gaps = %#v", semantics.Gaps)
+	}
+}
+
 func TestUnlinkedExternalSendCreatesSemanticGap(t *testing.T) {
 	t.Parallel()
 

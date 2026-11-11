@@ -82,6 +82,7 @@ type SemanticCoverage struct {
 
 func semanticCoverageForSDK(item sdk.SDK) SemanticCoverage {
 	coverage := SemanticCoverage{Gaps: []SemanticGap{}}
+	unresolvedIncludes := []SemanticGap{}
 	for _, declaration := range item.Declarations {
 		coverage.Composition.Applicable++
 		if declaration.Definition != "" && declaration.Workshop != "" && declaration.Order >= 0 {
@@ -112,7 +113,7 @@ func semanticCoverageForSDK(item sdk.SDK) SemanticCoverage {
 				if operation.Include != nil {
 					coverage.IncludedSources.Resolved++
 				} else {
-					addSemanticGap(&coverage, &coverage.IncludedSources, SemanticGap{Code: "unresolved-include", Dimension: "included-sources", Severity: "critical", Hook: hook.Name, OperationID: operation.ID, Message: "A sourced file could not be resolved and analyzed from SDK inventory."})
+					unresolvedIncludes = append(unresolvedIncludes, SemanticGap{Code: "unresolved-include", Dimension: "included-sources", Severity: "critical", Hook: hook.Name, OperationID: operation.ID, Message: "A sourced file could not be resolved and analyzed from SDK inventory."})
 				}
 			case analysis.OperationFunctionInvocation:
 				coverage.Functions.Applicable++
@@ -168,11 +169,16 @@ func semanticCoverageForSDK(item sdk.SDK) SemanticCoverage {
 			addSemanticGap(&coverage, &coverage.Lifecycle, SemanticGap{Code: "unlinked-state-channel", Dimension: "lifecycle", Severity: "critical", Message: "State writes and reads exist but no lifecycle state channel could be linked."})
 		}
 	}
+	includeDiagnostics := 0
 	for _, diagnostic := range item.Diagnostics {
-		if diagnostic.Phase != "include" || hasSemanticGap(coverage.Gaps, diagnostic.Code) {
+		if diagnostic.Phase != "include" {
 			continue
 		}
+		includeDiagnostics++
 		addSemanticGap(&coverage, &coverage.IncludedSources, SemanticGap{Code: diagnostic.Code, Dimension: "included-sources", Severity: "critical", Message: diagnostic.Message})
+	}
+	for _, gap := range unresolvedIncludes[min(includeDiagnostics, len(unresolvedIncludes)):] {
+		addSemanticGap(&coverage, &coverage.IncludedSources, gap)
 	}
 	finalizeSemanticCoverage(&coverage)
 	return coverage
@@ -184,15 +190,6 @@ func addSemanticGap(coverage *SemanticCoverage, dimension *SemanticDimension, ga
 	if gap.Severity == "critical" {
 		coverage.CriticalGaps++
 	}
-}
-
-func hasSemanticGap(gaps []SemanticGap, code string) bool {
-	for _, gap := range gaps {
-		if gap.Code == code {
-			return true
-		}
-	}
-	return false
 }
 
 func finalizeSemanticCoverage(coverage *SemanticCoverage) {
