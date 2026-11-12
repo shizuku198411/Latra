@@ -62,6 +62,73 @@ func TestCoveragePenaltyRaisesReviewPriority(t *testing.T) {
 	}
 }
 
+func TestDynamicCommandCreatesSemanticGapWithoutDuplicatePenalty(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "$COMMAND one\n$OTHER two\n", sdk.HookSetupProject)
+	findings := finding.AnalyzeSDK(item)
+	if got := findFinding(findings, "risk.unknown-command-root"); got != nil {
+		t.Fatalf("dynamic command was classified as an unregistered resolved command: %#v", got)
+	}
+	assessment := finding.AssessSDK(item, findings)
+	semantics := assessment.Coverage.Semantics
+	if semantics.DynamicCommands.Applicable != 2 || semantics.DynamicCommands.Gaps != 2 || semantics.Score != 75 {
+		t.Fatalf("dynamic command semantics = %#v", semantics)
+	}
+	if semantics.CriticalGaps != 2 || len(semantics.Gaps) != 2 {
+		t.Fatalf("dynamic command gaps = %#v", semantics.Gaps)
+	}
+	for _, gap := range semantics.Gaps {
+		if gap.Code != "unresolved-command-name" || gap.Dimension != "dynamic-commands" || gap.OperationID == "" {
+			t.Fatalf("dynamic command gap = %#v", gap)
+		}
+	}
+	if assessment.Classification != "requires-semantic-review" {
+		t.Fatalf("classification = %q", assessment.Classification)
+	}
+}
+
+func TestEvalCreatesSeparateSemanticGap(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "eval \"$PAYLOAD\"\n", sdk.HookSetupProject)
+	assessment := finding.AssessSDK(item, finding.AnalyzeSDK(item))
+	semantics := assessment.Coverage.Semantics
+	if semantics.DynamicCommands.Applicable != 1 || semantics.DynamicCommands.Gaps != 1 || semantics.Score != 75 {
+		t.Fatalf("eval semantics = %#v", semantics)
+	}
+	if len(semantics.Gaps) != 1 || semantics.Gaps[0].Code != "dynamic-eval" {
+		t.Fatalf("eval gaps = %#v", semantics.Gaps)
+	}
+}
+
+func TestUnregisteredCommandIsNotSemanticGap(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "latra-unknown-fixture\n", sdk.HookSetupProject)
+	assessment := finding.AssessSDK(item, finding.AnalyzeSDK(item))
+	if assessment.Coverage.Commands.Unknown != 1 || assessment.Coverage.Semantics.CriticalGaps != 0 ||
+		assessment.Classification != "insufficient-evidence" {
+		t.Fatalf("unregistered command assessment = %#v", assessment)
+	}
+}
+
+func TestUnreachableCommandsDoNotCreateCoverageGaps(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "if false; then\n  latra-unknown-fixture\n  $COMMAND argument\nfi\n", sdk.HookSetupBase)
+	findings := finding.AnalyzeSDK(item)
+	if got := findFinding(findings, "risk.unknown-command-root"); got != nil {
+		t.Fatalf("unreachable command created risk = %#v", got)
+	}
+	assessment := finding.AssessSDK(item, findings)
+	if assessment.Coverage.Commands.Total != 1 || assessment.Coverage.Commands.Known != 1 ||
+		assessment.Coverage.Commands.Unknown != 0 || assessment.Coverage.Commands.Unresolved != 0 ||
+		assessment.Coverage.Semantics.DynamicCommands.Gaps != 0 {
+		t.Fatalf("unreachable command coverage = %#v", assessment.Coverage)
+	}
+}
+
 func TestDynamicIncludeLowersCoverage(t *testing.T) {
 	t.Parallel()
 

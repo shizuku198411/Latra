@@ -38,12 +38,12 @@ Summary
   Capabilities: 22
     project-base (12): code-execution (1), device-access (5), identity-change (2), network-access (3), system-modification (1)
     rust (10): code-execution (1), destructive-operation (1), dynamic-execution (1), identity-change (2), network-access (2), persistence (1), system-modification (2)
-  Unknown Commands: 7
-    project-base (7)
-      hooks/check-health (5): cd (1), clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
-      hooks/setup-base (1): cd (1)
-      hooks/setup-project (1): make (1)
-    rust (0)
+  Command Coverage Gaps: 7 unregistered, 0 dynamic
+    project-base (7 unregistered, 0 dynamic)
+      hooks/check-health (5 unregistered, 0 dynamic): unregistered=cd (1), clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
+      hooks/setup-base (1 unregistered, 0 dynamic): unregistered=cd (1)
+      hooks/setup-project (1 unregistered, 0 dynamic): unregistered=make (1)
+    rust (0 unregistered, 0 dynamic)
   Diagnostics: 0: -
 ```
 
@@ -300,20 +300,20 @@ The possible classifications are:
 | `high-priority-review` | High or critical risk requires prompt review. |
 | `insufficient-evidence` | Static analysis coverage is not sufficient for a conclusive evaluation. |
 
-## Unknown Commands
+## Command Coverage Gaps
 
 ```text
-Unknown Commands: 7
-  project-base (7)
-    hooks/check-health (5): cd (1), clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
-    hooks/setup-base (1): cd (1)
-    hooks/setup-project (1): make (1)
-  rust (0)
+Command Coverage Gaps: 7 unregistered, 0 dynamic
+  project-base (7 unregistered, 0 dynamic)
+    hooks/check-health (5 unregistered, 0 dynamic): unregistered=cd (1), clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
+    hooks/setup-base (1 unregistered, 0 dynamic): unregistered=cd (1)
+    hooks/setup-project (1 unregistered, 0 dynamic): unregistered=make (1)
+  rust (0 unregistered, 0 dynamic)
 ```
 
-An unknown command was found in a hook but is not covered by Latra's embedded command database. Unknown does not mean malicious, and it does not mean safe. It means Latra has no command-specific knowledge for that command yet.
+An unregistered command has a resolved name but is not covered by Latra's embedded command database. Unregistered does not mean malicious, and it does not mean safe. A dynamic command is different: its name could not be resolved statically and is also reported as a Semantic Gap with its structural expression.
 
-The report groups unknown commands by SDK and hook path. To investigate the first group above:
+The report groups both categories by SDK and hook path. To investigate the first group above:
 
 1. take the SDK name `project-base`;
 2. take the final component of `hooks/check-health`, which is `check-health`;
@@ -354,5 +354,5 @@ For a typical investigation:
 3. Review `Diagnostics` and resolve incomplete scans first.
 4. Use `Files` paths with `latra file <sdk> <file>`.
 5. Use `Hooks` names with `latra hook <sdk> <hook>`.
-6. Follow hook paths under `Unknown Commands` and inspect those hooks first.
+6. Follow hook paths under `Command Coverage Gaps` and inspect unregistered and dynamic entries separately.
 7. Use Operations and Capabilities to identify behavior that needs closer source review.

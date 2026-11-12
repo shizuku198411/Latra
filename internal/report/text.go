@@ -467,15 +467,28 @@ func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessme
 			return err
 		}
 	}
-	if _, err := fmt.Fprintf(writer, "  Unknown Commands: %d\n", summary.UnknownCommands.Count); err != nil {
+	if _, err := fmt.Fprintf(writer, "  Command Coverage Gaps: %d unregistered, %d dynamic\n", summary.UnknownCommands.Count, summary.UnknownCommands.Dynamic); err != nil {
 		return err
 	}
 	for _, item := range summary.UnknownCommands.BySDK {
-		if _, err := fmt.Fprintf(writer, "    %s (%d)\n", item.SDKName, item.Count); err != nil {
+		if _, err := fmt.Fprintf(writer, "    %s (%d unregistered, %d dynamic)\n", item.SDKName, item.Count, item.Dynamic); err != nil {
 			return err
 		}
 		for _, file := range item.Files {
-			if _, err := fmt.Fprintf(writer, "      %s (%d): %s\n", file.FilePath, file.Count, formatCountedItems(file.CommandNames)); err != nil {
+			if _, err := fmt.Fprintf(writer, "      %s (%d unregistered, %d dynamic)", file.FilePath, file.Count, file.Dynamic); err != nil {
+				return err
+			}
+			if file.Count > 0 {
+				if _, err := fmt.Fprintf(writer, ": unregistered=%s", formatCountedItems(file.CommandNames)); err != nil {
+					return err
+				}
+			}
+			if file.Dynamic > 0 {
+				if _, err := fmt.Fprintf(writer, ": dynamic=%s", formatCountedItems(file.DynamicExpressions)); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintln(writer); err != nil {
 				return err
 			}
 		}

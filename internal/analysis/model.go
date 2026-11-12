@@ -2,7 +2,11 @@
 // operation and capability inventory.
 package analysis
 
-import "github.com/shizuku198411/Latra/internal/shell"
+import (
+	"strings"
+
+	"github.com/shizuku198411/Latra/internal/shell"
+)
 
 // Resolution describes how completely a value or operation was resolved.
 type Resolution string
@@ -55,6 +59,29 @@ type ValuePart struct {
 	Kind ValuePartKind `json:"kind"`
 	Text string        `json:"text,omitempty"`
 	Name string        `json:"name,omitempty"`
+}
+
+// StructuralExpression renders known shell value structure without claiming
+// it is a resolved runtime value.
+func StructuralExpression(value Value) string {
+	var expression strings.Builder
+	for _, part := range value.Parts {
+		switch part.Kind {
+		case PartLiteral, PartQuotedLiteral, PartGlob, PartUnknownExpansion:
+			expression.WriteString(part.Text)
+		case PartVariableReference:
+			expression.WriteString("$")
+			expression.WriteString(part.Name)
+		case PartCommandSubstitution:
+			expression.WriteString("$(...)")
+		case PartArithmeticExpansion:
+			expression.WriteString("$((...))")
+		}
+	}
+	if expression.Len() == 0 {
+		return "<unresolved>"
+	}
+	return expression.String()
 }
 
 // OperationKind identifies a normalized shell operation.

@@ -96,7 +96,7 @@ func TestWriteTextIncludesInventoryDetailsAndEscapesControls(t *testing.T) {
 	for _, want := range []string{
 		"Context: root=false project=true interfaces=true state=false",
 		`command="curl"`, `args=["line1\nline2\x1b"]`,
-		"network-download [Resolved]", "Summary", "Operations: 1", "Unknown Commands: 0",
+		"network-download [Resolved]", "Summary", "Operations: 1", "Command Coverage Gaps: 0 unregistered, 0 dynamic",
 		"Assessment", "Classification: expected-and-controlled", "Review Priority: 0/100 (info)",
 	} {
 		if !strings.Contains(text, want) {
@@ -480,19 +480,23 @@ func TestDocumentSummaryGroupsUnknownCommandsBySDKAndFile(t *testing.T) {
 		analysis.Operation{Kind: analysis.OperationPipeline, Resolution: analysis.Resolved, Location: location, Children: []analysis.Operation{
 			unknown("latra-unknown-fixture"), unknown("another-unknown-fixture"),
 		}},
+		analysis.Operation{Kind: analysis.OperationCommand, Command: analysis.Value{
+			Parts: []analysis.ValuePart{{Kind: analysis.PartVariableReference, Name: "COMMAND"}}, Resolution: analysis.Unknown,
+		}, Resolution: analysis.Unknown, Location: location},
 	)
 
 	summary := report.NewDocument(result).Summary.UnknownCommands
-	if summary.Count != 3 || len(summary.BySDK) != 1 {
+	if summary.Count != 3 || summary.Dynamic != 1 || len(summary.BySDK) != 1 {
 		t.Fatalf("unknown command summary = %#v", summary)
 	}
 	sdkSummary := summary.BySDK[0]
-	if sdkSummary.SDKName != "example" || sdkSummary.Count != 3 || len(sdkSummary.Files) != 1 {
+	if sdkSummary.SDKName != "example" || sdkSummary.Count != 3 || sdkSummary.Dynamic != 1 || len(sdkSummary.Files) != 1 {
 		t.Fatalf("SDK unknown command summary = %#v", sdkSummary)
 	}
 	fileSummary := sdkSummary.Files[0]
 	if fileSummary.FilePath != "hooks/setup-project" || fileSummary.Count != 3 ||
-		!slices.Equal(fileSummary.CommandNames, []report.CountedName{{Name: "another-unknown-fixture", Count: 1}, {Name: "latra-unknown-fixture", Count: 2}}) {
+		fileSummary.Dynamic != 1 || !slices.Equal(fileSummary.CommandNames, []report.CountedName{{Name: "another-unknown-fixture", Count: 1}, {Name: "latra-unknown-fixture", Count: 2}}) ||
+		!slices.Equal(fileSummary.DynamicExpressions, []report.CountedName{{Name: "$COMMAND", Count: 1}}) {
 		t.Errorf("file unknown command summary = %#v", fileSummary)
 	}
 }

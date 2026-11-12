@@ -93,7 +93,7 @@ func unresolvedArgumentEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence 
 			if argument.Resolution == analysis.Resolved {
 				continue
 			}
-			expression := valueExpression(argument)
+			expression := analysis.StructuralExpression(argument)
 			key := operationID + "\x00" + expression + "\x00" + string(argument.Resolution)
 			if seen[key] {
 				continue
@@ -112,27 +112,6 @@ func unresolvedArgumentEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence 
 		return additions[i].Expression < additions[j].Expression
 	})
 	return additions
-}
-
-func valueExpression(value analysis.Value) string {
-	var expression strings.Builder
-	for _, part := range value.Parts {
-		switch part.Kind {
-		case analysis.PartLiteral, analysis.PartQuotedLiteral, analysis.PartGlob, analysis.PartUnknownExpansion:
-			expression.WriteString(part.Text)
-		case analysis.PartVariableReference:
-			expression.WriteString("$")
-			expression.WriteString(part.Name)
-		case analysis.PartCommandSubstitution:
-			expression.WriteString("$(...)")
-		case analysis.PartArithmeticExpansion:
-			expression.WriteString("$((...))")
-		}
-	}
-	if expression.Len() == 0 {
-		return "<unresolved>"
-	}
-	return expression.String()
 }
 
 func annotateEvidence(evidence []Evidence) {
@@ -1301,11 +1280,11 @@ func matchUnknownCommands(item sdk.SDK, rule findingconfig.Rule) []match {
 			continue
 		}
 		for _, operation := range flatten(hook.Analysis.Operations) {
-			if operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved || analysis.IsKnownCommand(operation.Command) {
+			if operation.Reachability == analysis.Unreachable || operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved || analysis.IsKnownCommand(operation.Command) {
 				continue
 			}
 			location := operation.Location
-			matches = append(matches, match{hook: hook, key: operation.ID, evidence: []Evidence{{Type: "operation", ID: "unknown-command", OperationID: operation.ID, Value: operation.Command.Literal, Resolution: analysis.Resolved, Location: &location}}})
+			matches = append(matches, match{hook: hook, key: operation.ID, evidence: []Evidence{{Type: "operation", ID: "unregistered-command", OperationID: operation.ID, Value: operation.Command.Literal, Resolution: analysis.Resolved, Location: &location}}})
 		}
 	}
 	return matches
@@ -1645,6 +1624,9 @@ func hookHasUnknownCommand(hook sdk.Hook) bool {
 		return true
 	}
 	for _, operation := range flatten(hook.Analysis.Operations) {
+		if operation.Reachability == analysis.Unreachable {
+			continue
+		}
 		if operation.Kind == analysis.OperationCommand && operation.Command.Resolution == analysis.Resolved && !analysis.IsKnownCommand(operation.Command) {
 			return true
 		}
@@ -1662,7 +1644,7 @@ func commandCount(item sdk.SDK) int {
 			continue
 		}
 		for _, operation := range flatten(hook.Analysis.Operations) {
-			if operation.Kind == analysis.OperationCommand {
+			if operation.Reachability != analysis.Unreachable && operation.Kind == analysis.OperationCommand {
 				count++
 			}
 		}

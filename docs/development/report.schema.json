@@ -252,6 +252,7 @@
         "dataFlow": { "$ref": "#/$defs/semanticDimension" },
         "includedSources": { "$ref": "#/$defs/semanticDimension" },
         "functions": { "$ref": "#/$defs/semanticDimension" },
+        "dynamicCommands": { "$ref": "#/$defs/semanticDimension" },
         "lifecycle": { "$ref": "#/$defs/semanticDimension" },
         "composition": { "$ref": "#/$defs/semanticDimension" },
         "aliases": { "$ref": "#/$defs/semanticDimension" },
@@ -274,7 +275,7 @@
       "required": ["code", "dimension", "severity", "message"],
       "properties": {
         "code": { "type": "string" },
-        "dimension": { "type": "string", "enum": ["data-flow", "included-sources", "functions", "lifecycle", "composition", "aliases"] },
+        "dimension": { "type": "string", "enum": ["data-flow", "included-sources", "functions", "dynamic-commands", "lifecycle", "composition", "aliases"] },
         "severity": { "type": "string", "enum": ["warning", "critical"] },
         "hook": { "$ref": "#/$defs/hookName" },
         "operationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
@@ -453,6 +454,7 @@
       "required": ["count", "bySdk"],
       "properties": {
         "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "dynamic": { "$ref": "#/$defs/nonNegativeInteger" },
         "bySdk": {
           "type": "array",
           "items": { "$ref": "#/$defs/sdkUnknownCommandSummary" }
@@ -466,6 +468,7 @@
       "properties": {
         "sdkName": { "type": "string" },
         "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "dynamic": { "$ref": "#/$defs/nonNegativeInteger" },
         "files": {
           "type": "array",
           "items": { "$ref": "#/$defs/fileUnknownCommandSummary" }
@@ -479,7 +482,12 @@
       "properties": {
         "filePath": { "type": "string" },
         "count": { "$ref": "#/$defs/nonNegativeInteger" },
+        "dynamic": { "$ref": "#/$defs/nonNegativeInteger" },
         "commandNames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/countedName" }
+        },
+        "dynamicExpressions": {
           "type": "array",
           "items": { "$ref": "#/$defs/countedName" }
         }

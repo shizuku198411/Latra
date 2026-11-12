@@ -86,10 +86,12 @@
     },
     "unknownCommands": {
       "count": 0,
+      "dynamic": 0,
       "bySdk": [
         {
           "sdkName": "example",
           "count": 0,
+          "dynamic": 0,
           "files": []
         }
       ]
@@ -220,6 +222,11 @@
           "resolved": 0,
           "gaps": 0
         },
+        "dynamicCommands": {
+          "applicable": 0,
+          "resolved": 0,
+          "gaps": 0
+        },
         "lifecycle": {
           "applicable": 0,
           "resolved": 0,
@@ -308,6 +315,11 @@
               "gaps": 0
             },
             "functions": {
+              "applicable": 0,
+              "resolved": 0,
+              "gaps": 0
+            },
+            "dynamicCommands": {
               "applicable": 0,
               "resolved": 0,
               "gaps": 0

@@ -77,7 +77,8 @@ Summary `count` fields contain occurrence totals, not unique-name totals.
 - `hooks.count` counts detected standard hooks.
 - `operations.count` recursively counts top-level and child operations.
 - `capabilities.count` counts capability occurrences.
-- `unknownCommands.count` counts resolved command invocations not covered by the embedded command database.
+- `unknownCommands.count` retains its schema-v5 meaning: resolved command invocations not covered by the embedded command database. These are unregistered commands, not unresolved names.
+- `unknownCommands.dynamic` counts command invocations whose names could not be resolved statically. Per-file `dynamicExpressions` preserves structural expressions such as `$COMMAND` without presenting them as runtime values.
 - `diagnostics.count` counts document diagnostics.
 - `findings.count` contains only scored risk and assurance findings.
 - `observations.count` counts unscored project-access observations. Per-SDK project access contains read/write occurrence totals and unique normalized-path totals.
@@ -145,7 +146,7 @@ Project reports may contain top-level `compositionRelations`. A `project-artifac
 
 Hook relations may contain `alias` entries for statically resolved symbolic links created by an earlier operation in that hook. The relation records the lexical path and resolved path without inspecting the filesystem. Findings caused by an alias include the creating `ln` location as supporting evidence.
 
-Assessment coverage includes a `semantics` object with data-flow, included-source, function, lifecycle, composition, and alias dimensions. Each dimension reports applicable, resolved, and gap counts. Critical gaps include stable codes and operation context, cap the overall Coverage score, and prevent a controlled classification even when syntax and command-name coverage are otherwise complete.
+Assessment coverage includes a `semantics` object with data-flow, included-source, function, dynamic-command, lifecycle, composition, and alias dimensions. Each dimension reports applicable, resolved, and gap counts. Critical gaps include stable codes and operation context, cap the overall Coverage score, and prevent a controlled classification even when syntax and command-name coverage are otherwise complete.
 
 The graph is a conservative static representation. It does not claim complete shell control-flow or runtime data-flow resolution.
 
@@ -182,7 +183,7 @@ Project-access observation evidence preserves both `value`, the raw shell path, 
 
 - `reviewPriority` is the headline score. Higher values require earlier review.
 - `risk` and `assurance` are independently aggregated; assurance never subtracts from risk.
-- `coverage` records syntax, command-name, file, and semantic analysis completeness. Semantic completeness is split into data-flow, included-source, function, lifecycle, composition, and alias dimensions.
+- `coverage` records syntax, command-name, file, and semantic analysis completeness. Command coverage separates known, resolved-but-unregistered (`unknown`), and dynamically unresolved (`unresolved`) names. Semantic completeness is split into data-flow, included-source, function, dynamic-command, lifecycle, composition, and alias dimensions.
 - `classification` combines the three axes into a descriptive outcome rather than a malware or safety verdict.
 - `keyRisks` groups risk findings by rule and retains every SDK, hook, location, and relevant value contributing to the assessment.
 

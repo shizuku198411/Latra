@@ -89,7 +89,7 @@ Risk rules require `severity`; assurance rules require `strength`. Observation r
 | `repository-persistence` | A project hook file write or a `core.hooksPath` configuration change during project setup. |
 | `project-in-place-modification` | An in-place editor operation targeting a file under the mounted project. |
 | `toolchain-search-order-hijack` | A correlated executable write, execute-permission change, and project PATH prepend. |
-| `unknown-command` | A resolved command not covered by the command database. |
+| `unknown-command` | A resolved but unregistered command not covered by the command database. Dynamically unresolved names are Semantic Gaps, not matches. |
 | `parse-status` | A hook parser status such as `Failed` or `Recovered`. |
 | `sdk-unresolved` | A non-resolved SDK state. |
 | `sdk-diagnostic` | A stable SDK diagnostic code or a narrowly configured diagnostic-message fragment when an outer layer wraps the underlying code. |

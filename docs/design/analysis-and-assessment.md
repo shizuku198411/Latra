@@ -207,7 +207,7 @@ The current engine supports matchers for:
 
 - capabilities;
 - path writes;
-- unknown commands;
+- resolved but unregistered commands and dynamically unresolved command names;
 - parse status;
 - unresolved SDKs and SDK diagnostics;
 - all hooks parsed;
@@ -224,7 +224,7 @@ The current engine supports matchers for:
 - explicit semantic coverage dimensions and classification gates for unresolved behavior;
 - high-impact Project control-file modification, source deletion, executable creation, permission changes, and Git state rewrite.
 
-Assurance based on absence is only emitted when analysis is complete enough to support that conclusion. For example, an unknown command prevents `all-commands-known` and may prevent an absence-based assurance finding.
+Assurance based on absence is only emitted when analysis is complete enough to support that conclusion. For example, an unregistered or dynamically unresolved command prevents `all-commands-known` and may prevent an absence-based assurance finding.
 
 ### Evidence and confidence
 
@@ -366,7 +366,9 @@ Coverage is `sufficient` only when its score is at least `80` and no hook failed
 
 ### Semantic coverage
 
-Semantic coverage reports `dataFlow`, `includedSources`, `functions`, `lifecycle`, `composition`, and `aliases` independently. Each dimension records applicable behavior, resolved behavior, and stable gap records. A critical gap deducts 25 points from semantic coverage and prevents a controlled classification. Examples include an unresolved include, an unexpanded function call, an external send with unlinked provenance, an unlinked state channel, unavailable SDK execution order, or a dynamic symbolic-link declaration.
+Semantic coverage reports `dataFlow`, `includedSources`, `functions`, `dynamicCommands`, `lifecycle`, `composition`, and `aliases` independently. Each dimension records applicable behavior, resolved behavior, and stable gap records. A critical gap category deducts 25 points from semantic coverage and prevents a controlled classification; repeated occurrences of the same dimension/code remain visible but do not repeatedly deduct the score. Examples include an unresolved include, an unexpanded function call, `eval`, an unresolved command name, an external send with unlinked provenance, an unlinked state channel, unavailable SDK execution order, or a dynamic symbolic-link declaration.
+
+Command-name analysis uses three distinct states. A known command is covered by the embedded database. An unregistered command has a resolved name but no database entry; this lowers command coverage and may match the existing root-hook review rule, but registration absence alone is not proof of dangerous behavior. A dynamic command has no statically resolved name; it is not treated as an unregistered-name Risk and instead creates an `unresolved-command-name` semantic gap. `eval` creates the separate `dynamic-eval` gap because its payload is not parsed as ordinary static operations.
 
 Semantic coverage is an upper bound on the existing syntax/command score. Fully resolved semantics therefore leave existing scores unchanged, while a semantic gap cannot be hidden by complete parsing or a known command name.
 
@@ -494,7 +496,7 @@ Changes to finding definitions or weights must update the finding database conte
 - Latra does not execute hooks or downloaded content.
 - Relation flow is conservative and is not a complete shell control-flow or taint-analysis engine.
 - A known command means that Latra has a behavioral definition for it; it does not mean the invocation is safe.
-- An unknown command creates an analysis gap; it is not by itself proof of malicious behavior.
+- An unregistered command reduces command-database coverage; it is not by itself proof of malicious behavior. A dynamically unresolved command name is reported separately as a semantic gap.
 - Archive digests establish artifact identity for the analyzed download, not publisher trust or source provenance.
 - Scores are calibrated review signals, not probabilities, CVSS scores, or compatibility guarantees.
 - External reputation services, AI judgments, and third-party trust feeds are outside the current assessment path.

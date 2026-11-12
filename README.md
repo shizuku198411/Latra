@@ -131,7 +131,7 @@ Run the following command from your Workshop project root.
 latra scan
 ```
 
-The default text report summarizes the detected SDKs, files, hooks, operations, capabilities, unknown commands, and diagnostics.
+The default text report summarizes the detected SDKs, files, hooks, operations, capabilities, command coverage gaps, and diagnostics.
 
 <details>
 <summary>Example output</summary>
@@ -162,11 +162,11 @@ Summary
   Capabilities: 25
     kernel-dev-base (14): code-execution (1), device-access (5), identity-change (2), network-access (3), network-download (1), project-write (1), system-modification (1)
     rust (11): code-execution (1), destructive-operation (1), dynamic-execution (1), identity-change (2), network-access (2), persistence (2), system-modification (2)
-  Unknown Commands: 4
-    kernel-dev-base (4)
-      hooks/check-health (3): llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
-      hooks/setup-project (1): make (1)
-    rust (0)
+  Command Coverage Gaps: 4 unregistered, 0 dynamic
+    kernel-dev-base (4 unregistered, 0 dynamic)
+      hooks/check-health (3 unregistered, 0 dynamic): unregistered=llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
+      hooks/setup-project (1 unregistered, 0 dynamic): unregistered=make (1)
+    rust (0 unregistered, 0 dynamic)
   Findings: 13 (5 risk, 8 assurance)
     High-priority risks:
       kernel-dev-base (high): risk.remote-content-to-project (1), risk.unknown-command-root (3)
@@ -225,7 +225,7 @@ Diagnostics
 ```
 
 This result indicates that the project SDK requires focused review because it
-runs unknown commands as root and writes remotely obtained content into the
+runs resolved but unregistered commands as root and writes remotely obtained content into the
 project. The Rust SDK has one low-risk static environment configuration write,
 but its absolute `source` of `/etc/profile.d/rust.sh` cannot currently be
 analyzed as an SDK-local include. That semantic gap limits both the Rust SDK and
