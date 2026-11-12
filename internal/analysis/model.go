@@ -13,6 +13,17 @@ const (
 	Unknown           Resolution = "Unknown"
 )
 
+// Reachability describes whether a shell operation can execute. The zero
+// value means reachable so reports produced before this field remain
+// semantically compatible.
+type Reachability string
+
+const (
+	Reachable    Reachability = ""
+	Unreachable  Reachability = "Unreachable"
+	ReachUnknown Reachability = "Unknown"
+)
+
 // ValuePartKind identifies one component of a shell word.
 type ValuePartKind string
 
@@ -118,20 +129,21 @@ type IncludedSource struct {
 
 // Operation is Latra's parser-independent representation of shell behavior.
 type Operation struct {
-	ID         string          `json:"id,omitempty"`
-	ParentID   string          `json:"parentId,omitempty"`
-	Sequence   int             `json:"sequence"`
-	Kind       OperationKind   `json:"kind"`
-	Command    Value           `json:"command,omitzero"`
-	Name       string          `json:"name,omitempty"`
-	Wrappers   []string        `json:"wrappers,omitempty"`
-	Arguments  []Value         `json:"arguments,omitempty"`
-	Inputs     []DataReference `json:"inputs,omitempty"`
-	Outputs    []DataReference `json:"outputs,omitempty"`
-	Resolution Resolution      `json:"resolution"`
-	Location   shell.Location  `json:"location"`
-	Children   []Operation     `json:"children,omitempty"`
-	Include    *IncludedSource `json:"include,omitempty"`
+	ID           string          `json:"id,omitempty"`
+	ParentID     string          `json:"parentId,omitempty"`
+	Sequence     int             `json:"sequence"`
+	Kind         OperationKind   `json:"kind"`
+	Command      Value           `json:"command,omitzero"`
+	Name         string          `json:"name,omitempty"`
+	Wrappers     []string        `json:"wrappers,omitempty"`
+	Arguments    []Value         `json:"arguments,omitempty"`
+	Inputs       []DataReference `json:"inputs,omitempty"`
+	Outputs      []DataReference `json:"outputs,omitempty"`
+	Resolution   Resolution      `json:"resolution"`
+	Reachability Reachability    `json:"reachability,omitempty"`
+	Location     shell.Location  `json:"location"`
+	Children     []Operation     `json:"children,omitempty"`
+	Include      *IncludedSource `json:"include,omitempty"`
 
 	pipelineBoundary int
 	workingDirectory Value

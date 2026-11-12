@@ -25,6 +25,9 @@ func ResolvePathAliases(operations []Operation) []Relation {
 func resolveAliasesInOperations(operations []Operation, aliases map[string]pathAlias, relations *[]Relation) {
 	for index := range operations {
 		operation := &operations[index]
+		if operation.Reachability == Unreachable {
+			continue
+		}
 		command := filepath.Base(operation.Command.Literal)
 		if operation.Kind == OperationCommand && command == "ln" {
 			if target, link, ok := symbolicLinkOperands(*operation); ok {

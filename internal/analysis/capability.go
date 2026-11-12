@@ -207,7 +207,16 @@ func extractCapabilities(operations []Operation, context HookContext, config *ca
 	var capabilities []Capability
 	for i := range operations {
 		operation := &operations[i]
-		capabilities = append(capabilities, capabilitiesForOperation(*operation, context, config)...)
+		if operation.Reachability == Unreachable {
+			continue
+		}
+		operationCapabilities := capabilitiesForOperation(*operation, context, config)
+		if operation.Reachability == ReachUnknown {
+			for index := range operationCapabilities {
+				operationCapabilities[index].Resolution = combineResolution(operationCapabilities[index].Resolution, PartiallyResolved)
+			}
+		}
+		capabilities = append(capabilities, operationCapabilities...)
 		capabilities = append(capabilities, extractCapabilities(operation.Children, context, config)...)
 	}
 	return capabilities

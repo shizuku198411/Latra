@@ -122,6 +122,8 @@ SDK resolution uses a separate `state` enum defined in the schema.
 
 Schema version 2 assigns a deterministic `id` to every operation in a hook. Child operations use `parentId`, and `sequence` is their zero-based position among siblings. IDs are local to one hook and must not be joined across hooks.
 
+An operation may contain `reachability`. If omitted, the operation is reachable. `Unreachable` is emitted only when static control-flow evaluation proves the operation cannot execute; `Unknown` means its execution is conditional on an unresolved result. Unreachable operations remain visible in the operation inventory but do not contribute Capabilities or behavioral flow. Capabilities from unknown-reachability operations remain present with at most `PartiallyResolved` resolution.
+
 The hook-level `relations` array connects operation IDs:
 
 | Relation | Meaning |

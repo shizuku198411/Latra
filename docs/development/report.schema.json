@@ -777,6 +777,7 @@
           "items": { "$ref": "#/$defs/dataReference" }
         },
         "resolution": { "$ref": "#/$defs/resolution" },
+        "reachability": { "$ref": "#/$defs/reachability" },
         "location": { "$ref": "#/$defs/location" },
         "children": {
           "type": "array",
@@ -1060,6 +1061,10 @@
     "resolution": {
       "type": "string",
       "enum": ["Resolved", "PartiallyResolved", "Unknown"]
+    },
+    "reachability": {
+      "type": "string",
+      "enum": ["Unreachable", "Unknown"]
     },
     "operationKind": {
       "type": "string",

@@ -42,11 +42,17 @@ func (c *relationCollector) functionCalls(operations []Operation) {
 	flattenOperationPointers(operations, &flat)
 	declarations := make(map[string]*Operation)
 	for _, operation := range flat {
+		if operation.Reachability == Unreachable {
+			continue
+		}
 		if operation.Kind == OperationFunctionDeclaration && operation.Name != "" {
 			declarations[operation.Name] = operation
 		}
 	}
 	for _, operation := range flat {
+		if operation.Reachability == Unreachable {
+			continue
+		}
 		if operation.Kind != OperationFunctionInvocation || operation.Command.Resolution != Resolved {
 			continue
 		}
@@ -64,6 +70,9 @@ func (c *relationCollector) functionCalls(operations []Operation) {
 func (c *relationCollector) redirectFlows(operations []Operation) {
 	for index := range operations {
 		operation := &operations[index]
+		if operation.Reachability == Unreachable {
+			continue
+		}
 		if operation.Kind == OperationRedirectWrite && operation.statementGroup != 0 {
 			if producer := precedingOutputProducer(operations[:index], operation.statementGroup); producer != nil {
 				c.add(RelationRedirectFlow, producer.ID, operation.ID, "stdout-to-file",
@@ -161,6 +170,9 @@ func (c *relationCollector) artifactFlows(operations []Operation) {
 	}
 	edges := 0
 	for _, operation := range flat {
+		if operation.Reachability == Unreachable {
+			continue
+		}
 		for _, deleted := range operationDeletedArtifacts(operation) {
 			delete(writers, artifactPathKey(deleted))
 		}
@@ -213,6 +225,9 @@ func operationDeletedArtifacts(operation *Operation) []Value {
 func flattenOperationPointers(operations []Operation, flat *[]*Operation) {
 	for index := range operations {
 		operation := &operations[index]
+		if operation.Reachability == Unreachable {
+			continue
+		}
 		*flat = append(*flat, operation)
 		flattenOperationPointers(operation.Children, flat)
 	}
@@ -450,6 +465,9 @@ type variableDefinition struct {
 func (c *relationCollector) variableFlows(operations []Operation, definitions map[string]variableDefinition) {
 	for index := range operations {
 		operation := &operations[index]
+		if operation.Reachability == Unreachable {
+			continue
+		}
 		for _, name := range operationVariableReferences(*operation) {
 			if definition, ok := definitions[name]; ok {
 				c.add(RelationVariableFlow, definition.operationID, operation.ID, name,
