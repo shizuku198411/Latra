@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/shizuku198411/Latra/internal/analysis"
+	"github.com/shizuku198411/Latra/internal/finding"
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
@@ -18,6 +19,8 @@ import (
 type tuiRisk struct {
 	Kind, ID, Title, Severity, Value string
 	Score                            int
+	Resolution                       analysis.Resolution
+	Derivation                       finding.EvidenceDerivation
 	ValueLocation                    *shell.Location
 	HighlightOnly                    bool
 }
@@ -40,6 +43,7 @@ func risksForPreview(document *report.Document, sdkName, file string) map[int][]
 		}
 		labels := make(map[string]bool)
 		for _, risk := range assessment.KeyRisks {
+			derivation, resolution := tuiRiskEvidenceState(risk.Scopes)
 			for _, scope := range risk.Scopes {
 				if scope.SDK != sdkName {
 					continue
@@ -56,7 +60,12 @@ func risksForPreview(document *report.Document, sdkName, file string) map[int][]
 					continue
 				}
 				labelKey := risk.ID + "\x00" + risk.Title + "\x00" + risk.Severity
-				item := tuiRisk{Kind: "risk", ID: risk.ID, Title: risk.Title, Severity: risk.Severity, Score: risk.Score, Value: scope.Value,
+				value := scope.Value
+				if value == "" {
+					value = scope.Expression
+				}
+				item := tuiRisk{Kind: "risk", ID: risk.ID, Title: risk.Title, Severity: risk.Severity, Score: risk.Score, Value: value,
+					Resolution: resolution, Derivation: derivation,
 					ValueLocation: scope.ValueLocation, HighlightOnly: labels[labelKey]}
 				// Multiple evidence objects for one finding can point to the same line.
 				duplicate := false
@@ -85,8 +94,29 @@ func risksForPreview(document *report.Document, sdkName, file string) map[int][]
 	return annotations
 }
 
+func tuiRiskEvidenceState(scopes []finding.RiskScope) (finding.EvidenceDerivation, analysis.Resolution) {
+	derivation := finding.EvidenceDerivation("")
+	resolution := analysis.Resolution("")
+	derivationRank := map[finding.EvidenceDerivation]int{
+		finding.EvidenceDirect: 1, finding.EvidenceInferred: 2, finding.EvidenceUnresolved: 3,
+	}
+	resolutionRank := map[analysis.Resolution]int{
+		analysis.Resolved: 1, analysis.PartiallyResolved: 2, analysis.Unknown: 3,
+	}
+	for _, scope := range scopes {
+		if derivationRank[scope.Derivation] > derivationRank[derivation] {
+			derivation = scope.Derivation
+		}
+		if resolutionRank[scope.Resolution] > resolutionRank[resolution] {
+			resolution = scope.Resolution
+		}
+	}
+	return derivation, resolution
+}
+
 func sameTUIRiskEvidence(left, right tuiRisk) bool {
-	if left.Kind != right.Kind || left.ID != right.ID || left.Title != right.Title || left.Severity != right.Severity || left.Value != right.Value || left.Score != right.Score {
+	if left.Kind != right.Kind || left.ID != right.ID || left.Title != right.Title || left.Severity != right.Severity || left.Value != right.Value || left.Score != right.Score ||
+		left.Resolution != right.Resolution || left.Derivation != right.Derivation {
 		return false
 	}
 	if left.ValueLocation == nil || right.ValueLocation == nil {
@@ -241,6 +271,12 @@ func tuiPreviewRows(preview *tuiPreview, annotations map[int][]tuiRisk, width, h
 				}
 				seen[key] = true
 				label := fmt.Sprintf(" #Risk > %s, %s, score=%d/100", risk.Title, risk.Severity, risk.Score)
+				if risk.Derivation != "" {
+					label += fmt.Sprintf(", evidence=%s", risk.Derivation)
+				}
+				if risk.Resolution != "" && risk.Resolution != analysis.Resolved {
+					label += fmt.Sprintf(", resolution=%s", risk.Resolution)
+				}
 				if risk.Kind == "semantic-gap" {
 					label = fmt.Sprintf(" #Semantic Gap > [%s] %s", risk.ID, risk.Title)
 				}

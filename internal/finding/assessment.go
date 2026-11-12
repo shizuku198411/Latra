@@ -306,11 +306,15 @@ type RiskHighlight struct {
 }
 
 type RiskScope struct {
-	SDK           string          `json:"sdk"`
-	Hook          sdk.HookName    `json:"hook,omitempty"`
-	Location      *shell.Location `json:"location,omitempty"`
-	ValueLocation *shell.Location `json:"valueLocation,omitempty"`
-	Value         string          `json:"value,omitempty"`
+	SDK           string              `json:"sdk"`
+	Hook          sdk.HookName        `json:"hook,omitempty"`
+	Location      *shell.Location     `json:"location,omitempty"`
+	ValueLocation *shell.Location     `json:"valueLocation,omitempty"`
+	Value         string              `json:"value,omitempty"`
+	Expression    string              `json:"expression,omitempty"`
+	Resolution    analysis.Resolution `json:"resolution,omitempty"`
+	Derivation    EvidenceDerivation  `json:"derivation,omitempty"`
+	Relations     []analysis.Relation `json:"relations,omitempty"`
 }
 
 type AssessmentInput struct {
@@ -369,8 +373,11 @@ func riskHighlights(findings []Finding) []RiskHighlight {
 		current.highlight.Occurrences++
 		current.weights = append(current.weights, float64(item.Weight)*confidenceFactor(item.Confidence))
 		for _, evidence := range item.Evidence {
-			scope := RiskScope{SDK: item.Scope.SDK, Hook: item.Scope.Hook, Location: evidence.Location, ValueLocation: evidence.ValueLocation, Value: evidence.Value}
-			key := scope.SDK + "\x00" + string(scope.Hook) + "\x00" + scope.Value
+			scope := RiskScope{SDK: item.Scope.SDK, Hook: item.Scope.Hook, Location: evidence.Location, ValueLocation: evidence.ValueLocation,
+				Value: evidence.Value, Expression: evidence.Expression, Resolution: evidence.Resolution, Derivation: evidence.Derivation,
+				Relations: append([]analysis.Relation{}, evidence.Relations...)}
+			key := scope.SDK + "\x00" + string(scope.Hook) + "\x00" + scope.Value + "\x00" + scope.Expression
+			key += "\x00" + string(scope.Resolution) + "\x00" + string(scope.Derivation)
 			if scope.Location != nil {
 				key += "\x00" + scope.Location.Path + "\x00" + strconv.Itoa(scope.Location.StartLine) + "\x00" + strconv.Itoa(scope.Location.StartColumn)
 			}

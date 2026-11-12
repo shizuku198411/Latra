@@ -89,6 +89,9 @@ func AnalyzeComposition(items []sdk.SDK) ([]Finding, []CompositionRelation) {
 			}
 		}
 	}
+	for index := range findings {
+		annotateEvidence(findings[index].Evidence)
+	}
 	sortFindings(findings)
 	sort.SliceStable(relations, func(i, j int) bool {
 		if relations[i].Definition != relations[j].Definition {

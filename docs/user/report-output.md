@@ -225,7 +225,7 @@ Project-boundary flow findings connect both sides of the detected transfer:
 
 These rules require a connected operation flow. Separate commands that happen to download, read, write, or send data are not treated as connected without graph evidence.
 
-Use `--verbose` to see each finding's rule ID, level, confidence, source hook, and evidence. In JSON output, evidence can reference `operationId`, `fromOperationId`, and `toOperationId`; these values join back to the selected hook's `operations` and `relations`. `location` identifies the containing operation, while optional `valueLocation` identifies the exact AST-derived range of a directly represented evidence value. The latter is omitted when the displayed value was expanded, normalized, inferred, derived, or is ambiguous.
+Use `--verbose` to see each finding's rule ID, level, confidence, source hook, and evidence. Evidence displays its derivation (`direct`, `inferred`, or `unresolved`), resolution, relevant values, and exact relation edges when available. In JSON output, evidence can reference `operationId`, `fromOperationId`, and `toOperationId`; these values join back to the selected hook's `operations` and `relations`. Relation-backed evidence also retains the exact `relations` used by the Finding, including relation provenance. `location` identifies the containing operation, while optional `valueLocation` identifies the exact AST-derived range of a directly represented evidence value. The latter is omitted when the displayed value was expanded, normalized, inferred, derived, or is ambiguous.
 
 ```bash
 latra scan . --verbose

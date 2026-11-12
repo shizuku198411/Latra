@@ -671,6 +671,16 @@ func writeFindings(writer io.Writer, findings []finding.Finding) error {
 			if _, err := fmt.Fprintf(writer, "        Evidence: %s %s", evidence.Type, evidence.ID); err != nil {
 				return err
 			}
+			if evidence.Derivation != "" {
+				if _, err := fmt.Fprintf(writer, " derivation=%s", evidence.Derivation); err != nil {
+					return err
+				}
+			}
+			if evidence.Resolution != "" {
+				if _, err := fmt.Fprintf(writer, " resolution=%s", evidence.Resolution); err != nil {
+					return err
+				}
+			}
 			if evidence.OperationID != "" {
 				if _, err := fmt.Fprintf(writer, " operation=%s", evidence.OperationID); err != nil {
 					return err
@@ -678,6 +688,31 @@ func writeFindings(writer io.Writer, findings []finding.Finding) error {
 			}
 			if evidence.FromOperationID != "" || evidence.ToOperationID != "" {
 				if _, err := fmt.Fprintf(writer, " flow=%s->%s", evidence.FromOperationID, evidence.ToOperationID); err != nil {
+					return err
+				}
+			}
+			for _, relation := range evidence.Relations {
+				if _, err := fmt.Fprintf(writer, " relation=%s:%s->%s", relation.Kind, relation.FromOperationID, relation.ToOperationID); err != nil {
+					return err
+				}
+			}
+			if evidence.Value != "" {
+				if _, err := fmt.Fprintf(writer, " value=%q", evidence.Value); err != nil {
+					return err
+				}
+			}
+			if evidence.Expression != "" {
+				if _, err := fmt.Fprintf(writer, " expression=%q", evidence.Expression); err != nil {
+					return err
+				}
+			}
+			if evidence.NormalizedValue != "" && evidence.NormalizedValue != evidence.Value {
+				if _, err := fmt.Fprintf(writer, " normalized=%q", evidence.NormalizedValue); err != nil {
+					return err
+				}
+			}
+			if len(evidence.NormalizedCandidates) > 0 {
+				if _, err := fmt.Fprintf(writer, " candidates=%q", evidence.NormalizedCandidates); err != nil {
 					return err
 				}
 			}

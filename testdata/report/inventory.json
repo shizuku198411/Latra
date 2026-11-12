@@ -466,7 +466,8 @@
               "type": "metadata",
               "id": "known-commands",
               "value": "1",
-              "resolution": "Resolved"
+              "resolution": "Resolved",
+              "derivation": "direct"
             }
           ],
           "message": "Every resolved command name is covered by the embedded command database.",
@@ -491,7 +492,8 @@
               "type": "metadata",
               "id": "parsed-hooks",
               "value": "1",
-              "resolution": "Resolved"
+              "resolution": "Resolved",
+              "derivation": "direct"
             }
           ],
           "message": "Every detected standard hook file parsed without syntax recovery.",
@@ -515,7 +517,8 @@
               "type": "metadata",
               "id": "inventoried-files",
               "value": "1",
-              "resolution": "Resolved"
+              "resolution": "Resolved",
+              "derivation": "direct"
             }
           ],
           "message": "No resource-limit diagnostic interrupted the SDK file inventory."
@@ -536,7 +539,8 @@
               "type": "metadata",
               "id": "analyzed-hooks",
               "value": "1",
-              "resolution": "Resolved"
+              "resolution": "Resolved",
+              "derivation": "direct"
             }
           ],
           "message": "No analyzed hook contains a dynamic execution capability.",
@@ -567,7 +571,8 @@
               "type": "context",
               "id": "run-as-root",
               "value": "false",
-              "resolution": "Resolved"
+              "resolution": "Resolved",
+              "derivation": "direct"
             }
           ],
           "message": "The Workshop lifecycle runs this hook as the Workshop user rather than container root.",

@@ -54,6 +54,18 @@ func TestTUIRiskAnnotationsMatchSDKFileAndLine(t *testing.T) {
 	}
 }
 
+func TestTUIRiskLabelShowsEvidenceDerivation(t *testing.T) {
+	document := &report.Document{Assessment: finding.Assessment{BySDK: []finding.SDKAssessment{{SDK: "go", KeyRisks: []finding.RiskHighlight{{
+		ID: "risk.fixture", Title: "Conditional endpoint requires review", Severity: "medium", Score: 25,
+		Scopes: []finding.RiskScope{{SDK: "go", Location: &shell.Location{Path: "go/hooks/setup-project", StartLine: 1},
+			Expression: "$URL", Resolution: analysis.Unknown, Derivation: finding.EvidenceUnresolved}},
+	}}}}}}
+	rows := tuiPreviewRows(&tuiPreview{Lines: []string{"    1  curl \"$URL\""}}, risksForPreview(document, "go", "hooks/setup-project"), 120, 4)
+	if len(rows) < 1 || !strings.Contains(rows[0], "evidence=unresolved, resolution=Unknown") {
+		t.Fatalf("evidence label = %#v", rows)
+	}
+}
+
 func TestScanJSONEvidenceAndTUIAnnotationShareOperationLocation(t *testing.T) {
 	const content = "git clone \\\n  --depth=1 \\\n  https://example.invalid/opensbi.git \\\n  opensbi\n"
 	parsed := shell.NewParser().Parse([]byte(content), "fixture/hooks/setup-project")

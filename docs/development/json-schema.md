@@ -170,6 +170,10 @@ normalized, expanded, inferred, derived, or ambiguous values whose displayed
 bytes cannot be tied to one exact source range. Key Risk scopes expose the same
 optional field so JSON consumers and `latra explorer` use identical evidence.
 
+`derivation` separates direct inventory facts from inferred and unresolved evidence. It uses `direct`, `inferred`, or `unresolved`; it does not replace `resolution`. Relation-backed Evidence and Key Risk scopes may include `relations`, containing the exact operation-graph edges used by the Finding. Consumers can therefore follow `Finding → Evidence → Relation → Operation → location` without reconstructing the scanner's path search.
+
+Unresolved operation inputs may use `expression` to preserve structural text such as `$URL`; this field describes the unresolved expression and must not be interpreted as a resolved runtime `value`.
+
 Project-access observation evidence preserves both `value`, the raw shell path, and `normalizedValue`, the path resolved against the hook's tracked working directory. Partially resolved paths also retain every bounded candidate in `normalizedCandidates`. The `resolution` field indicates whether the normalized result is conclusive.
 
 ## Assessment

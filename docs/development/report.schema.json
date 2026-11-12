@@ -184,7 +184,14 @@
         "hook": { "$ref": "#/$defs/hookName" },
         "location": { "$ref": "#/$defs/location" },
         "valueLocation": { "$ref": "#/$defs/location" },
-        "value": { "type": "string" }
+        "value": { "type": "string" },
+        "expression": { "type": "string" },
+        "resolution": { "$ref": "#/$defs/resolution" },
+        "derivation": { "$ref": "#/$defs/evidenceDerivation" },
+        "relations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operationRelation" }
+        }
       }
     },
     "score": {
@@ -980,9 +987,15 @@
         "fromOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
         "toOperationId": { "type": "string", "pattern": "^op-[0-9]{4,}$" },
         "value": { "type": "string" },
+        "expression": { "type": "string" },
         "normalizedValue": { "type": "string" },
         "normalizedCandidates": { "$ref": "#/$defs/stringArray" },
         "resolution": { "$ref": "#/$defs/resolution" },
+        "derivation": { "$ref": "#/$defs/evidenceDerivation" },
+        "relations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/operationRelation" }
+        },
         "location": { "$ref": "#/$defs/location" },
         "valueLocation": { "$ref": "#/$defs/location" }
       }
@@ -1061,6 +1074,10 @@
     "resolution": {
       "type": "string",
       "enum": ["Resolved", "PartiallyResolved", "Unknown"]
+    },
+    "evidenceDerivation": {
+      "type": "string",
+      "enum": ["direct", "inferred", "unresolved"]
     },
     "reachability": {
       "type": "string",

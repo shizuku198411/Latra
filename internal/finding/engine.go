@@ -42,8 +42,10 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 				}
 				matched.evidence = append(matched.evidence, includeEvidence(matched.hook, matched.evidence)...)
 				matched.evidence = append(matched.evidence, aliasEvidence(matched.hook, matched.evidence)...)
+				matched.evidence = append(matched.evidence, unresolvedArgumentEvidence(matched.hook, matched.evidence)...)
 				attachValueLocations(matched.hook, matched.evidence)
 			}
+			annotateEvidence(matched.evidence)
 			key := rule.ID + "\x00" + item.Name + "\x00" + string(hookName) + "\x00" + matched.key
 			if seen[key] || len(matched.evidence) == 0 {
 				continue
@@ -65,6 +67,92 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 	findings = suppressSubsumedFindings(findings)
 	sortFindings(findings)
 	return findings
+}
+
+func unresolvedArgumentEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
+	if hook == nil || hook.Analysis == nil {
+		return nil
+	}
+	relevant := make(map[string]bool)
+	for _, item := range evidence {
+		for _, operationID := range []string{item.OperationID, item.FromOperationID, item.ToOperationID} {
+			if operationID != "" {
+				relevant[operationID] = true
+			}
+		}
+	}
+	operations := operationMap(hook.Analysis.Operations)
+	seen := make(map[string]bool)
+	var additions []Evidence
+	for operationID := range relevant {
+		operation, ok := operations[operationID]
+		if !ok {
+			continue
+		}
+		for _, argument := range operation.Arguments {
+			if argument.Resolution == analysis.Resolved {
+				continue
+			}
+			expression := valueExpression(argument)
+			key := operationID + "\x00" + expression + "\x00" + string(argument.Resolution)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			location := operation.Location
+			additions = append(additions, Evidence{Type: "operation", ID: "unresolved-argument", OperationID: operationID,
+				Expression: expression, NormalizedCandidates: append([]string{}, argument.Candidates...),
+				Resolution: argument.Resolution, Derivation: EvidenceUnresolved, Location: &location})
+		}
+	}
+	sort.SliceStable(additions, func(i, j int) bool {
+		if additions[i].OperationID != additions[j].OperationID {
+			return additions[i].OperationID < additions[j].OperationID
+		}
+		return additions[i].Expression < additions[j].Expression
+	})
+	return additions
+}
+
+func valueExpression(value analysis.Value) string {
+	var expression strings.Builder
+	for _, part := range value.Parts {
+		switch part.Kind {
+		case analysis.PartLiteral, analysis.PartQuotedLiteral, analysis.PartGlob, analysis.PartUnknownExpansion:
+			expression.WriteString(part.Text)
+		case analysis.PartVariableReference:
+			expression.WriteString("$")
+			expression.WriteString(part.Name)
+		case analysis.PartCommandSubstitution:
+			expression.WriteString("$(...)")
+		case analysis.PartArithmeticExpansion:
+			expression.WriteString("$((...))")
+		}
+	}
+	if expression.Len() == 0 {
+		return "<unresolved>"
+	}
+	return expression.String()
+}
+
+func annotateEvidence(evidence []Evidence) {
+	for index := range evidence {
+		item := &evidence[index]
+		if item.Derivation != "" {
+			continue
+		}
+		switch {
+		case item.Resolution == analysis.Unknown || item.Resolution == analysis.PartiallyResolved || len(item.NormalizedCandidates) > 0:
+			item.Derivation = EvidenceUnresolved
+		case len(item.Relations) > 0 || item.FromOperationID != "" || item.ToOperationID != "" ||
+			item.Type == "capability" || item.Type == "data-flow" || item.Type == "artifact-flow" ||
+			item.Type == "lifecycle-flow" || item.Type == "composition-flow" || item.Type == "include" || item.Type == "alias" ||
+			item.NormalizedValue != "" && item.NormalizedValue != item.Value:
+			item.Derivation = EvidenceInferred
+		default:
+			item.Derivation = EvidenceDirect
+		}
+	}
 }
 
 // attachValueLocations promotes source ranges already carried by structured
@@ -154,7 +242,8 @@ func aliasEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
 		location := operations[relation.FromOperationID].Location
 		additions = append(additions, Evidence{Type: "alias", ID: "static-path-alias", OperationID: relation.ToOperationID,
 			FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
-			Value: relation.Name, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution, Location: &location})
+			Value: relation.Name, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution,
+			Relations: []analysis.Relation{relation}, Location: &location})
 	}
 	return additions
 }
@@ -186,7 +275,8 @@ func includeEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
 					location := operations[relation.FromOperationID].Location
 					additions = append(additions, Evidence{Type: "include", ID: "sdk-local-include", OperationID: relation.FromOperationID,
 						FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
-						Value: relation.Artifact.Literal, NormalizedValue: relation.Digest, Resolution: relation.Resolution, Location: &location})
+						Value: relation.Artifact.Literal, NormalizedValue: relation.Digest, Resolution: relation.Resolution,
+						Relations: []analysis.Relation{relation}, Location: &location})
 				}
 				break
 			}
@@ -1404,11 +1494,12 @@ func flowMatch(hook *sdk.Hook, rule findingconfig.Rule, source, sink analysis.Ca
 		}
 		evidence = append(evidence, Evidence{Type: "artifact-flow", ID: string(relation.Kind), OperationID: relation.ToOperationID,
 			FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
-			Value: relation.Artifact.Literal, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution})
+			Value: relation.Artifact.Literal, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution,
+			Relations: []analysis.Relation{relation}})
 	}
 	evidence = append(evidence, Evidence{Type: "data-flow", ID: sinkEvidenceID(rule), OperationID: sink.OperationID, FromOperationID: source.OperationID, ToOperationID: sink.OperationID,
 		Value: sink.Target.Literal, NormalizedValue: sink.NormalizedTarget.Literal, NormalizedCandidates: append([]string{}, sink.NormalizedTarget.Candidates...),
-		Resolution: resolution, Location: &toLocation})
+		Resolution: resolution, Relations: append([]analysis.Relation{}, path...), Location: &toLocation})
 	return match{hook: hook, key: source.OperationID + "->" + sink.OperationID + ":" + capabilityTargetKey(source) + ":" + capabilityTargetKey(sink), confidence: confidenceFor(resolution), evidence: evidence}
 }
 

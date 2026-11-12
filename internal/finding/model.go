@@ -33,6 +33,17 @@ type Context struct {
 	StateMounted     bool `json:"stateMounted"`
 }
 
+// EvidenceDerivation describes how directly static inventory supports an
+// evidence item. It is separate from Resolution: derivation describes the
+// reasoning step, while resolution describes value certainty.
+type EvidenceDerivation string
+
+const (
+	EvidenceDirect     EvidenceDerivation = "direct"
+	EvidenceInferred   EvidenceDerivation = "inferred"
+	EvidenceUnresolved EvidenceDerivation = "unresolved"
+)
+
 type Evidence struct {
 	SDK                  string              `json:"sdk,omitempty"`
 	Type                 string              `json:"type"`
@@ -41,9 +52,12 @@ type Evidence struct {
 	FromOperationID      string              `json:"fromOperationId,omitempty"`
 	ToOperationID        string              `json:"toOperationId,omitempty"`
 	Value                string              `json:"value,omitempty"`
+	Expression           string              `json:"expression,omitempty"`
 	NormalizedValue      string              `json:"normalizedValue,omitempty"`
 	NormalizedCandidates []string            `json:"normalizedCandidates,omitempty"`
 	Resolution           analysis.Resolution `json:"resolution,omitempty"`
+	Derivation           EvidenceDerivation  `json:"derivation,omitempty"`
+	Relations            []analysis.Relation `json:"relations,omitempty"`
 	Location             *shell.Location     `json:"location,omitempty"`
 	ValueLocation        *shell.Location     `json:"valueLocation,omitempty"`
 }

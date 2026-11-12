@@ -230,6 +230,10 @@ Assurance based on absence is only emitted when analysis is complete enough to s
 
 No finding is emitted without evidence. Evidence can reference metadata, diagnostics, a capability, an operation, context, or a relation flow. It includes the relevant operation IDs, value, resolution, and source location where available. `location` identifies the containing operation or evidence origin, while optional `valueLocation` identifies the exact AST word that directly represents the displayed value. Expanded, normalized, inferred, derived, and ambiguous values do not receive a fabricated value location.
 
+Evidence also records `derivation`: `direct` for facts represented directly by inventory or scanner state, `inferred` for capabilities, normalization, or relation-backed conclusions, and `unresolved` when value or flow resolution remains partial or unknown. This describes how the evidence was obtained; `resolution` independently describes value certainty. Relation-backed Evidence carries the exact existing operation-graph relations, including their operation IDs, artifacts, and provenance, instead of reconstructing a second flow model for reporting.
+
+When a contributing operation has unresolved arguments, separate `unresolved-argument` Evidence records a structural `expression` such as `$URL`. The expression identifies what static input is unknown; it is not presented as the runtime value. This lets a resolved command-derived behavior and an unresolved endpoint or destination coexist without overstating either one.
+
 The rule defines an initial confidence. Evidence can lower, but never raise, that confidence. The effective confidence multiplier is:
 
 | Confidence | Multiplier |
