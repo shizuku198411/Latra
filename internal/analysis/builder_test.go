@@ -91,6 +91,70 @@ printf '%s' "$target"
 	}
 }
 
+func TestValueResolutionPreservesKnownStructureWithoutFalseLiteral(t *testing.T) {
+	t.Parallel()
+
+	t.Run("known concatenation", func(t *testing.T) {
+		result := analyze(t, "setup-base", "BASE=/etc\nprintf '%s' \"${BASE}/profile.d/go.sh\"\n")
+		value := findCommand(t, flatten(result.Operations), "printf").Arguments[1]
+		if value.Resolution != analysis.Resolved || value.Literal != "/etc/profile.d/go.sh" {
+			t.Fatalf("known concatenation = %#v", value)
+		}
+	})
+
+	t.Run("unknown prefix", func(t *testing.T) {
+		result := analyze(t, "setup-base", "printf '%s' \"${UNKNOWN}/profile.d/go.sh\"\n")
+		value := findCommand(t, flatten(result.Operations), "printf").Arguments[1]
+		if value.Resolution != analysis.Unknown || value.Literal != "" || len(value.Parts) != 2 {
+			t.Fatalf("unknown prefix = %#v", value)
+		}
+		if value.Parts[0].Kind != analysis.PartVariableReference || value.Parts[0].Name != "UNKNOWN" || value.Parts[1].Text != "/profile.d/go.sh" {
+			t.Fatalf("unknown prefix parts = %#v", value.Parts)
+		}
+	})
+
+	t.Run("default expansion by assigned state", func(t *testing.T) {
+		result := analyze(t, "setup-base", "SET=/opt\nEMPTY=\nprintf '%s' \"${SET:-/etc}\"\nprintf '%s' \"${EMPTY:-/etc}\"\nprintf '%s' \"${EMPTY-/etc}\"\nprintf '%s' \"${UNSET:-/etc}\"\n")
+		commands := commandsNamed(flatten(result.Operations), "printf")
+		if len(commands) != 4 {
+			t.Fatalf("printf commands = %#v", commands)
+		}
+		values := []analysis.Value{commands[0].Arguments[1], commands[1].Arguments[1], commands[2].Arguments[1], commands[3].Arguments[1]}
+		if values[0].Resolution != analysis.Resolved || values[0].Literal != "/opt" {
+			t.Errorf("set default expansion = %#v", values[0])
+		}
+		if values[1].Resolution != analysis.Resolved || values[1].Literal != "/etc" {
+			t.Errorf("empty :- expansion = %#v", values[1])
+		}
+		if values[2].Resolution != analysis.Resolved || values[2].Literal != "" {
+			t.Errorf("empty - expansion = %#v", values[2])
+		}
+		if values[3].Resolution != analysis.Unknown || values[3].Literal != "" {
+			t.Errorf("environment-dependent default expansion = %#v", values[3])
+		}
+	})
+
+	t.Run("branch candidates with suffix", func(t *testing.T) {
+		result := analyze(t, "setup-base", "if condition; then BASE=/etc; else BASE=/opt; fi\nprintf '%s' \"${BASE}/profile.d/go.sh\"\n")
+		value := findCommand(t, flatten(result.Operations), "printf").Arguments[1]
+		want := []string{"/etc/profile.d/go.sh", "/opt/profile.d/go.sh"}
+		if value.Resolution != analysis.PartiallyResolved || !reflect.DeepEqual(value.Candidates, want) || value.Literal != "" {
+			t.Fatalf("candidate concatenation = %#v, want candidates %#v", value, want)
+		}
+	})
+
+	t.Run("command substitution and glob stay nonliteral", func(t *testing.T) {
+		result := analyze(t, "setup-base", "printf '%s' \"$(choose)/profile.d/go.sh\"\nprintf '%s' /etc/*.conf\n")
+		commands := commandsNamed(flatten(result.Operations), "printf")
+		if commands[0].Arguments[1].Resolution != analysis.Unknown || commands[0].Arguments[1].Literal != "" {
+			t.Errorf("command substitution = %#v", commands[0].Arguments[1])
+		}
+		if commands[1].Arguments[1].Resolution != analysis.PartiallyResolved || commands[1].Arguments[1].Literal != "" {
+			t.Errorf("glob = %#v", commands[1].Arguments[1])
+		}
+	})
+}
+
 func TestAnalyzeFlowAndSpecialOperations(t *testing.T) {
 	t.Parallel()
 
@@ -262,7 +326,8 @@ if test "$MODE" = secret; then file=.env; else file=config/settings.json; fi
 cat "$file"
 `)
 	partial := capabilitiesOfKind(project.Capabilities, "project-sensitive-file-read")
-	if len(partial) != 2 || partial[0].Resolution != analysis.PartiallyResolved || partial[1].Resolution != analysis.PartiallyResolved {
+	if len(partial) != 1 || partial[0].Resolution != analysis.PartiallyResolved ||
+		!reflect.DeepEqual(partial[0].NormalizedTarget.Candidates, []string{"/project/.env", "/project/config/settings.json"}) {
 		t.Errorf("partially resolved sensitive read = %#v", partial)
 	}
 }
@@ -1035,6 +1100,16 @@ func findCommand(t *testing.T, operations []analysis.Operation, command string) 
 	}
 	t.Fatalf("command %q not found", command)
 	return analysis.Operation{}
+}
+
+func commandsNamed(operations []analysis.Operation, command string) []analysis.Operation {
+	var matches []analysis.Operation
+	for _, operation := range operations {
+		if operation.Command.Literal == command {
+			matches = append(matches, operation)
+		}
+	}
+	return matches
 }
 
 func firstOperation(t *testing.T, operations []analysis.Operation, kind analysis.OperationKind) analysis.Operation {

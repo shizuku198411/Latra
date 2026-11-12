@@ -302,23 +302,11 @@ func (b *builder) value(word *syntax.Word) Value {
 	if len(word.Parts) == 1 {
 		value = b.wordPart(word.Parts[0], false)
 	} else {
-		value = Value{Resolution: Resolved}
-		var rendered strings.Builder
+		pieces := make([]Value, 0, len(word.Parts))
 		for _, part := range word.Parts {
-			partValue := b.wordPart(part, false)
-			value.Parts = append(value.Parts, partValue.Parts...)
-			if partValue.Resolution == Unknown {
-				value.Resolution = Unknown
-			} else if partValue.Resolution == PartiallyResolved && value.Resolution == Resolved {
-				value.Resolution = PartiallyResolved
-			}
-			if partValue.Resolution == Resolved {
-				rendered.WriteString(partValue.Literal)
-			}
+			pieces = append(pieces, b.wordPart(part, false))
 		}
-		if value.Resolution == Resolved {
-			value.Literal = rendered.String()
-		}
+		value = combineValues(pieces)
 	}
 	if value.Resolution == Resolved && literalSourceWord(word) {
 		location := shell.LocationOf(b.sourceName, word)
@@ -376,23 +364,17 @@ func (b *builder) wordPart(part syntax.WordPart, quoted bool) Value {
 			kind = PartGlob
 			resolution = PartiallyResolved
 		}
-		return Value{Parts: []ValuePart{{Kind: kind, Text: part.Value}}, Resolution: resolution, Literal: part.Value}
+		value := Value{Parts: []ValuePart{{Kind: kind, Text: part.Value}}, Resolution: resolution}
+		if resolution == Resolved {
+			value.Literal = part.Value
+		}
+		return value
 	case *syntax.SglQuoted:
 		return Value{Parts: []ValuePart{{Kind: PartQuotedLiteral, Text: part.Value}}, Resolution: Resolved, Literal: part.Value}
 	case *syntax.DblQuoted:
 		return b.parts(part.Parts, true)
 	case *syntax.ParamExp:
-		name := ""
-		if part.Param != nil {
-			name = part.Param.Value
-		}
-		piece := ValuePart{Kind: PartVariableReference, Name: name}
-		if known, ok := b.variables[name]; ok && !part.Excl && !part.Length && part.Index == nil && part.Exp == nil && part.Repl == nil {
-			known.Parts = []ValuePart{piece}
-			known.SourceLocation = nil
-			return known
-		}
-		return Value{Parts: []ValuePart{piece}, Resolution: Unknown}
+		return b.parameterExpansion(part)
 	case *syntax.CmdSubst:
 		return Value{Parts: []ValuePart{{Kind: PartCommandSubstitution}}, Resolution: Unknown}
 	case *syntax.ArithmExp:
@@ -408,24 +390,122 @@ func (b *builder) parts(parts []syntax.WordPart, quoted bool) Value {
 	if len(parts) == 1 {
 		return b.wordPart(parts[0], quoted)
 	}
-	value := Value{Resolution: Resolved}
-	var literal strings.Builder
+	pieces := make([]Value, 0, len(parts))
 	for _, part := range parts {
-		piece := b.wordPart(part, quoted)
-		value.Parts = append(value.Parts, piece.Parts...)
-		if piece.Resolution == Unknown {
-			value.Resolution = Unknown
-		} else if piece.Resolution == PartiallyResolved && value.Resolution == Resolved {
-			value.Resolution = PartiallyResolved
+		pieces = append(pieces, b.wordPart(part, quoted))
+	}
+	return combineValues(pieces)
+}
+
+func (b *builder) parameterExpansion(part *syntax.ParamExp) Value {
+	name := ""
+	if part.Param != nil {
+		name = part.Param.Value
+	}
+	reference := ValuePart{Kind: PartVariableReference, Name: name}
+	plain := part.Param != nil && part.Flags == nil && !part.Excl && !part.Length && !part.Width && !part.IsSet &&
+		part.Split == syntax.OptUnset && part.GlobSubst == syntax.OptUnset && part.RcExpand == syntax.OptUnset &&
+		part.NestedParam == nil && part.Index == nil && len(part.Modifiers) == 0 && part.Slice == nil && part.Repl == nil && part.Names == 0
+	simple := plain && part.Exp == nil
+	known, assigned := b.variables[name]
+	if simple && assigned {
+		known.Parts = []ValuePart{reference}
+		known.SourceLocation = nil
+		return known
+	}
+	if !plain || part.Exp == nil || part.Exp.Word == nil || (part.Exp.Op != syntax.DefaultUnset && part.Exp.Op != syntax.DefaultUnsetOrNull) {
+		return Value{Parts: []ValuePart{reference}, Resolution: Unknown}
+	}
+	if !assigned {
+		// An unassigned shell variable may still be supplied by the hook environment.
+		return Value{Parts: []ValuePart{reference, ValuePart{Kind: PartUnknownExpansion, Text: render(part)}}, Resolution: Unknown}
+	}
+	if part.Exp.Op == syntax.DefaultUnset {
+		known.Parts = []ValuePart{reference}
+		known.SourceLocation = nil
+		return known
+	}
+	defaultValue := b.value(part.Exp.Word)
+	defaultValue.SourceLocation = nil
+	if known.Resolution == Resolved {
+		if known.Literal != "" {
+			known.Parts = []ValuePart{reference}
+			known.SourceLocation = nil
+			return known
 		}
-		if piece.Resolution == Resolved {
-			literal.WriteString(piece.Literal)
+		return defaultValue
+	}
+	if known.Resolution == PartiallyResolved && len(known.Candidates) > 0 && defaultValue.Resolution == Resolved {
+		candidates := make([]string, 0, len(known.Candidates))
+		for _, candidate := range known.Candidates {
+			if candidate == "" {
+				candidate = defaultValue.Literal
+			}
+			if !contains(candidates, candidate) {
+				candidates = append(candidates, candidate)
+			}
+		}
+		if len(candidates) <= candidateLimit {
+			sort.Strings(candidates)
+			return Value{Parts: []ValuePart{reference}, Resolution: PartiallyResolved, Candidates: candidates}
 		}
 	}
-	if value.Resolution == Resolved {
-		value.Literal = literal.String()
+	return Value{Parts: []ValuePart{reference}, Resolution: Unknown}
+}
+
+func combineValues(values []Value) Value {
+	combined := Value{Resolution: Resolved}
+	choices := []string{""}
+	bounded := true
+	for _, value := range values {
+		combined.Parts = append(combined.Parts, value.Parts...)
+		switch value.Resolution {
+		case Resolved:
+			for index := range choices {
+				choices[index] += value.Literal
+			}
+		case PartiallyResolved:
+			if combined.Resolution == Resolved {
+				combined.Resolution = PartiallyResolved
+			}
+			if len(value.Candidates) == 0 {
+				bounded = false
+				continue
+			}
+			choices = combineCandidates(choices, value.Candidates)
+			if len(choices) == 0 {
+				bounded = false
+			}
+		case Unknown:
+			combined.Resolution = Unknown
+			bounded = false
+		}
 	}
-	return value
+	if combined.Resolution == Resolved {
+		combined.Literal = choices[0]
+		return combined
+	}
+	if combined.Resolution == PartiallyResolved && bounded && len(choices) > 0 {
+		sort.Strings(choices)
+		combined.Candidates = choices
+	}
+	return combined
+}
+
+func combineCandidates(prefixes, suffixes []string) []string {
+	if len(prefixes) == 0 || len(suffixes) == 0 || len(prefixes)*len(suffixes) > candidateLimit {
+		return nil
+	}
+	combined := make([]string, 0, len(prefixes)*len(suffixes))
+	for _, prefix := range prefixes {
+		for _, suffix := range suffixes {
+			candidate := prefix + suffix
+			if !contains(combined, candidate) {
+				combined = append(combined, candidate)
+			}
+		}
+	}
+	return combined
 }
 
 func (b *builder) substitutions(word *syntax.Word) []Operation {

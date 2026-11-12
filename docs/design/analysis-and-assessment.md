@@ -91,6 +91,14 @@ Each value has one of three resolution states:
 
 Resolution is intentionally conservative. It affects finding confidence: uncertainty is retained rather than converted into a definitive claim.
 
+The `Value` fields have distinct guarantees:
+
+- `parts` preserves the observed shell structure, including known literal prefixes and suffixes around an unresolved expansion.
+- `literal` is populated only for `Resolved` values and is the complete value, never a known fragment presented as the whole value.
+- `candidates` is populated only when Latra has a bounded set of complete possible values. Known prefixes and suffixes are concatenated into every candidate.
+
+Assignments to known variables and `${VAR:-default}` / `${VAR-default}` are resolved when the tracked assignment state is sufficient. An unassigned variable remains unknown because it may be inherited from the hook environment. Command substitutions, globs, and unbounded control-flow results retain uncertainty.
+
 ### Workshop hook context
 
 Operations are also associated with the documented Workshop lifecycle context:

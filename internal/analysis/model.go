@@ -27,6 +27,10 @@ const (
 )
 
 // Value preserves shell word structure instead of flattening it prematurely.
+// Literal is populated only when the complete shell value is Resolved.
+// Candidates is a bounded set of complete possible values for a
+// PartiallyResolved value. Parts retain known source structure even when no
+// complete value or bounded candidate set can be produced.
 type Value struct {
 	Parts          []ValuePart     `json:"parts,omitempty"`
 	Resolution     Resolution      `json:"resolution"`

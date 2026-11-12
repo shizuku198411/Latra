@@ -114,6 +114,8 @@ Values, operations, and capabilities use these resolution values:
 - `PartiallyResolved`
 - `Unknown`
 
+For a `Value`, `literal` is a complete value and is present only when resolution is `Resolved`. `candidates` contains a bounded set of complete possible values for a partially resolved value; it does not contain fragments. `parts` retains the shell structure even when no complete literal or bounded candidate set is available. Consumers must not interpret literal parts as a conclusive full value.
+
 SDK resolution uses a separate `state` enum defined in the schema.
 
 ## Operation graph
