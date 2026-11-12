@@ -44,6 +44,32 @@ sudo env MODE=test /usr/bin/printf '%s' "$url"
 	assertCapability(t, result.Capabilities, "dynamic-execution")
 }
 
+func TestValueSourceLocationOnlyForDirectLiteralWord(t *testing.T) {
+	t.Parallel()
+
+	result := analyze(t, "setup-base", "BASE=/etc\nprintf x > \"/etc/profile.d/go.sh\"\nprintf x > \"$BASE/profile.d/go.sh\"\n")
+	var redirects []analysis.Operation
+	for _, operation := range flatten(result.Operations) {
+		if operation.Kind == analysis.OperationRedirectWrite {
+			redirects = append(redirects, operation)
+		}
+	}
+	if len(redirects) != 2 {
+		t.Fatalf("redirects = %#v", redirects)
+	}
+	direct := redirects[0].Arguments[0]
+	if direct.SourceLocation == nil || direct.SourceLocation.Path != "fixture/setup-base" || direct.SourceLocation.StartLine != 2 || direct.SourceLocation.StartColumn != 12 {
+		t.Fatalf("direct source location = %#v", direct.SourceLocation)
+	}
+	expanded := redirects[1].Arguments[0]
+	if expanded.Resolution != analysis.Resolved || expanded.Literal != "/etc/profile.d/go.sh" {
+		t.Fatalf("expanded value = %#v", expanded)
+	}
+	if expanded.SourceLocation != nil {
+		t.Fatalf("expanded value received a fabricated source location: %#v", expanded.SourceLocation)
+	}
+}
+
 func TestAnalyzeControlFlowAndCandidates(t *testing.T) {
 	t.Parallel()
 

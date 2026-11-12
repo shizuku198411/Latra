@@ -216,7 +216,7 @@ Assurance based on absence is only emitted when analysis is complete enough to s
 
 ### Evidence and confidence
 
-No finding is emitted without evidence. Evidence can reference metadata, diagnostics, a capability, an operation, context, or a relation flow. It includes the relevant operation IDs, value, resolution, and source location where available.
+No finding is emitted without evidence. Evidence can reference metadata, diagnostics, a capability, an operation, context, or a relation flow. It includes the relevant operation IDs, value, resolution, and source location where available. `location` identifies the containing operation or evidence origin, while optional `valueLocation` identifies the exact AST word that directly represents the displayed value. Expanded, normalized, inferred, derived, and ambiguous values do not receive a fabricated value location.
 
 The rule defines an initial confidence. Evidence can lower, but never raise, that confidence. The effective confidence multiplier is:
 

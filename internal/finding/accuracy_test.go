@@ -11,9 +11,8 @@ import (
 	"github.com/shizuku198411/Latra/internal/shell"
 )
 
-// These fixtures freeze the v0.2.2 accuracy baseline before value-level source
-// locations are added. OperationLocation is the location Latra currently emits;
-// TargetLocation is the AST word that a precise value annotation should use.
+// These fixtures retain the v0.2.2 operation-location baseline while requiring
+// Phase 1 value-level locations to identify the exact AST word.
 type accuracyEvidenceExpectation struct {
 	FindingID         string
 	EvidenceID        string
@@ -50,7 +49,7 @@ func TestAnalysisEvidenceAccuracyBaseline(t *testing.T) {
 			Evidence: []accuracyEvidenceExpectation{{
 				FindingID: "risk.profile-environment-write", EvidenceID: "persistence", Value: "/etc/profile.d/go.sh", Resolution: analysis.Resolved,
 				OperationLocation: shell.Location{Path: fixturePath + "setup-base", StartLine: 1, StartColumn: 35},
-				TargetLocation:    shell.Location{Path: fixturePath + "setup-base", StartLine: 1, StartColumn: 37},
+				TargetLocation:    shell.Location{Path: fixturePath + "setup-base", StartLine: 1, StartColumn: 37, EndLine: 1, EndColumn: 57},
 				Reason:            "The current evidence starts at the redirect operator; precise highlighting should start at the path word.",
 			}},
 		},
@@ -61,7 +60,7 @@ func TestAnalysisEvidenceAccuracyBaseline(t *testing.T) {
 			Evidence: []accuracyEvidenceExpectation{{
 				FindingID: "risk.profile-environment-write", EvidenceID: "persistence", Value: "/etc/profile.d/go.sh", Resolution: analysis.Resolved,
 				OperationLocation: shell.Location{Path: fixturePath + "setup-base", StartLine: 1, StartColumn: 35},
-				TargetLocation:    shell.Location{Path: fixturePath + "setup-base", StartLine: 1, StartColumn: 37},
+				TargetLocation:    shell.Location{Path: fixturePath + "setup-base", StartLine: 1, StartColumn: 37, EndLine: 1, EndColumn: 59},
 				Reason:            "The target is the quoted syntax.Word, while current evidence starts at the redirect operator.",
 			}},
 		},
@@ -73,13 +72,13 @@ func TestAnalysisEvidenceAccuracyBaseline(t *testing.T) {
 				{
 					FindingID: "risk.remote-content-to-project", EvidenceID: "network-download", Value: "git", Resolution: analysis.Resolved,
 					OperationLocation: shell.Location{Path: fixturePath + "setup-project", StartLine: 1, StartColumn: 1},
-					TargetLocation:    shell.Location{Path: fixturePath + "setup-project", StartLine: 1, StartColumn: 1},
+					TargetLocation:    shell.Location{Path: fixturePath + "setup-project", StartLine: 1, StartColumn: 1, EndLine: 1, EndColumn: 4},
 					Reason:            "The command word and operation begin at the same source position in this baseline fixture.",
 				},
 				{
 					FindingID: "risk.remote-content-to-project", EvidenceID: "project-write", Value: "opensbi", Resolution: analysis.Resolved,
 					OperationLocation: shell.Location{Path: fixturePath + "setup-project", StartLine: 1, StartColumn: 1},
-					TargetLocation:    shell.Location{Path: fixturePath + "setup-project", StartLine: 4, StartColumn: 3},
+					TargetLocation:    shell.Location{Path: fixturePath + "setup-project", StartLine: 4, StartColumn: 3, EndLine: 4, EndColumn: 10},
 					Reason:            "The destination is on a continuation line, but current evidence only identifies the containing command.",
 				},
 			},
@@ -138,21 +137,38 @@ func TestAnalysisEvidenceAccuracyBaseline(t *testing.T) {
 					t.Errorf("evidence baseline = %#v, want resolution=%s location=%#v: %s", got, want.Resolution, want.OperationLocation, want.Reason)
 				}
 				metrics.LocationTargets++
-				if got.Location != nil && sameLocationStart(*got.Location, want.TargetLocation) {
+				if got.ValueLocation != nil && *got.ValueLocation == want.TargetLocation {
 					metrics.ExactValueLocations++
+				} else {
+					t.Errorf("value location = %#v, want %#v: %s", got.ValueLocation, want.TargetLocation, want.Reason)
 				}
 			}
 		})
 	}
 
-	// This is an intentional v0.2.2 baseline, not the Phase 1 target. Only the
-	// command word currently coincides with its value token; redirect targets and
-	// a continuation-line clone destination still carry operation-level locations.
-	want := accuracyMetrics{TruePositive: 3, FalsePositive: 0, FalseNegative: 0, ExactValueLocations: 1, LocationTargets: 4}
+	// Finding accuracy remains unchanged while all directly represented values
+	// now carry their exact AST-derived source word range.
+	want := accuracyMetrics{TruePositive: 3, FalsePositive: 0, FalseNegative: 0, ExactValueLocations: 4, LocationTargets: 4}
 	if metrics != want {
 		t.Fatalf("accuracy metrics = %#v, want %#v", metrics, want)
 	}
 	t.Logf("baseline: TP=%d FP=%d FN=%d exact-value-locations=%d/%d", metrics.TruePositive, metrics.FalsePositive, metrics.FalseNegative, metrics.ExactValueLocations, metrics.LocationTargets)
+}
+
+func TestExpandedFindingValueDoesNotReceiveFabricatedLocation(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "TARGET=/etc/profile.d/go.sh\nprintf 'export GO_ROOT=/opt/go\\n' > \"$TARGET\"\n", sdk.HookSetupBase)
+	got := findFinding(finding.AnalyzeSDK(item), "risk.profile-environment-write")
+	if got == nil || len(got.Evidence) != 1 {
+		t.Fatalf("profile finding = %#v", got)
+	}
+	if got.Evidence[0].Value != "/etc/profile.d/go.sh" || got.Evidence[0].Resolution != analysis.Resolved {
+		t.Fatalf("expanded evidence = %#v", got.Evidence[0])
+	}
+	if got.Evidence[0].ValueLocation != nil {
+		t.Fatalf("expanded value received a fabricated source range: %#v", got.Evidence[0].ValueLocation)
+	}
 }
 
 func findAccuracyEvidence(findings []finding.Finding, want accuracyEvidenceExpectation) *finding.Evidence {

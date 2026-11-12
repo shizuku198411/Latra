@@ -42,6 +42,7 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 				}
 				matched.evidence = append(matched.evidence, includeEvidence(matched.hook, matched.evidence)...)
 				matched.evidence = append(matched.evidence, aliasEvidence(matched.hook, matched.evidence)...)
+				attachValueLocations(matched.hook, matched.evidence)
 			}
 			key := rule.ID + "\x00" + item.Name + "\x00" + string(hookName) + "\x00" + matched.key
 			if seen[key] || len(matched.evidence) == 0 {
@@ -64,6 +65,70 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 	findings = suppressSubsumedFindings(findings)
 	sortFindings(findings)
 	return findings
+}
+
+// attachValueLocations promotes source ranges already carried by structured
+// operation values. It never searches source text, and leaves derived,
+// normalized, expanded, or ambiguous values without a fabricated range.
+func attachValueLocations(hook *sdk.Hook, evidence []Evidence) {
+	if hook == nil || hook.Analysis == nil {
+		return
+	}
+	operations := operationMap(hook.Analysis.Operations)
+	capabilities := capabilityOccurrencesByOperation(hook.Analysis.Capabilities)
+	for index := range evidence {
+		item := &evidence[index]
+		if item.Value == "" || item.ValueLocation != nil {
+			continue
+		}
+		switch item.Type {
+		case "capability", "data-flow", "operation", "lifecycle-flow":
+		default:
+			continue
+		}
+		var values []analysis.Value
+		for _, capability := range capabilities[item.OperationID] {
+			if capability.Target.Literal == item.Value {
+				values = append(values, capability.Target)
+			}
+		}
+		if operation, ok := operations[item.OperationID]; ok {
+			values = append(values, operationValues(operation)...)
+		}
+		item.ValueLocation = uniqueValueLocation(item.Value, values)
+	}
+}
+
+func operationValues(operation analysis.Operation) []analysis.Value {
+	values := []analysis.Value{operation.Command}
+	values = append(values, operation.Arguments...)
+	for _, input := range operation.Inputs {
+		values = append(values, input.Value)
+	}
+	for _, output := range operation.Outputs {
+		values = append(values, output.Value)
+	}
+	return values
+}
+
+func uniqueValueLocation(literal string, values []analysis.Value) *shell.Location {
+	locations := make(map[string]shell.Location)
+	for _, value := range values {
+		if value.Literal != literal || value.SourceLocation == nil {
+			continue
+		}
+		location := *value.SourceLocation
+		key := fmt.Sprintf("%s\x00%d\x00%d\x00%d\x00%d", location.Path, location.StartLine, location.StartColumn, location.EndLine, location.EndColumn)
+		locations[key] = location
+	}
+	if len(locations) != 1 {
+		return nil
+	}
+	for _, location := range locations {
+		result := location
+		return &result
+	}
+	return nil
 }
 
 func aliasEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {

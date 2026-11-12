@@ -298,27 +298,70 @@ func (b *builder) value(word *syntax.Word) Value {
 	if word == nil {
 		return literalValue("")
 	}
+	var value Value
 	if len(word.Parts) == 1 {
-		return b.wordPart(word.Parts[0], false)
-	}
-	value := Value{Resolution: Resolved}
-	var rendered strings.Builder
-	for _, part := range word.Parts {
-		partValue := b.wordPart(part, false)
-		value.Parts = append(value.Parts, partValue.Parts...)
-		if partValue.Resolution == Unknown {
-			value.Resolution = Unknown
-		} else if partValue.Resolution == PartiallyResolved && value.Resolution == Resolved {
-			value.Resolution = PartiallyResolved
+		value = b.wordPart(word.Parts[0], false)
+	} else {
+		value = Value{Resolution: Resolved}
+		var rendered strings.Builder
+		for _, part := range word.Parts {
+			partValue := b.wordPart(part, false)
+			value.Parts = append(value.Parts, partValue.Parts...)
+			if partValue.Resolution == Unknown {
+				value.Resolution = Unknown
+			} else if partValue.Resolution == PartiallyResolved && value.Resolution == Resolved {
+				value.Resolution = PartiallyResolved
+			}
+			if partValue.Resolution == Resolved {
+				rendered.WriteString(partValue.Literal)
+			}
 		}
-		if partValue.Resolution == Resolved {
-			rendered.WriteString(partValue.Literal)
+		if value.Resolution == Resolved {
+			value.Literal = rendered.String()
 		}
 	}
-	if value.Resolution == Resolved {
-		value.Literal = rendered.String()
+	if value.Resolution == Resolved && literalSourceWord(word) {
+		location := shell.LocationOf(b.sourceName, word)
+		value.SourceLocation = &location
 	}
 	return value
+}
+
+func literalSourceWord(word *syntax.Word) bool {
+	if word == nil || len(word.Parts) == 0 {
+		return false
+	}
+	for _, part := range word.Parts {
+		switch part := part.(type) {
+		case *syntax.Lit, *syntax.SglQuoted:
+			// The resolved value is represented directly by this source word.
+		case *syntax.DblQuoted:
+			if !literalSourceParts(part.Parts) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func literalSourceParts(parts []syntax.WordPart) bool {
+	if len(parts) == 0 {
+		return true
+	}
+	for _, part := range parts {
+		switch nested := part.(type) {
+		case *syntax.Lit, *syntax.SglQuoted:
+		case *syntax.DblQuoted:
+			if !literalSourceParts(nested.Parts) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (b *builder) wordPart(part syntax.WordPart, quoted bool) Value {
@@ -346,6 +389,7 @@ func (b *builder) wordPart(part syntax.WordPart, quoted bool) Value {
 		piece := ValuePart{Kind: PartVariableReference, Name: name}
 		if known, ok := b.variables[name]; ok && !part.Excl && !part.Length && part.Index == nil && part.Exp == nil && part.Repl == nil {
 			known.Parts = []ValuePart{piece}
+			known.SourceLocation = nil
 			return known
 		}
 		return Value{Parts: []ValuePart{piece}, Resolution: Unknown}

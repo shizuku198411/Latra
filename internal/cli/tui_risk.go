@@ -18,6 +18,13 @@ import (
 type tuiRisk struct {
 	Kind, ID, Title, Severity, Value string
 	Score                            int
+	ValueLocation                    *shell.Location
+	HighlightOnly                    bool
+}
+
+type tuiHighlightMatch struct {
+	start, end int
+	severity   string
 }
 
 // risksForPreview reuses the scanner's already aggregated KeyRisks and their
@@ -31,26 +38,37 @@ func risksForPreview(document *report.Document, sdkName, file string) map[int][]
 		if assessment.SDK != sdkName {
 			continue
 		}
+		labels := make(map[string]bool)
 		for _, risk := range assessment.KeyRisks {
 			for _, scope := range risk.Scopes {
-				if scope.SDK != sdkName || scope.Location == nil || scope.Location.StartLine < 1 {
+				if scope.SDK != sdkName {
 					continue
 				}
-				locationPath := tuiRiskPath(scope.Location.Path, sdkName)
+				location := scope.ValueLocation
+				if location == nil {
+					location = scope.Location
+				}
+				if location == nil || location.StartLine < 1 {
+					continue
+				}
+				locationPath := tuiRiskPath(location.Path, sdkName)
 				if locationPath != path.Clean(file) {
 					continue
 				}
-				item := tuiRisk{Kind: "risk", ID: risk.ID, Title: risk.Title, Severity: risk.Severity, Score: risk.Score, Value: scope.Value}
+				labelKey := risk.ID + "\x00" + risk.Title + "\x00" + risk.Severity
+				item := tuiRisk{Kind: "risk", ID: risk.ID, Title: risk.Title, Severity: risk.Severity, Score: risk.Score, Value: scope.Value,
+					ValueLocation: scope.ValueLocation, HighlightOnly: labels[labelKey]}
 				// Multiple evidence objects for one finding can point to the same line.
 				duplicate := false
-				for _, existing := range annotations[scope.Location.StartLine] {
-					if existing == item {
+				for _, existing := range annotations[location.StartLine] {
+					if sameTUIRiskEvidence(existing, item) {
 						duplicate = true
 						break
 					}
 				}
 				if !duplicate {
-					annotations[scope.Location.StartLine] = append(annotations[scope.Location.StartLine], item)
+					annotations[location.StartLine] = append(annotations[location.StartLine], item)
+					labels[labelKey] = true
 				}
 			}
 		}
@@ -65,6 +83,16 @@ func risksForPreview(document *report.Document, sdkName, file string) map[int][]
 		break
 	}
 	return annotations
+}
+
+func sameTUIRiskEvidence(left, right tuiRisk) bool {
+	if left.Kind != right.Kind || left.ID != right.ID || left.Title != right.Title || left.Severity != right.Severity || left.Value != right.Value || left.Score != right.Score {
+		return false
+	}
+	if left.ValueLocation == nil || right.ValueLocation == nil {
+		return left.ValueLocation == nil && right.ValueLocation == nil
+	}
+	return *left.ValueLocation == *right.ValueLocation
 }
 
 func tuiSemanticGapLocation(document *report.Document, sdkName string, hook sdk.HookName, operationID string) *shell.Location {
@@ -121,10 +149,17 @@ func tuiTreeRisks(document *report.Document, sdkName string) map[string]string {
 		}
 		for _, risk := range assessment.KeyRisks {
 			for _, scope := range risk.Scopes {
-				if scope.SDK != sdkName || scope.Location == nil || scope.Location.StartLine < 1 {
+				if scope.SDK != sdkName {
 					continue
 				}
-				file := tuiRiskPath(scope.Location.Path, sdkName)
+				location := scope.ValueLocation
+				if location == nil {
+					location = scope.Location
+				}
+				if location == nil || location.StartLine < 1 {
+					continue
+				}
+				file := tuiRiskPath(location.Path, sdkName)
 				if file == "." || file == ".." || strings.HasPrefix(file, "../") || path.IsAbs(file) {
 					continue
 				}
@@ -197,6 +232,9 @@ func tuiPreviewRows(preview *tuiPreview, annotations map[int][]tuiRisk, width, h
 			// Display its label once, but retain every value for highlighting.
 			seen := make(map[string]bool)
 			for _, risk := range atLine {
+				if risk.HighlightOnly {
+					continue
+				}
 				key := risk.Kind + "\x00" + risk.ID + "\x00" + risk.Title + "\x00" + risk.Severity + fmt.Sprint(risk.Score)
 				if seen[key] {
 					continue
@@ -215,7 +253,11 @@ func tuiPreviewRows(preview *tuiPreview, annotations map[int][]tuiRisk, width, h
 				break
 			}
 			if len(code) >= 7 {
-				code = code[:7] + highlightTUIRiskValues(code[7:], active)
+				source := code[7:]
+				if i < len(preview.SourceLines) {
+					source = preview.SourceLines[i]
+				}
+				code = code[:7] + highlightTUIRiskValuesAtLine(code[7:], source, active, i+1)
 			}
 			rows = append(rows, fitTUIANSI(" "+code, width))
 		}
@@ -226,6 +268,68 @@ func tuiPreviewRows(preview *tuiPreview, annotations map[int][]tuiRisk, width, h
 		}
 	}
 	return rows
+}
+
+func highlightTUIRiskValuesAtLine(contents, source string, risks []tuiRisk, line int) string {
+	var exact []tuiHighlightMatch
+	var fallback []tuiRisk
+	for _, risk := range risks {
+		location := risk.ValueLocation
+		if location == nil {
+			fallback = append(fallback, risk)
+			continue
+		}
+		if line < location.StartLine || line > location.EndLine || location.EndLine < location.StartLine {
+			continue
+		}
+		start, end := 0, len(contents)
+		if line == location.StartLine {
+			start = tuiDisplayOffset(source, location.StartColumn-1)
+		}
+		if line == location.EndLine {
+			end = tuiDisplayOffset(source, location.EndColumn-1)
+		}
+		if start < 0 || end <= start || start >= len(contents) || end > len(contents) {
+			continue
+		}
+		exact = append(exact, tuiHighlightMatch{start: start, end: end, severity: risk.Severity})
+	}
+	styled := highlightTUIRanges(contents, exact)
+	if len(fallback) == 0 {
+		return styled
+	}
+	return highlightTUIRiskValues(styled, fallback)
+}
+
+func tuiDisplayOffset(source string, sourceOffset int) int {
+	if sourceOffset < 0 || sourceOffset > len(source) {
+		return -1
+	}
+	return len(strings.ReplaceAll(source[:sourceOffset], "\t", "    "))
+}
+
+func highlightTUIRanges(contents string, ranges []tuiHighlightMatch) string {
+	if len(ranges) == 0 {
+		return contents
+	}
+	sort.Slice(ranges, func(i, j int) bool {
+		if ranges[i].start != ranges[j].start {
+			return ranges[i].start < ranges[j].start
+		}
+		return ranges[i].end > ranges[j].end
+	})
+	var result strings.Builder
+	last := 0
+	for _, item := range ranges {
+		if item.start < last {
+			continue
+		}
+		result.WriteString(contents[last:item.start])
+		result.WriteString(report.ColorReviewPriority(contents[item.start:item.end], item.severity))
+		last = item.end
+	}
+	result.WriteString(contents[last:])
+	return result.String()
 }
 
 // highlightTUIRiskValues colors every distinct evidence value present in a

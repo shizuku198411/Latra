@@ -159,6 +159,13 @@ Assurance findings do not remove or reduce risk findings. Neither kind is a clai
 
 Every finding contains at least one evidence item. Operation and flow evidence uses the hook-local operation IDs described above, allowing consumers to join a finding back to `operations`, `relations`, and source locations.
 
+Evidence may also contain `valueLocation`, the exact AST-derived source range of
+the displayed `value`. The existing `location` remains the range of the
+containing operation or evidence origin. `valueLocation` is omitted for
+normalized, expanded, inferred, derived, or ambiguous values whose displayed
+bytes cannot be tied to one exact source range. Key Risk scopes expose the same
+optional field so JSON consumers and `latra explorer` use identical evidence.
+
 Project-access observation evidence preserves both `value`, the raw shell path, and `normalizedValue`, the path resolved against the hook's tracked working directory. Partially resolved paths also retain every bounded candidate in `normalizedCandidates`. The `resolution` field indicates whether the normalized result is conclusive.
 
 ## Assessment

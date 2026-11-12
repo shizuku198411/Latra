@@ -183,6 +183,7 @@
         "sdk": { "type": "string" },
         "hook": { "$ref": "#/$defs/hookName" },
         "location": { "$ref": "#/$defs/location" },
+        "valueLocation": { "$ref": "#/$defs/location" },
         "value": { "type": "string" }
       }
     },
@@ -981,7 +982,8 @@
         "normalizedValue": { "type": "string" },
         "normalizedCandidates": { "$ref": "#/$defs/stringArray" },
         "resolution": { "$ref": "#/$defs/resolution" },
-        "location": { "$ref": "#/$defs/location" }
+        "location": { "$ref": "#/$defs/location" },
+        "valueLocation": { "$ref": "#/$defs/location" }
       }
     },
     "lifecycleRelation": {

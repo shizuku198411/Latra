@@ -17,10 +17,11 @@ import (
 const maxTUIPreviewBytes = 1 << 20
 
 type tuiPreview struct {
-	Path   string
-	Status string
-	Lines  []string
-	Scroll int
+	Path        string
+	Status      string
+	Lines       []string
+	SourceLines []string
+	Scroll      int
 }
 
 func loadTUIPreview(entry sdkcache.Entry, name string) (tuiPreview, error) {
@@ -96,8 +97,9 @@ func loadTUIPreview(entry sdkcache.Entry, name string) (tuiPreview, error) {
 	// Remove terminal escape/control sequences and keep line endings consistent.
 	content := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n")
 	preview.Status = fmt.Sprintf("Text file · %d bytes", info.Size())
-	preview.Lines = strings.Split(content, "\n")
-	for i, line := range preview.Lines {
+	preview.SourceLines = strings.Split(content, "\n")
+	preview.Lines = make([]string, len(preview.SourceLines))
+	for i, line := range preview.SourceLines {
 		preview.Lines[i] = fmt.Sprintf("%5d  %s", i+1, strings.ReplaceAll(line, "\t", "    "))
 	}
 	return preview, nil

@@ -55,7 +55,7 @@ func TestTUIRiskAnnotationsMatchSDKFileAndLine(t *testing.T) {
 }
 
 func TestScanJSONEvidenceAndTUIAnnotationShareOperationLocation(t *testing.T) {
-	const content = "git clone https://example.invalid/opensbi.git opensbi\n"
+	const content = "git clone \\\n  --depth=1 \\\n  https://example.invalid/opensbi.git \\\n  opensbi\n"
 	parsed := shell.NewParser().Parse([]byte(content), "fixture/hooks/setup-project")
 	if parsed.Status != shell.StatusParsed {
 		t.Fatalf("parse = %#v", parsed.Diagnostics)
@@ -75,8 +75,8 @@ func TestScanJSONEvidenceAndTUIAnnotationShareOperationLocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	annotations := risksForPreview(&decoded, "fixture", "hooks/setup-project")
-	if len(annotations[1]) == 0 {
-		t.Fatalf("JSON evidence did not produce a line 1 annotation: %#v", annotations)
+	if len(annotations[1]) != 1 || len(annotations[4]) != 1 {
+		t.Fatalf("JSON evidence did not produce exact line annotations: %#v", annotations)
 	}
 	for _, item := range decoded.SDKs {
 		for _, got := range item.Findings {
@@ -87,6 +87,25 @@ func TestScanJSONEvidenceAndTUIAnnotationShareOperationLocation(t *testing.T) {
 				if evidence.Location == nil || evidence.Location.Path != "fixture/hooks/setup-project" || evidence.Location.StartLine != 1 || evidence.Location.StartColumn != 1 {
 					t.Fatalf("JSON evidence location = %#v", evidence.Location)
 				}
+				if evidence.ValueLocation == nil {
+					t.Fatalf("JSON value location missing for %#v", evidence)
+				}
+			}
+			preview := &tuiPreview{Lines: []string{
+				"    1  git clone \\",
+				"    2    --depth=1 \\",
+				"    3    https://example.invalid/opensbi.git \\",
+				"    4    opensbi",
+			}}
+			rows := tuiPreviewRows(preview, annotations, 120, 8)
+			if strings.Count(strings.Join(rows, "\n"), "#Risk >") != 1 {
+				t.Fatalf("risk label count changed: %#v", rows)
+			}
+			if !strings.Contains(rows[1], "\x1b[33mgit\x1b[0m clone") || !strings.Contains(rows[len(rows)-1], "\x1b[33mopensbi\x1b[0m") {
+				t.Fatalf("exact multiline highlights missing: %#v", rows)
+			}
+			if strings.Contains(rows[3], "\x1b[33mopensbi\x1b[0m.git") {
+				t.Fatalf("same text in URL was incorrectly highlighted: %q", rows[3])
 			}
 			return
 		}
@@ -249,5 +268,35 @@ func TestTUIFallbackBaselineHighlightsDuplicateTextOccurrences(t *testing.T) {
 	// this baseline only when an AST-derived ValueLocation is available.
 	if got := strings.Count(rows[1], "\x1b[33mopensbi\x1b[0m"); got != 2 {
 		t.Fatalf("duplicate fallback highlights = %d, want 2: %q", got, rows[1])
+	}
+}
+
+func TestTUIValueLocationHighlightsOnlySelectedDuplicate(t *testing.T) {
+	preview := &tuiPreview{Lines: []string{"    1  printf opensbi; install opensbi /project/bin/tool"}}
+	annotations := map[int][]tuiRisk{1: {{
+		ID: "risk.fixture", Title: "Fixture", Severity: "medium", Score: 25, Value: "opensbi",
+		ValueLocation: &shell.Location{Path: "fixture", StartLine: 1, StartColumn: 25, EndLine: 1, EndColumn: 32},
+	}}}
+	rows := tuiPreviewRows(preview, annotations, 120, 3)
+	if len(rows) != 2 || !strings.Contains(rows[1], "printf opensbi; install \x1b[33mopensbi\x1b[0m") {
+		t.Fatalf("exact duplicate highlight = %#v", rows)
+	}
+	if got := strings.Count(rows[1], "\x1b[33mopensbi\x1b[0m"); got != 1 {
+		t.Fatalf("exact duplicate highlight count = %d, want 1: %q", got, rows[1])
+	}
+}
+
+func TestTUIValueLocationAccountsForDisplayedTabExpansion(t *testing.T) {
+	preview := &tuiPreview{
+		Lines:       []string{"    1      install opensbi"},
+		SourceLines: []string{"\tinstall opensbi"},
+	}
+	annotations := map[int][]tuiRisk{1: {{
+		ID: "risk.fixture", Title: "Fixture", Severity: "medium", Score: 25, Value: "opensbi",
+		ValueLocation: &shell.Location{Path: "fixture", StartLine: 1, StartColumn: 10, EndLine: 1, EndColumn: 17},
+	}}}
+	rows := tuiPreviewRows(preview, annotations, 120, 3)
+	if len(rows) != 2 || !strings.Contains(rows[1], "install \x1b[33mopensbi\x1b[0m") {
+		t.Fatalf("tab-adjusted highlight = %#v", rows)
 	}
 }

@@ -28,10 +28,11 @@ const (
 
 // Value preserves shell word structure instead of flattening it prematurely.
 type Value struct {
-	Parts      []ValuePart `json:"parts,omitempty"`
-	Resolution Resolution  `json:"resolution"`
-	Literal    string      `json:"literal,omitempty"`
-	Candidates []string    `json:"candidates,omitempty"`
+	Parts          []ValuePart     `json:"parts,omitempty"`
+	Resolution     Resolution      `json:"resolution"`
+	Literal        string          `json:"literal,omitempty"`
+	Candidates     []string        `json:"candidates,omitempty"`
+	SourceLocation *shell.Location `json:"-"`
 }
 
 // ValuePart is a source-level component of a Value.

@@ -306,10 +306,11 @@ type RiskHighlight struct {
 }
 
 type RiskScope struct {
-	SDK      string          `json:"sdk"`
-	Hook     sdk.HookName    `json:"hook,omitempty"`
-	Location *shell.Location `json:"location,omitempty"`
-	Value    string          `json:"value,omitempty"`
+	SDK           string          `json:"sdk"`
+	Hook          sdk.HookName    `json:"hook,omitempty"`
+	Location      *shell.Location `json:"location,omitempty"`
+	ValueLocation *shell.Location `json:"valueLocation,omitempty"`
+	Value         string          `json:"value,omitempty"`
 }
 
 type AssessmentInput struct {
@@ -368,10 +369,13 @@ func riskHighlights(findings []Finding) []RiskHighlight {
 		current.highlight.Occurrences++
 		current.weights = append(current.weights, float64(item.Weight)*confidenceFactor(item.Confidence))
 		for _, evidence := range item.Evidence {
-			scope := RiskScope{SDK: item.Scope.SDK, Hook: item.Scope.Hook, Location: evidence.Location, Value: evidence.Value}
+			scope := RiskScope{SDK: item.Scope.SDK, Hook: item.Scope.Hook, Location: evidence.Location, ValueLocation: evidence.ValueLocation, Value: evidence.Value}
 			key := scope.SDK + "\x00" + string(scope.Hook) + "\x00" + scope.Value
 			if scope.Location != nil {
 				key += "\x00" + scope.Location.Path + "\x00" + strconv.Itoa(scope.Location.StartLine) + "\x00" + strconv.Itoa(scope.Location.StartColumn)
+			}
+			if scope.ValueLocation != nil {
+				key += "\x00value\x00" + scope.ValueLocation.Path + "\x00" + strconv.Itoa(scope.ValueLocation.StartLine) + "\x00" + strconv.Itoa(scope.ValueLocation.StartColumn)
 			}
 			if current.seen[key] {
 				continue

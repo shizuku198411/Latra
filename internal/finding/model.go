@@ -45,6 +45,7 @@ type Evidence struct {
 	NormalizedCandidates []string            `json:"normalizedCandidates,omitempty"`
 	Resolution           analysis.Resolution `json:"resolution,omitempty"`
 	Location             *shell.Location     `json:"location,omitempty"`
+	ValueLocation        *shell.Location     `json:"valueLocation,omitempty"`
 }
 
 // CompositionRelation connects behavior across ordered SDK declarations in a

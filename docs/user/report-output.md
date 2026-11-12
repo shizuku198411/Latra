@@ -225,7 +225,7 @@ Project-boundary flow findings connect both sides of the detected transfer:
 
 These rules require a connected operation flow. Separate commands that happen to download, read, write, or send data are not treated as connected without graph evidence.
 
-Use `--verbose` to see each finding's rule ID, level, confidence, source hook, and evidence. In JSON output, evidence can reference `operationId`, `fromOperationId`, and `toOperationId`; these values join back to the selected hook's `operations` and `relations`.
+Use `--verbose` to see each finding's rule ID, level, confidence, source hook, and evidence. In JSON output, evidence can reference `operationId`, `fromOperationId`, and `toOperationId`; these values join back to the selected hook's `operations` and `relations`. `location` identifies the containing operation, while optional `valueLocation` identifies the exact AST-derived range of a directly represented evidence value. The latter is omitted when the displayed value was expanded, normalized, inferred, derived, or is ambiguous.
 
 ```bash
 latra scan . --verbose
@@ -286,7 +286,7 @@ Assurance uses positive-language labels so it cannot be confused with Risk sever
 
 These labels describe observable assurance, not a guarantee that the SDK is safe.
 
-The `Key Risks` listed under each SDK explain which rules contribute to that SDK's assessment. Each entry includes its aggregated rule score, occurrence count, and every source location. The `sdk`, `file`, and `hook` values can be copied directly into `latra file <sdk> <file>` and `latra hook <sdk> <hook>`. The line and column suffix on `file` identify the precise evidence location and are not part of the path passed to `latra file`.
+The `Key Risks` listed under each SDK explain which rules contribute to that SDK's assessment. Each entry includes its aggregated rule score, occurrence count, and every source location. The `sdk`, `file`, and `hook` values can be copied directly into `latra file <sdk> <file>` and `latra hook <sdk> <hook>`. The line and column suffix on `file` identifies the containing evidence operation and is not part of the path passed to `latra file`. JSON Key Risk scopes may additionally contain `valueLocation`; Explorer uses that exact range for highlighting and falls back conservatively to the operation location and displayed value when it is unavailable.
 
 Assurance is never subtracted from risk. For example, a verified artifact can still perform a high-impact root operation. In that case both the high risk and strong control remain visible. Incomplete analysis raises Review Priority through the coverage penalty and produces `insufficient-evidence`.
 
