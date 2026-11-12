@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
+	"github.com/shizuku198411/Latra/internal/source"
 )
 
 func TestTUIRiskAnnotationsMatchSDKFileAndLine(t *testing.T) {
@@ -50,6 +52,46 @@ func TestTUIRiskAnnotationsMatchSDKFileAndLine(t *testing.T) {
 	if len(rows) != 1 || !strings.Contains(rows[0], "2  export") {
 		t.Fatalf("source-line scrolling: %#v", rows)
 	}
+}
+
+func TestScanJSONEvidenceAndTUIAnnotationShareOperationLocation(t *testing.T) {
+	const content = "git clone https://example.invalid/opensbi.git opensbi\n"
+	parsed := shell.NewParser().Parse([]byte(content), "fixture/hooks/setup-project")
+	if parsed.Status != shell.StatusParsed {
+		t.Fatalf("parse = %#v", parsed.Diagnostics)
+	}
+	result := analysis.Analyze(string(sdk.HookSetupProject), &parsed)
+	document := report.NewDocument(&source.Result{Kind: source.InputProjectSDK, Root: "/fixture", SDKs: []sdk.SDK{{
+		Name: "fixture", Source: sdk.SourceProject, State: sdk.StateResolved,
+		Hooks: []sdk.Hook{{Name: sdk.HookSetupProject, Path: "fixture/hooks/setup-project", Parse: &parsed, Analysis: &result}},
+	}}})
+
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded report.Document
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	annotations := risksForPreview(&decoded, "fixture", "hooks/setup-project")
+	if len(annotations[1]) == 0 {
+		t.Fatalf("JSON evidence did not produce a line 1 annotation: %#v", annotations)
+	}
+	for _, item := range decoded.SDKs {
+		for _, got := range item.Findings {
+			if got.ID != "risk.remote-content-to-project" {
+				continue
+			}
+			for _, evidence := range got.Evidence {
+				if evidence.Location == nil || evidence.Location.Path != "fixture/hooks/setup-project" || evidence.Location.StartLine != 1 || evidence.Location.StartColumn != 1 {
+					t.Fatalf("JSON evidence location = %#v", evidence.Location)
+				}
+			}
+			return
+		}
+	}
+	t.Fatal("risk.remote-content-to-project was not reported")
 }
 
 func TestTUISemanticGapLabelsMatchOperationLocation(t *testing.T) {
@@ -190,5 +232,22 @@ func TestTUIRiskMultipleValuesOneLine(t *testing.T) {
 	rows := tuiPreviewRows(preview, risks, 100, 5)
 	if len(rows) != 2 || strings.Count(rows[0], "#Risk >") != 1 || !strings.Contains(rows[1], "\x1b[33mgit\x1b[0m") || !strings.Contains(rows[1], "\x1b[33mopensbi\x1b[0m") {
 		t.Fatalf("expected one label and two highlighted values: %#v", rows)
+	}
+}
+
+func TestTUIFallbackBaselineHighlightsDuplicateTextOccurrences(t *testing.T) {
+	preview := &tuiPreview{Lines: []string{"    1  printf opensbi; install opensbi /project/bin/tool"}}
+	annotations := map[int][]tuiRisk{1: {{
+		ID: "risk.fixture", Title: "Fixture", Severity: "medium", Score: 25, Value: "opensbi",
+	}}}
+	rows := tuiPreviewRows(preview, annotations, 120, 3)
+	if len(rows) != 2 {
+		t.Fatalf("fallback rows = %#v", rows)
+	}
+	// v0.2.2 has no value-level source range, so the conservative string
+	// fallback highlights both identical occurrences. Phase 1 should replace
+	// this baseline only when an AST-derived ValueLocation is available.
+	if got := strings.Count(rows[1], "\x1b[33mopensbi\x1b[0m"); got != 2 {
+		t.Fatalf("duplicate fallback highlights = %d, want 2: %q", got, rows[1])
 	}
 }
