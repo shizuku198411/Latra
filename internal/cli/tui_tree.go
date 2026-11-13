@@ -5,6 +5,7 @@ import (
 	"path"
 	"sort"
 
+	"github.com/shizuku198411/Latra/internal/interfacegraph"
 	"github.com/shizuku198411/Latra/internal/interfaceview"
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
@@ -21,6 +22,7 @@ type tuiNode struct {
 	Kind       string
 	Interface  *interfaceview.Entry
 	Children   []tuiNode
+	Edge       *interfacegraph.Edge
 }
 
 type tuiExplorer struct {
@@ -34,6 +36,8 @@ type tuiExplorer struct {
 	Preview      *tuiPreview
 	Scan         *report.Document
 	Scanning     bool
+	Topology     []interfacegraph.Graph
+	InTopology   bool
 }
 
 func (m *tuiExplorer) enter() {
@@ -70,6 +74,16 @@ func (m *tuiExplorer) enter() {
 		return
 	}
 	node := m.Nodes[m.SelectedNode]
+	if node.Kind == "topology-edge" {
+		e := node.Edge
+		lines := []string{"Kind: " + e.Kind, "From: " + e.From.Reference, "To: " + e.To.Reference, "State: " + e.State, "From type: " + e.From.Type + " (" + e.From.Origin + ")", "To type: " + e.To.Type + " (" + e.To.Origin + ")", "Policy: " + e.Policy, "Runtime: Not inspected"}
+		lines = append(lines, e.Diagnostics...)
+		for i := range lines {
+			lines[i] = interfaceview.Safe(lines[i])
+		}
+		m.Preview = &tuiPreview{Path: "Configured interface", Status: "Static configuration (read-only)", Lines: lines, Interface: true}
+		return
+	}
 	if node.Kind == "interface" {
 		m.Preview = &tuiPreview{Path: node.Interface.Name, Status: "Interface declaration (read-only)", Lines: node.Interface.Details(), Interface: true}
 		m.Message = ""
@@ -131,8 +145,33 @@ func (m *tuiExplorer) back() {
 		return
 	}
 	if m.InTree {
-		m.InTree, m.Nodes, m.SelectedNode, m.Message = false, nil, 0, ""
+		m.InTree, m.InTopology, m.Nodes, m.SelectedNode, m.Message = false, false, nil, 0, ""
 	}
+}
+
+func (m *tuiExplorer) openTopology() {
+	if m.InTree || m.Preview != nil {
+		return
+	}
+	var nodes []tuiNode
+	for _, graph := range m.Topology {
+		nodes = append(nodes, tuiNode{Name: interfaceview.Safe("[" + graph.Workshop + " — " + graph.Definition + "]"), Header: true})
+		if graph.Incomplete {
+			nodes = append(nodes, tuiNode{Name: "Configuration incomplete", Header: true})
+		}
+		if len(graph.Edges) == 0 {
+			nodes = append(nodes, tuiNode{Name: "None configured", Header: true})
+		}
+		for _, edge := range graph.Edges {
+			e := edge
+			nodes = append(nodes, tuiNode{Kind: "topology-edge", Name: interfaceview.Safe(e.Kind + " " + e.From.Reference + " → " + e.To.Reference + " [" + e.State + "]"), Edge: &e})
+		}
+	}
+	if len(nodes) == 0 {
+		m.Message = "No Workshop configuration"
+		return
+	}
+	m.InTree, m.InTopology, m.Nodes, m.SelectedNode, m.Message = true, true, nodes, firstTUISelectable(nodes), ""
 }
 
 func (m *tuiExplorer) move(delta int) {

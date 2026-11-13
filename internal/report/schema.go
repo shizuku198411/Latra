@@ -9,12 +9,13 @@ import (
 	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/buildinfo"
 	"github.com/shizuku198411/Latra/internal/finding"
+	"github.com/shizuku198411/Latra/internal/interfacegraph"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
-const SchemaVersion = "5"
+const SchemaVersion = "6"
 
 // Document is the stable, versioned JSON inventory representation.
 type Document struct {
@@ -28,6 +29,7 @@ type Document struct {
 	SDKs                 []SDK                         `json:"sdks"`
 	CompositionRelations []finding.CompositionRelation `json:"compositionRelations,omitempty"`
 	Diagnostics          []DocumentDiagnostic          `json:"diagnostics"`
+	InterfaceTopology    []interfacegraph.Graph        `json:"interfaceTopology,omitempty"`
 }
 
 type Scanner struct {
@@ -262,6 +264,9 @@ func NewDocument(result *source.Result) Document {
 		SDKs:                 []SDK{},
 		CompositionRelations: compositionRelations,
 		Diagnostics:          []DocumentDiagnostic{},
+	}
+	for _, configuration := range result.Configurations {
+		document.InterfaceTopology = append(document.InterfaceTopology, interfacegraph.Build(configuration, result.SDKs))
 	}
 	sort.Slice(document.Workshops, func(i, j int) bool {
 		if document.Workshops[i].Name != document.Workshops[j].Name {

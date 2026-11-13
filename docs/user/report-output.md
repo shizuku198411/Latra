@@ -366,3 +366,10 @@ values. Values and keyring lookup attributes may contain sensitive information.
 
 Compact JSON retains its existing summary format. Use `--format json --verbose`
 to inspect the existing SDK metadata and Workshop declaration fields.
+
+Configured interfaces lists explicit Workshop connections and plug bindings.
+`Configured` and `Bound` describe the declaration, not the running Workshop;
+`Unresolved` means the available inventory cannot verify an endpoint, and
+`Invalid` identifies a detected configuration conflict. Interface policy and
+runtime state are not evaluated. Verbose JSON exposes the same static graph as
+`interfaceTopology` in schema version 6.

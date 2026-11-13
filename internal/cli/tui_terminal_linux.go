@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -13,7 +14,9 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/shizuku198411/Latra/internal/interfacegraph"
 	"github.com/shizuku198411/Latra/internal/report"
+	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
@@ -57,6 +60,15 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 	defer signal.Stop(signals)
 	reader := bufio.NewReader(tty)
 	model := tuiExplorer{SDKs: entries}
+	if discovered, discoveryErr := source.DiscoverProject(context.Background(), project, sdk.DefaultLimits()); discoveryErr == nil {
+		var snapshot []sdk.SDK
+		for _, entry := range entries {
+			snapshot = append(snapshot, sdk.SDK{Metadata: entry.Metadata, Declarations: entry.Declarations})
+		}
+		for _, configuration := range discovered.Configurations {
+			model.Topology = append(model.Topology, interfacegraph.Build(configuration, snapshot))
+		}
+	}
 	type scanOutcome struct {
 		document *report.Document
 		err      error
@@ -109,7 +121,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 			}
 		}
 		var treeRisks map[string]string
-		if model.InTree {
+		if model.InTree && !model.InTopology && len(entries) > 0 {
 			treeRisks = tuiTreeRisks(model.Scan, entries[model.SelectedSDK].Name)
 		}
 		for i := start; model.Preview == nil && i < count && i < start+available; i++ {
@@ -182,7 +194,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		} else if !model.InTree && len(entries) > 0 {
 			b.WriteString(fitLine(" Workshop: "+entries[model.SelectedSDK].Workshops, width) + "\r\n")
 		}
-		help := " ↑/↓: move    Enter/→: open SDK    Esc/←: quit"
+		help := " ↑/↓: move    Enter/→: open SDK    w: workshops    Esc/←: quit"
 		if model.Preview != nil {
 			help = " ↑/↓: scroll    Esc/←: file tree    q: quit"
 		} else if model.InTree {
@@ -215,6 +227,8 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		}
 		move := 0
 		switch key {
+		case 'w':
+			model.openTopology()
 		case 'q', 3:
 			return nil
 		case '\r', '\n':
@@ -314,7 +328,11 @@ func tuiExplorerHeader(model *tuiExplorer) string {
 			heading = fmt.Sprintf(" File: %s  (read-only preview)", model.Preview.Path)
 		}
 	case model.InTree:
-		heading = fmt.Sprintf(" SDK: %s  (read-only tree)", model.SDKs[model.SelectedSDK].Name)
+		if model.InTopology {
+			heading = " Workshop configuration  (static view)"
+		} else {
+			heading = fmt.Sprintf(" SDK: %s  (read-only tree)", model.SDKs[model.SelectedSDK].Name)
+		}
 	default:
 		heading = fmt.Sprintf(" SDKs: %d  (read-only, auto-fetch missing SDKs)", len(model.SDKs))
 	}

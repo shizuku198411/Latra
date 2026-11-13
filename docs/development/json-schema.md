@@ -1,6 +1,6 @@
 # JSON report schema
 
-The machine-readable JSON Schema for Latra scan reports is [`report.schema.json`](report.schema.json). It uses JSON Schema Draft 2020-12 and describes report `schemaVersion` `"5"`.
+The machine-readable JSON Schema for Latra scan reports is [`report.schema.json`](report.schema.json). It uses JSON Schema Draft 2020-12 and describes report `schemaVersion` `"6"`.
 
 ## Report variants
 
@@ -24,6 +24,8 @@ Within one schema version:
 - required fields should not become optional without a deliberate compatibility decision;
 - new incompatible structures require a schema version change;
 - deterministic array ordering is an output guarantee but is not expressed as a JSON Schema constraint.
+
+Version `6` adds `interfaceTopology` to verbose reports for explicitly configured connections and bindings. Consumers of version `5` should accept version `6` and treat this optional field as static configuration; compact reports retain their existing fields. Runtime connection state is not included.
 
 The scanner's release version is reported separately in `scanner.version`. It does not replace `schemaVersion`.
 

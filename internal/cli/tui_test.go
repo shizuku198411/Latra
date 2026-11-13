@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/shizuku198411/Latra/internal/interfacegraph"
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
@@ -108,6 +109,23 @@ func TestTUIUncachedSDKShowsInterfaces(t *testing.T) {
 	model.back()
 	if model.Preview != nil || !model.InTree {
 		t.Fatal("back must return to interface tree")
+	}
+}
+
+func TestTUIWorkshopConfigurationNavigation(t *testing.T) {
+	m := tuiExplorer{Topology: []interfacegraph.Graph{{Workshop: "dev", Definition: ".workshop/dev.yaml", Edges: []interfacegraph.Edge{{Kind: "connection", From: interfacegraph.Endpoint{Reference: "app:data"}, To: interfacegraph.Endpoint{Reference: "system:mount"}, State: "Unresolved"}}}}}
+	m.openTopology()
+	if !m.InTopology || !m.InTree {
+		t.Fatal("configuration view did not open")
+	}
+	m.enter()
+	if m.Preview == nil || !strings.Contains(strings.Join(m.Preview.Lines, " "), "Unresolved") {
+		t.Fatalf("preview: %+v", m.Preview)
+	}
+	m.back()
+	m.back()
+	if m.InTree || m.InTopology {
+		t.Fatal("back did not return to SDK list")
 	}
 }
 

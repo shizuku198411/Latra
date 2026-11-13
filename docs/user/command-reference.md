@@ -396,3 +396,7 @@ A scan can produce a report and still return `1` when hook parsing was incomplet
 offers an Interfaces tree and read-only details. Neither view determines the
 runtime connection state. For structured data, use `latra scan --format json
 --verbose` and inspect SDK metadata and Workshop declarations.
+
+In the Explorer SDK list, press `w` to inspect configured connections and
+bindings by Workshop. Select an entry for its endpoint details and diagnostics.
+The configuration view does not connect interfaces or inspect runtime state.

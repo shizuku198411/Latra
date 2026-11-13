@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "5",
+  "schemaVersion": "6",
   "scanner": {
     "name": "latra",
     "version": "dev",

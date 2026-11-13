@@ -21,8 +21,27 @@ type Workshop struct {
 
 // Result is the resolved SDK source inventory returned before shell analysis.
 type Result struct {
-	Kind      InputKind  `json:"kind"`
-	Root      string     `json:"root"`
-	Workshops []Workshop `json:"workshops,omitempty"`
-	SDKs      []sdk.SDK  `json:"sdks"`
+	Kind           InputKind       `json:"kind"`
+	Root           string          `json:"root"`
+	Workshops      []Workshop      `json:"workshops,omitempty"`
+	SDKs           []sdk.SDK       `json:"sdks"`
+	Configurations []Configuration `json:"-"`
+}
+
+// Configuration retains declarations independently of the scan SDK inventory.
+type Configuration struct {
+	Name        string
+	Definition  string
+	SDKs        []ConfigurationSDK
+	Connections []Connection
+}
+type ConfigurationSDK struct {
+	Name  string
+	Order int
+	Plugs map[string]any
+	Slots map[string]any
+}
+type Connection struct {
+	Plug, Slot string
+	Order      int
 }

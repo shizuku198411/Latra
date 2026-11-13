@@ -61,6 +61,9 @@ func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextO
 			return err
 		}
 	}
+	if err := writeTopology(writer, document, true); err != nil {
+		return err
+	}
 	if err := writeSummary(writer, document.Summary, document.Assessment, false); err != nil {
 		return err
 	}
@@ -98,6 +101,9 @@ func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, option
 		return err
 	}
 	if err := writeInterfaceSummary(writer, document.SDKs); err != nil {
+		return err
+	}
+	if err := writeTopology(writer, document, false); err != nil {
 		return err
 	}
 	if err := writeObservations(writer, document, false); err != nil {
@@ -835,6 +841,46 @@ func writeInterfaceSummary(writer io.Writer, items []SDK) error {
 		}
 		if err := writeSDKInterfaces(writer, item, false); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func writeTopology(writer io.Writer, document Document, verbose bool) error {
+	if len(document.InterfaceTopology) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(writer, "\nConfigured interfaces (static; runtime not inspected)"); err != nil {
+		return err
+	}
+	for _, graph := range document.InterfaceTopology {
+		if _, err := fmt.Fprintf(writer, "  %s (%s)\n", interfaceview.Safe(graph.Workshop), interfaceview.Safe(graph.Definition)); err != nil {
+			return err
+		}
+		if graph.Incomplete {
+			if _, err := fmt.Fprintln(writer, "    incomplete: configuration limit exceeded"); err != nil {
+				return err
+			}
+		}
+		if len(graph.Edges) == 0 {
+			if _, err := fmt.Fprintln(writer, "    None configured"); err != nil {
+				return err
+			}
+		}
+		for _, edge := range graph.Edges {
+			if _, err := fmt.Fprintf(writer, "    %s %s → %s [%s]\n", edge.Kind, interfaceview.Safe(edge.From.Reference), interfaceview.Safe(edge.To.Reference), edge.State); err != nil {
+				return err
+			}
+			for _, diagnostic := range edge.Diagnostics {
+				if _, err := fmt.Fprintf(writer, "      %s\n", interfaceview.Safe(diagnostic)); err != nil {
+					return err
+				}
+			}
+			if verbose {
+				if _, err := fmt.Fprintf(writer, "      From: %s (%s)  To: %s (%s)  Policy: %s\n", interfaceview.Safe(edge.From.Type), interfaceview.Safe(edge.From.Origin), interfaceview.Safe(edge.To.Type), interfaceview.Safe(edge.To.Origin), edge.Policy); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil

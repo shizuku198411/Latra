@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/shizuku198411/Latra/internal/cli"
+	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
 )
@@ -216,7 +217,7 @@ func TestRunScanJSONToStandardOutput(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout.String())
 	}
-	if document.SchemaVersion != "5" || document.Summary.SDKs.Count != 5 || len(document.SDKs) != 0 {
+	if document.SchemaVersion != report.SchemaVersion || document.Summary.SDKs.Count != 5 || len(document.SDKs) != 0 {
 		t.Errorf("document = %#v", document)
 	}
 	if stderr.Len() != 0 {
