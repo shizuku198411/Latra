@@ -40,3 +40,25 @@ func TestUnknownAndEmpty(t *testing.T) {
 		t.Fatal(r)
 	}
 }
+
+func TestStartupCandidatesAcrossDeclarations(t *testing.T) {
+	c := source.Configuration{Name: "dev", Definition: "dev.yaml", SDKs: []source.ConfigurationSDK{
+		{Name: "project-app", Order: 0},
+		{Name: "system", Order: 1, Slots: map[string]any{"key": map[string]any{"interface": "secret"}}},
+	}}
+	sdks := []sdk.SDK{{Metadata: &sdk.Metadata{Plugs: map[string]any{
+		"cache": map[string]any{"interface": "mount", "workshop-target": "/cache"},
+		"token": map[string]any{"interface": "secret"},
+	}}, Declarations: []sdk.Declaration{{Definition: "dev.yaml", Order: 0}}}}
+	r := Build(c, sdks, interfacegraph.Build(c, sdks))
+	items := map[string]Item{}
+	for _, item := range r.Items {
+		items[item.Name] = item
+	}
+	if items["cache"].Startup != "Auto-connect candidate" || items["cache"].Target != "system:mount" {
+		t.Fatalf("cache: %+v", items["cache"])
+	}
+	if items["token"].Startup != "Manual required" || items["token"].Target != "system:key" || items["token"].Basis != "Declared slots (not selected)" {
+		t.Fatalf("secret: %+v", items["token"])
+	}
+}

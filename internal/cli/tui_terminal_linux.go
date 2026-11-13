@@ -154,7 +154,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 				n := model.Nodes[i]
 				symbol := "  "
 				if n.Header {
-					line = " " + n.Name
+					line = " " + strings.Repeat("  ", n.Depth) + n.Name
 				} else if n.Symlink {
 					symbol = "@ "
 				} else if n.Directory && n.Expanded {

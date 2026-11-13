@@ -392,13 +392,13 @@ runtime connection state. For structured data, use `latra scan --format json
 --verbose` and inspect SDK metadata and Workshop declarations.
 
 The Explorer starts with the Workshop list. Select a Workshop to inspect its
-SDKs, configured interfaces and exposure review, or press `s` to open the SDK
-list. Open
-an SDK to use the existing SDK tree, or open Interfaces to inspect bindings and
-connections. Select a connection or binding for endpoint details and diagnostics.
+SDKs and interfaces, or press `s` to open the SDK list. Open an SDK to use the
+existing SDK tree, or open Interfaces to inspect slots and their plug candidates.
+Expand a slot to inspect its declaration and candidate details. Plugs without a
+resolved slot are listed separately; candidates do not establish runtime state.
 The configuration view does not connect interfaces or inspect runtime state.
 
 The Workshop configuration view contains a Scan results section with the SDK
-assessments and unscored Interface exposure review items for that Workshop.
+assessments for that Workshop. Interface review is available under Interfaces.
 Interface details show the applicable review and its limitations. Text scan
 reports include the same review; `--verbose` shows its declared evidence.

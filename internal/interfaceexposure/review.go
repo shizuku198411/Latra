@@ -14,12 +14,32 @@ import (
 
 type Item struct {
 	ID, Workshop, Definition, SDK, Kind, Name, Source, Type, State, Fact, Value, Limitation string
+	Target, Startup, Basis, Reason                                                          string
+	ViaTarget, ViaStartup, ViaReason                                                        string
 	Related                                                                                 []interfacegraph.Edge
 }
 type Review struct {
 	Workshop, Definition string
 	Items                []Item
 	Incomplete           bool
+}
+
+// EdgePolicy returns the static startup classification for an explicit connection.
+func EdgePolicy(reviews []Review, definition string, edge interfacegraph.Edge) (string, string) {
+	if edge.Kind != "connection" {
+		return "", ""
+	}
+	for _, review := range reviews {
+		if review.Definition != definition {
+			continue
+		}
+		for _, item := range review.Items {
+			if item.Kind == "Plug" && item.SDK == edge.From.SDK && item.Name == edge.From.Name {
+				return item.Startup, item.Reason
+			}
+		}
+	}
+	return "Unknown", "Plug declaration is unavailable"
 }
 
 // Build reviews only declared facts; it never inspects runtime state or scores.
@@ -53,6 +73,10 @@ func Build(config source.Configuration, sdks []sdk.SDK, graph interfacegraph.Gra
 		add(&out, decl.Name, "Workshop", "Plug", decl.Plugs, graph)
 		add(&out, decl.Name, "Workshop", "Slot", decl.Slots, graph)
 	}
+	for i := range out.Items {
+		evaluate(&out.Items[i], out.Items, graph, out.Incomplete)
+	}
+	resolveBindings(out.Items)
 	sort.SliceStable(out.Items, func(i, j int) bool { return out.Items[i].ID < out.Items[j].ID })
 	return out
 }
@@ -63,6 +87,10 @@ func Standalone(item sdk.SDK) Review {
 	if item.Metadata != nil {
 		add(&out, item.Name, "SDK", "Plug", item.Metadata.Plugs, interfacegraph.Graph{})
 		add(&out, item.Name, "SDK", "Slot", item.Metadata.Slots, interfacegraph.Graph{})
+	}
+	for i := range out.Items {
+		out.Items[i].Startup = "Not evaluated"
+		out.Items[i].Reason = "No Workshop configuration is available"
 	}
 	sort.SliceStable(out.Items, func(i, j int) bool { return out.Items[i].ID < out.Items[j].ID })
 	return out

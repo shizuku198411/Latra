@@ -184,11 +184,41 @@ func TestTUIExposureReviewNavigation(t *testing.T) {
 	m := tuiExplorer{Configurations: []source.Configuration{{Name: "dev", Definition: "dev.yaml"}}, Reviews: []interfaceexposure.Review{{Workshop: "dev", Definition: "dev.yaml", Items: []interfaceexposure.Item{{SDK: "app", Name: "token", Kind: "Plug", Fact: "Secret plug declared", Limitation: "Runtime not inspected"}}}}}
 	m.openTopology()
 	m.enter()
-	selectTUIKind(t, &m, "workshop-reviews")
+	selectTUIKind(t, &m, "workshop-interfaces")
 	m.enter()
 	selectTUIKind(t, &m, "exposure-review")
 	m.enter()
 	if m.Preview == nil || !strings.Contains(strings.Join(m.Preview.Lines, " "), "Runtime not inspected") {
+		t.Fatalf("preview: %+v", m.Preview)
+	}
+}
+
+func TestTUIUnifiedInterfacesShowsDelegationAndOrphans(t *testing.T) {
+	graph := interfacegraph.Graph{Definition: "dev.yaml", Edges: []interfacegraph.Edge{{Kind: "connection", State: "Unresolved", From: interfacegraph.Endpoint{SDK: "missing", Name: "plug", Reference: "missing:plug"}, To: interfacegraph.Endpoint{Reference: "system:mount"}}}}
+	review := interfaceexposure.Review{Definition: "dev.yaml", Items: []interfaceexposure.Item{{Kind: "Plug", SDK: "app", Name: "cache", Type: "mount", Startup: "Delegated", Target: "provider:cache", ViaTarget: "system:mount", ViaStartup: "Auto-connect candidate"}}}
+	m := tuiExplorer{Configurations: []source.Configuration{{Name: "dev", Definition: "dev.yaml"}}, Topology: []interfacegraph.Graph{graph}, Reviews: []interfaceexposure.Review{review}}
+	m.openTopology()
+	m.enter()
+	selectTUIKind(t, &m, "workshop-interfaces")
+	m.enter()
+	var all []string
+	for _, node := range m.Nodes {
+		all = append(all, node.Name)
+	}
+	view := strings.Join(all, "\n")
+	for _, want := range []string{"system:mount", "app:cache", "via provider:cache", "[Unresolved configuration]", "missing:plug"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing %q: %s", want, view)
+		}
+	}
+	for i, node := range m.Nodes {
+		if node.Review != nil && node.Review.SDK == "app" {
+			m.SelectedNode = i
+			break
+		}
+	}
+	m.enter()
+	if m.Preview == nil || !strings.Contains(strings.Join(m.Preview.Lines, "\n"), "Delegated plug candidate: system:mount") {
 		t.Fatalf("preview: %+v", m.Preview)
 	}
 }

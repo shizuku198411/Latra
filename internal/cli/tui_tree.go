@@ -33,6 +33,8 @@ type tuiNode struct {
 	Children         []tuiNode
 	Edge             *interfacegraph.Edge
 	Review           *interfaceexposure.Item
+	SlotRef          string
+	SlotBasis        string
 	Index            int
 	DeclarationOrder int
 }
@@ -106,23 +108,26 @@ func (m *tuiExplorer) enter() {
 	case "workshop-interfaces":
 		m.openWorkshopInterfaces()
 		return
-	case "workshop-reviews":
-		m.openWorkshopReviews()
-		return
 	case "workshop-assessment":
 		m.openAssessment()
 		return
 	}
 	if node.Kind == "exposure-review" {
 		i := node.Review
-		lines := []string{i.Fact, "SDK: " + i.SDK, "Interface: " + i.Kind + " " + i.Name, "Declared by: " + i.Source, "Workshop: " + i.Workshop + " (" + i.Definition + ")", "State: " + i.State, "Declared value: " + i.Value, "Limitation: " + i.Limitation}
+		lines := []string{i.Fact, "SDK: " + i.SDK, "Interface: " + i.Kind + " " + i.Name, "Type: " + i.Type, "Declared by: " + i.Source, "Workshop: " + i.Workshop + " (" + i.Definition + ")", "Startup: " + i.Startup, "Candidate: " + i.Target, "Basis: " + i.Basis, "Reason: " + i.Reason, "Runtime: Not inspected", "Declared value: " + i.Value, "Limitation: " + i.Limitation}
+		if node.SlotRef != "" {
+			lines = append(lines, "Displayed slot: "+node.SlotRef, "Relationship: "+node.SlotBasis)
+		}
+		if i.ViaStartup != "" {
+			lines = append(lines, "Delegated plug startup: "+i.ViaStartup, "Delegated plug candidate: "+i.ViaTarget, "Delegated plug reason: "+i.ViaReason)
+		}
 		for _, e := range i.Related {
 			lines = append(lines, e.Kind+": "+e.From.Reference+" → "+e.To.Reference+" ["+e.State+"]")
 		}
 		for n := range lines {
 			lines[n] = interfaceview.Safe(lines[n])
 		}
-		m.Preview = &tuiPreview{Path: "Exposure review", Status: "Static review (unscored)", Lines: lines, Interface: true}
+		m.Preview = &tuiPreview{Path: "Interface details", Status: "Static candidates; runtime not inspected", Lines: lines, Interface: true}
 		return
 	}
 	if node.Kind == "topology-edge" {
@@ -130,6 +135,9 @@ func (m *tuiExplorer) enter() {
 		lines := []string{"Kind: " + e.Kind, "From: " + e.From.Reference, "To: " + e.To.Reference, "State: " + e.State, "From type: " + e.From.Type + " (" + e.From.Origin + ")", "To type: " + e.To.Type + " (" + e.To.Origin + ")", "Policy: " + e.Policy, "Runtime: Not inspected"}
 		if m.CurrentWorkshop < len(m.Configurations) {
 			lines = append(lines, "Definition: "+m.Configurations[m.CurrentWorkshop].Definition)
+			if policy, reason := interfaceexposure.EdgePolicy(m.Reviews, m.Configurations[m.CurrentWorkshop].Definition, *e); policy != "" {
+				lines = append(lines, "Startup policy: "+policy, "Reason: "+reason)
+			}
 		}
 		lines = append(lines, e.Diagnostics...)
 		for i := range lines {
@@ -188,7 +196,7 @@ func (m *tuiExplorer) enter() {
 		m.Message = ""
 		return
 	}
-	if node.Kind == "interface-group" {
+	if node.Kind == "interface-group" || node.Kind == "slot-group" {
 		i := m.SelectedNode
 		m.Nodes = append(m.Nodes[:i+1], append(append([]tuiNode{}, node.Children...), m.Nodes[i+1:]...)...)
 		m.Nodes[i].Expanded = true
@@ -356,7 +364,7 @@ func (m *tuiExplorer) openWorkshop(index int) {
 	if len(c.SDKs) == 0 {
 		nodes = append(nodes, tuiNode{Header: true, Name: "No SDKs declared"})
 	}
-	nodes = append(nodes, tuiNode{Header: true, Name: "[Configuration]"}, tuiNode{Kind: "workshop-interfaces", Name: "Interfaces  ›"}, tuiNode{Header: true, Name: "[Scan results]"}, tuiNode{Kind: "workshop-assessment", Name: "SDK assessment  ›"}, tuiNode{Kind: "workshop-reviews", Name: "Interface exposure review  ›"})
+	nodes = append(nodes, tuiNode{Header: true, Name: "[Configuration]"}, tuiNode{Kind: "workshop-interfaces", Name: "Interfaces  ›"}, tuiNode{Header: true, Name: "[Scan results]"}, tuiNode{Kind: "workshop-assessment", Name: "SDK assessment  ›"})
 	base := ""
 	for _, w := range m.Workshops {
 		if w.Definition == c.Definition {
@@ -382,50 +390,46 @@ func (m *tuiExplorer) openSystem(order int) {
 func (m *tuiExplorer) openWorkshopInterfaces() {
 	c := m.Configurations[m.CurrentWorkshop]
 	nodes := []tuiNode{}
-	for _, kind := range []string{"binding", "connection"} {
-		nodes = append(nodes, tuiNode{Header: true, Name: "[" + strings.ToUpper(kind[:1]) + kind[1:] + "s]"})
-		count := 0
-		for _, g := range m.Topology {
-			if g.Definition != c.Definition {
-				continue
-			}
-			if g.Incomplete {
-				nodes = append(nodes, tuiNode{Header: true, Name: "Configuration incomplete"})
-			}
-			for _, edge := range g.Edges {
-				if edge.Kind != kind {
-					continue
-				}
-				e := edge
-				count++
-				nodes = append(nodes, tuiNode{Kind: "topology-edge", Name: interfaceview.Safe(e.From.Reference + " → " + e.To.Reference + " [" + e.State + "]"), Edge: &e})
-			}
-		}
-		if count == 0 {
-			nodes = append(nodes, tuiNode{Header: true, Name: "None configured"})
+	var selected *interfaceexposure.Review
+	for i := range m.Reviews {
+		if m.Reviews[i].Definition == c.Definition {
+			selected = &m.Reviews[i]
+			break
 		}
 	}
-	m.show(nodes, interfaceview.Safe(" Workshop: "+c.Name+"  ›  Interfaces (static configuration)"))
-}
-func (m *tuiExplorer) openWorkshopReviews() {
-	c := m.Configurations[m.CurrentWorkshop]
-	nodes := []tuiNode{}
-	for _, review := range m.Reviews {
-		if review.Definition != c.Definition {
+	if selected == nil {
+		nodes = append(nodes, tuiNode{Header: true, Name: "Interface information unavailable"})
+	} else {
+		nodes = append(nodes, tuiInterfaceSlotNodes(*selected)...)
+	}
+
+	// Preserve configured edges whose source plug could not be represented as a declaration.
+	var orphans []tuiNode
+	for _, graph := range m.Topology {
+		if graph.Definition != c.Definition {
 			continue
 		}
-		if review.Incomplete {
-			nodes = append(nodes, tuiNode{Header: true, Name: "Not evaluated: incomplete declarations"})
-		}
-		for _, entry := range review.Items {
-			item := entry
-			nodes = append(nodes, tuiNode{Kind: "exposure-review", Name: interfaceview.Safe(item.Kind + " " + item.SDK + ":" + item.Name + " — " + item.Fact), Review: &item})
+		for _, edge := range graph.Edges {
+			represented := false
+			if selected != nil {
+				for _, item := range selected.Items {
+					if item.Kind == "Plug" && item.SDK == edge.From.SDK && item.Name == edge.From.Name {
+						represented = true
+						break
+					}
+				}
+			}
+			if !represented {
+				e := edge
+				orphans = append(orphans, tuiNode{Kind: "topology-edge", Name: interfaceview.Safe(e.Kind + " " + e.From.Reference + " → " + e.To.Reference + " [" + e.State + "]"), Edge: &e})
+			}
 		}
 	}
-	if len(nodes) == 0 {
-		nodes = append(nodes, tuiNode{Header: true, Name: "No review items"})
+	if len(orphans) > 0 {
+		nodes = append(nodes, tuiNode{Header: true, Name: "[Unresolved configuration]"})
+		nodes = append(nodes, orphans...)
 	}
-	m.show(nodes, interfaceview.Safe(" Workshop: "+c.Name+"  ›  Exposure review (unscored)"))
+	m.show(nodes, interfaceview.Safe(" Workshop: "+c.Name+"  ›  Interfaces (runtime not inspected)"))
 }
 
 func (m *tuiExplorer) openAssessment() {

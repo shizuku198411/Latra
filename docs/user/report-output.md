@@ -360,12 +360,17 @@ to inspect the existing SDK metadata and Workshop declaration fields.
 In verbose text, Configured interfaces lists explicit Workshop connections and plug bindings.
 `Configured` and `Bound` describe the declaration, not the running Workshop;
 `Unresolved` means the available inventory cannot verify an endpoint, and
-`Invalid` identifies a detected configuration conflict. Interface policy and
-runtime state are not evaluated. Verbose JSON exposes the same static graph as
+`Invalid` identifies a detected configuration conflict. The startup policy
+annotation covers supported static rules only; runtime state is not evaluated.
+Verbose JSON exposes the static graph as
 `interfaceTopology` in schema version 6.
 
-In verbose text, Exposure review lists unscored review items derived from interface declarations,
-grouped by Workshop. Verbose text includes declared values, related configured
+In verbose text, Exposure review lists unscored interface declarations and
+startup connection candidates, grouped by Workshop. The candidate state uses
+known auto-connect rules and identifies manual connections, unsupported pairs,
+bindings, and unknown cases; it does not guarantee a successful connection.
+Declared compatible slots shown for manual interfaces are not a selected pair.
+Verbose text includes declared values, related configured
 edges, and limitations. `Not evaluated` indicates unavailable or uninterpretable
 input; it does not imply that no interface is present. These items do not change
 Risk, Assurance, Coverage, or Review Priority, and do not establish runtime

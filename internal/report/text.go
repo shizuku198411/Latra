@@ -11,6 +11,7 @@ import (
 
 	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/finding"
+	"github.com/shizuku198411/Latra/internal/interfaceexposure"
 	"github.com/shizuku198411/Latra/internal/interfaceview"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
@@ -879,6 +880,11 @@ func writeTopology(writer io.Writer, document Document, verbose bool) error {
 					return err
 				}
 			}
+			if policy, reason := interfaceexposure.EdgePolicy(document.InterfaceReviews, graph.Definition, edge); policy != "" {
+				if _, err := fmt.Fprintf(writer, "      Startup policy: %s — %s\n", interfaceview.Safe(policy), interfaceview.Safe(reason)); err != nil {
+					return err
+				}
+			}
 			if verbose {
 				if _, err := fmt.Fprintf(writer, "      From: %s (%s)  To: %s (%s)  Policy: %s\n", interfaceview.Safe(edge.From.Type), interfaceview.Safe(edge.From.Origin), interfaceview.Safe(edge.To.Type), interfaceview.Safe(edge.To.Origin), edge.Policy); err != nil {
 					return err
@@ -912,6 +918,16 @@ func writeExposure(writer io.Writer, document Document, verbose bool) error {
 		for _, item := range review.Items {
 			if _, err := fmt.Fprintf(writer, "    %s %s:%s [%s] — %s (%s)\n", item.Kind, interfaceview.Safe(item.SDK), interfaceview.Safe(item.Name), interfaceview.Safe(item.Source), interfaceview.Safe(item.Fact), item.State); err != nil {
 				return err
+			}
+			if item.Kind == "Plug" {
+				if _, err := fmt.Fprintf(writer, "      Startup: %s; candidate: %s; basis: %s\n      Reason: %s\n", interfaceview.Safe(item.Startup), interfaceview.Safe(item.Target), interfaceview.Safe(item.Basis), interfaceview.Safe(item.Reason)); err != nil {
+					return err
+				}
+				if item.ViaStartup != "" {
+					if _, err := fmt.Fprintf(writer, "      Delegated plug startup: %s; candidate: %s\n      Delegated plug reason: %s\n", interfaceview.Safe(item.ViaStartup), interfaceview.Safe(item.ViaTarget), interfaceview.Safe(item.ViaReason)); err != nil {
+						return err
+					}
+				}
 			}
 			if verbose {
 				if _, err := fmt.Fprintf(writer, "      Declared value: %s\n      Limitation: %s\n", interfaceview.Safe(item.Value), interfaceview.Safe(item.Limitation)); err != nil {
