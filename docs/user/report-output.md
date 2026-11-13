@@ -356,3 +356,13 @@ For a typical investigation:
 5. Use `Hooks` names with `latra hook <sdk> <hook>`.
 6. Follow hook paths under `Command Coverage Gaps` and inspect unregistered and dynamic entries separately.
 7. Use Operations and Capabilities to identify behavior that needs closer source review.
+# Interface declarations
+
+The text scan report includes an Interfaces section listing SDK-declared and
+Workshop-declared plugs and slots separately. These are static declarations;
+they do not establish that a connection is active. An unavailable SDK may
+still have Workshop declarations. Use `--verbose` for declared attribute
+values. Values and keyring lookup attributes may contain sensitive information.
+
+Compact JSON retains its existing summary format. Use `--format json --verbose`
+to inspect the existing SDK metadata and Workshop declaration fields.

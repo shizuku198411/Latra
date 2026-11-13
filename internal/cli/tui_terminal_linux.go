@@ -94,9 +94,18 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 			start = selected - available + 1
 		}
 		if model.Preview != nil {
-			annotations := risksForPreview(model.Scan, entries[model.SelectedSDK].Name, model.Preview.Path)
-			for _, line := range tuiPreviewRows(model.Preview, annotations, width, available) {
-				b.WriteString(line + "\r\n")
+			var annotations map[int][]tuiRisk
+			if !model.Preview.Interface {
+				annotations = risksForPreview(model.Scan, entries[model.SelectedSDK].Name, model.Preview.Path)
+			}
+			if model.Preview.Interface {
+				for i := model.Preview.Scroll; i < len(model.Preview.Lines) && i < model.Preview.Scroll+available; i++ {
+					b.WriteString(fitLine(" "+model.Preview.Lines[i], width) + "\r\n")
+				}
+			} else {
+				for _, line := range tuiPreviewRows(model.Preview, annotations, width, available) {
+					b.WriteString(line + "\r\n")
+				}
 			}
 		}
 		var treeRisks map[string]string
@@ -127,7 +136,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 				line = tuiSDKListLine(sdk, model.Scan, width)
 			}
 			level := ""
-			if model.InTree && !model.Nodes[i].Header {
+			if model.InTree && !model.Nodes[i].Header && model.Nodes[i].Kind == "" {
 				level = treeRisks[model.Nodes[i].Path]
 			}
 			if model.Preview == nil && i == selected {
@@ -299,7 +308,11 @@ func tuiExplorerHeader(model *tuiExplorer) string {
 	var heading string
 	switch {
 	case model.Preview != nil:
-		heading = fmt.Sprintf(" File: %s  (read-only preview)", model.Preview.Path)
+		if model.Preview.Interface {
+			heading = fmt.Sprintf(" Interface: %s  (read-only)", safeTUILabel(model.Preview.Path))
+		} else {
+			heading = fmt.Sprintf(" File: %s  (read-only preview)", model.Preview.Path)
+		}
 	case model.InTree:
 		heading = fmt.Sprintf(" SDK: %s  (read-only tree)", model.SDKs[model.SelectedSDK].Name)
 	default:

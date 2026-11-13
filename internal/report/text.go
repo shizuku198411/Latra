@@ -11,6 +11,7 @@ import (
 
 	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/finding"
+	"github.com/shizuku198411/Latra/internal/interfaceview"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
 	"github.com/shizuku198411/Latra/internal/source"
@@ -94,6 +95,9 @@ func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, option
 		}
 	}
 	if err := writeSummary(writer, document.Summary, document.Assessment, true); err != nil {
+		return err
+	}
+	if err := writeInterfaceSummary(writer, document.SDKs); err != nil {
 		return err
 	}
 	if err := writeObservations(writer, document, false); err != nil {
@@ -603,6 +607,9 @@ func writeSDK(writer io.Writer, item SDK) error {
 	if err := writeFindings(writer, item.Findings); err != nil {
 		return err
 	}
+	if err := writeSDKInterfaces(writer, item, true); err != nil {
+		return err
+	}
 	if item.State != sdk.StateResolved {
 		return nil
 	}
@@ -815,10 +822,59 @@ func writeMetadata(writer io.Writer, item SDK) error {
 			}
 		}
 	}
-	if err := writeInterfaces(writer, "Plugs", metadata.Plugs); err != nil {
+	return nil
+}
+
+func writeInterfaceSummary(writer io.Writer, items []SDK) error {
+	if _, err := fmt.Fprintln(writer, "\nInterfaces (static declarations; connection status not inspected)"); err != nil {
 		return err
 	}
-	return writeInterfaces(writer, "Slots", metadata.Slots)
+	for _, item := range items {
+		if _, err := fmt.Fprintf(writer, "  %s (%s, %s)\n", interfaceview.Safe(item.Name), interfaceview.Safe(string(item.Source)), interfaceview.Safe(item.Channel)); err != nil {
+			return err
+		}
+		if err := writeSDKInterfaces(writer, item, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeSDKInterfaces(writer io.Writer, item SDK, verbose bool) error {
+	if _, err := fmt.Fprintln(writer, "    Interfaces (static; connection not inspected):"); err != nil {
+		return err
+	}
+	if item.Metadata == nil {
+		if _, err := fmt.Fprintln(writer, "      SDK declarations: unavailable"); err != nil {
+			return err
+		}
+	} else if len(item.Metadata.Plugs)+len(item.Metadata.Slots) == 0 {
+		if _, err := fmt.Fprintln(writer, "      SDK declarations: none"); err != nil {
+			return err
+		}
+	}
+	for _, e := range interfaceview.Entries(item.Metadata, item.MetadataPath, item.Declarations) {
+		origin := e.Source
+		if e.Source == "Workshop" {
+			origin += ": " + e.Workshop + " (" + e.Definition + ")"
+		}
+		kind := e.Type
+		if e.Form == "binding" {
+			kind = "bind → " + kind
+		}
+		if e.Form == "uninterpreted" {
+			kind = "uninterpreted"
+		}
+		if _, err := fmt.Fprintf(writer, "      %s %s: %s [%s]\n", e.Kind, interfaceview.Safe(e.Name), interfaceview.Safe(kind), interfaceview.Safe(origin)); err != nil {
+			return err
+		}
+		if verbose {
+			if _, err := fmt.Fprintf(writer, "        Declared value: %s\n", interfaceview.Safe(e.Value)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func writeInterfaces(writer io.Writer, label string, interfaces map[string]any) error {

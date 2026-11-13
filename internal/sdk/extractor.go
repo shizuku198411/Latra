@@ -65,6 +65,32 @@ func ReadRoot(root *os.Root, displayPath, declaredName string, limits Limits) (*
 	return readRoot(root, displayPath, declaredName, limits, ReadOptions{})
 }
 
+// ReadMetadataRoot reads only the required SDK metadata through a confined root.
+func ReadMetadataRoot(root *os.Root, declaredName string, limits Limits) (*Metadata, string, error) {
+	if err := validateLimits(limits); err != nil {
+		return nil, "", err
+	}
+	name, err := selectMetadata(root)
+	if err != nil {
+		return nil, "", err
+	}
+	_, content, size, _, err := readRegular(root, name, limits.MaxRequiredFileSize)
+	if err != nil {
+		return nil, "", err
+	}
+	if size > limits.MaxRequiredFileSize || size > limits.MaxTotalBytes || size > limits.MaxRetainedBytes {
+		return nil, "", fmt.Errorf("metadata exceeds resource limit")
+	}
+	metadata, err := decodeMetadata(content)
+	if err != nil {
+		return nil, "", err
+	}
+	if declaredName != "" && metadata.Name != declaredName {
+		return nil, "", fmt.Errorf("SDK name %q does not match declared name %q", metadata.Name, declaredName)
+	}
+	return metadata, name, nil
+}
+
 func readRoot(root *os.Root, displayPath, declaredName string, limits Limits, options ReadOptions) (*SDK, error) {
 	if err := validateLimits(limits); err != nil {
 		return nil, wrap(CodeInvalidInput, displayPath, err)

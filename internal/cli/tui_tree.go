@@ -1,11 +1,11 @@
 package cli
 
 import (
-	"fmt"
 	"io/fs"
 	"path"
 	"sort"
 
+	"github.com/shizuku198411/Latra/internal/interfaceview"
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
 )
@@ -18,6 +18,9 @@ type tuiNode struct {
 	Expanded   bool
 	Header     bool
 	Group      string
+	Kind       string
+	Interface  *interfaceview.Entry
+	Children   []tuiNode
 }
 
 type tuiExplorer struct {
@@ -42,18 +45,24 @@ func (m *tuiExplorer) enter() {
 			return
 		}
 		item := m.SDKs[m.SelectedSDK]
-		if item.Status != "local" && item.Status != "cached" {
-			m.Message = fmt.Sprintf("%s: %s", item.Name, item.Status)
-			if item.Error != "" {
-				m.Message += ": " + item.Error
+		var children []tuiNode
+		if item.Status == "local" || item.Status == "cached" {
+			var err error
+			children, err = readTUIGroupedNodes(item.Entry)
+			if err != nil {
+				m.Message = err.Error()
+				return
 			}
-			return
 		}
-		children, err := readTUIGroupedNodes(item.Entry)
-		if err != nil {
-			m.Message = err.Error()
-			return
+		interfaces := interfaceNodes(item)
+		insert := len(children)
+		for i, node := range children {
+			if node.Header && node.Name == "[Files]" {
+				insert = i
+				break
+			}
 		}
+		children = append(children[:insert], append(interfaces, children[insert:]...)...)
 		m.Nodes, m.SelectedNode, m.InTree, m.Message = children, firstTUISelectable(children), true, ""
 		return
 	}
@@ -61,6 +70,11 @@ func (m *tuiExplorer) enter() {
 		return
 	}
 	node := m.Nodes[m.SelectedNode]
+	if node.Kind == "interface" {
+		m.Preview = &tuiPreview{Path: node.Interface.Name, Status: "Interface declaration (read-only)", Lines: node.Interface.Details(), Interface: true}
+		m.Message = ""
+		return
+	}
 	if node.Header {
 		return
 	}
@@ -85,6 +99,12 @@ func (m *tuiExplorer) enter() {
 		m.Nodes = append(m.Nodes[:m.SelectedNode+1], m.Nodes[next:]...)
 		m.Nodes[m.SelectedNode].Expanded = false
 		m.Message = ""
+		return
+	}
+	if node.Kind == "interface-group" {
+		i := m.SelectedNode
+		m.Nodes = append(m.Nodes[:i+1], append(append([]tuiNode{}, node.Children...), m.Nodes[i+1:]...)...)
+		m.Nodes[i].Expanded = true
 		return
 	}
 	children, err := readTUINodes(m.SDKs[m.SelectedSDK].Entry, node.Path, node.Depth+1)

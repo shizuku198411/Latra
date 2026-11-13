@@ -69,11 +69,11 @@ func TestTUITreeNavigation(t *testing.T) {
 	}
 	model := tuiExplorer{SDKs: []tuiSDK{{Name: "example", Status: "local", Entry: entry}}}
 	model.enter()
-	if !model.InTree || len(model.Nodes) != 4 || model.Nodes[1].Name != "[Hooks]" || model.Nodes[2].Name != "hooks" {
+	if !model.InTree || len(model.Nodes) != 8 || model.Nodes[1].Name != "[Hooks]" || model.Nodes[2].Name != "hooks" {
 		t.Fatalf("open SDK: %+v", model)
 	}
 	model.enter()
-	if len(model.Nodes) != 5 || model.Nodes[3].Name != "setup-project" {
+	if len(model.Nodes) != 9 || model.Nodes[3].Name != "setup-project" {
 		t.Fatalf("expand hooks: %+v", model.Nodes)
 	}
 	model.move(1)
@@ -84,7 +84,7 @@ func TestTUITreeNavigation(t *testing.T) {
 	model.back()
 	model.move(-1)
 	model.enter()
-	if len(model.Nodes) != 4 || model.Nodes[2].Expanded {
+	if len(model.Nodes) != 8 || model.Nodes[2].Expanded {
 		t.Fatalf("collapse hooks: %+v", model.Nodes)
 	}
 	model.back()
@@ -93,11 +93,21 @@ func TestTUITreeNavigation(t *testing.T) {
 	}
 }
 
-func TestTUIUncachedSDKDoesNotEnterTree(t *testing.T) {
-	model := tuiExplorer{SDKs: []tuiSDK{{Name: "remote", Status: "not cached"}}}
+func TestTUIUncachedSDKShowsInterfaces(t *testing.T) {
+	model := tuiExplorer{SDKs: []tuiSDK{{Name: "remote", Status: "not cached", Declarations: []sdk.Declaration{{Workshop: "dev", Definition: ".workshop/dev.yaml", Plugs: map[string]any{"camera": nil}}}}}}
 	model.enter()
-	if model.InTree || !strings.Contains(model.Message, "not cached") {
+	if !model.InTree || model.Nodes[1].Name != "SDK declarations: unavailable" {
 		t.Fatalf("unexpected model: %+v", model)
+	}
+	model.enter()
+	model.move(1)
+	model.enter()
+	if model.Preview == nil || !model.Preview.Interface || !strings.Contains(strings.Join(model.Preview.Lines, " "), "Workshop: dev") {
+		t.Fatalf("interface preview: %+v", model.Preview)
+	}
+	model.back()
+	if model.Preview != nil || !model.InTree {
+		t.Fatal("back must return to interface tree")
 	}
 }
 
@@ -165,6 +175,12 @@ func TestTUIPreviewTextAndNavigation(t *testing.T) {
 	}
 	m := tuiExplorer{SDKs: []tuiSDK{{Name: "example", Status: "local", Entry: entry}}}
 	m.enter()
+	for i, node := range m.Nodes {
+		if node.Path == "notes.txt" {
+			m.SelectedNode = i
+			break
+		}
+	}
 	m.enter()
 	if m.Preview == nil || !strings.Contains(m.Preview.Status, "Text file") || !strings.Contains(m.Preview.Lines[0], "hello") {
 		t.Fatalf("preview: %+v", m.Preview)
@@ -328,7 +344,7 @@ func TestTUIGroupedSectionsAndNavigation(t *testing.T) {
 	for _, n := range m.Nodes {
 		names = append(names, n.Name)
 	}
-	expected := []string{"[SDK Metadata]", "meta", "[Hooks]", "sdk", "[Files]", "sdk", "README.md"}
+	expected := []string{"[SDK Metadata]", "meta", "[Hooks]", "sdk", "[Interfaces]", "SDK declarations: unavailable", "Plugs (0)", "Slots (0)", "[Files]", "sdk", "README.md"}
 	if strings.Join(names, "|") != strings.Join(expected, "|") {
 		t.Fatalf("sections: %v", names)
 	}
@@ -344,6 +360,8 @@ func TestTUIGroupedSectionsAndNavigation(t *testing.T) {
 		t.Fatalf("hook branch: %+v", m.Nodes)
 	}
 	m.enter() // collapse
+	m.move(1) // skip Interfaces headers
+	m.move(1) // Slots
 	m.move(1) // skip Files header
 	if m.Nodes[m.SelectedNode].Group != "files" {
 		t.Fatalf("selection=%+v", m.Nodes[m.SelectedNode])

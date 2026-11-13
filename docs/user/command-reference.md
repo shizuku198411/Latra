@@ -389,3 +389,10 @@ A scan can produce a report and still return `1` when hook parsing was incomplet
 | Variable | Description |
 | --- | --- |
 | `SDK_STORE_URL` | Override the SDK Store API base URL used by `latra scan`. Intended for testing or alternate compatible services. |
+# Interface inspection
+
+`latra scan` lists static interface declarations in its text report;
+`latra scan --verbose` also displays their declared values. `latra explorer`
+offers an Interfaces tree and read-only details. Neither view determines the
+runtime connection state. For structured data, use `latra scan --format json
+--verbose` and inspect SDK metadata and Workshop declarations.

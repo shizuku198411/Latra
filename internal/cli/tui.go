@@ -18,6 +18,10 @@ type tuiSDK struct {
 	Name, Source, Channel, Status, Workshops string
 	Entry                                    sdkcache.Entry
 	Error                                    string
+	Metadata                                 *sdk.Metadata
+	MetadataPath                             string
+	Declarations                             []sdk.Declaration
+	MetadataError                            string
 }
 
 // loadTUIInventory keeps the cache-only behavior for callers without a Store resolver.
@@ -56,7 +60,7 @@ func loadTUIInventoryWithResolver(project, cacheRoot string, resolver source.Sto
 	}
 	entries := make([]tuiSDK, 0, len(result.SDKs))
 	for _, s := range result.SDKs {
-		entry := tuiSDK{Name: s.Name, Source: string(s.Source), Channel: s.Channel, Status: "unknown"}
+		entry := tuiSDK{Name: s.Name, Source: string(s.Source), Channel: s.Channel, Status: "unknown", Metadata: s.Metadata, MetadataPath: s.MetadataPath, Declarations: s.Declarations}
 		workshops := make([]string, 0, len(s.Declarations))
 		seen := make(map[string]bool)
 		for _, d := range s.Declarations {
@@ -102,6 +106,12 @@ func loadTUIInventoryWithResolver(project, cacheRoot string, resolver source.Sto
 			}
 		default:
 			entry.Status = "unsupported"
+		}
+		if entry.Source == string(sdk.SourceStore) && entry.Status == "cached" {
+			entry.Metadata, entry.MetadataPath, err = sdkcache.ReadMetadata(entry.Entry, sdk.DefaultLimits())
+			if err != nil {
+				entry.MetadataError = err.Error()
+			}
 		}
 		entries = append(entries, entry)
 	}
