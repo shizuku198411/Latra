@@ -15,7 +15,7 @@ func scanExplorer(project string, resolver source.StoreResolver) (*report.Docume
 	if result == nil {
 		return nil, err
 	}
-	document := report.NewDocument(result)
+	document := report.NewDocumentWithOptions(result, report.DocumentOptions{})
 	return &document, err
 }
 

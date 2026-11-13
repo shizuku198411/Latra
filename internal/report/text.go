@@ -85,7 +85,7 @@ func WriteTextSummary(writer io.Writer, result *source.Result) error {
 
 // WriteTextSummaryWithOptions renders the compact representation with explicit text options.
 func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, options TextOptions) error {
-	document := NewDocument(result)
+	document := NewDocumentWithOptions(result, DocumentOptions{})
 	if _, err := fmt.Fprintf(writer, "Input\n  Kind: %s\n  Root: %s\n", document.Input.Kind, document.Input.Root); err != nil {
 		return err
 	}

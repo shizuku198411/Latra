@@ -251,6 +251,18 @@ type DocumentDiagnostic struct {
 
 // NewDocument builds a deterministic report document from a scan result.
 func NewDocument(result *source.Result) Document {
+	return NewDocumentWithOptions(result, DocumentOptions{IncludeTopology: true, IncludeInterfaceReviews: true})
+}
+
+// DocumentOptions selects optional interface analysis for a report.
+// Interface reviews require, and therefore automatically enable, topology.
+type DocumentOptions struct {
+	IncludeTopology         bool
+	IncludeInterfaceReviews bool
+}
+
+// NewDocumentWithOptions builds a report with the requested interface analysis.
+func NewDocumentWithOptions(result *source.Result, options DocumentOptions) Document {
 	info := buildinfo.Current()
 	compositionFindings, compositionRelations := finding.AnalyzeComposition(result.SDKs)
 	compositionBySDK := make(map[string][]finding.Finding)
@@ -267,12 +279,16 @@ func NewDocument(result *source.Result) Document {
 		CompositionRelations: compositionRelations,
 		Diagnostics:          []DocumentDiagnostic{},
 	}
-	for _, configuration := range result.Configurations {
-		graph := interfacegraph.Build(configuration, result.SDKs)
-		document.InterfaceTopology = append(document.InterfaceTopology, graph)
-		document.InterfaceReviews = append(document.InterfaceReviews, interfaceexposure.Build(configuration, result.SDKs, graph))
+	if options.IncludeTopology || options.IncludeInterfaceReviews {
+		for _, configuration := range result.Configurations {
+			graph := interfacegraph.Build(configuration, result.SDKs)
+			document.InterfaceTopology = append(document.InterfaceTopology, graph)
+			if options.IncludeInterfaceReviews {
+				document.InterfaceReviews = append(document.InterfaceReviews, interfaceexposure.Build(configuration, result.SDKs, graph))
+			}
+		}
 	}
-	if result.Kind == source.InputProjectSDK {
+	if options.IncludeInterfaceReviews && result.Kind == source.InputProjectSDK {
 		for _, item := range result.SDKs {
 			document.InterfaceReviews = append(document.InterfaceReviews, interfaceexposure.Standalone(item))
 		}

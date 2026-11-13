@@ -26,3 +26,34 @@ func TestExposureReviewDoesNotChangeAssessment(t *testing.T) {
 		t.Fatal(b.String())
 	}
 }
+
+func TestDocumentInterfaceOptions(t *testing.T) {
+	item := sdk.SDK{Name: "example", Source: sdk.SourceProject, State: sdk.StateResolved, Metadata: &sdk.Metadata{Name: "example", Plugs: map[string]any{"key": map[string]any{"interface": "secret"}}}, Declarations: []sdk.Declaration{{Workshop: "dev", Definition: ".workshop/dev.yaml"}}}
+	result := &source.Result{Kind: source.InputProject, SDKs: []sdk.SDK{item}, Configurations: []source.Configuration{{Name: "dev", Definition: ".workshop/dev.yaml", SDKs: []source.ConfigurationSDK{{Name: "project-example"}}}}}
+	full := NewDocument(result)
+	for _, tc := range []struct {
+		name              string
+		options           DocumentOptions
+		topology, reviews bool
+	}{
+		{"core", DocumentOptions{}, false, false},
+		{"topology", DocumentOptions{IncludeTopology: true}, true, false},
+		{"reviews imply topology", DocumentOptions{IncludeInterfaceReviews: true}, true, true},
+		{"full", DocumentOptions{IncludeTopology: true, IncludeInterfaceReviews: true}, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := NewDocumentWithOptions(result, tc.options)
+			if (len(doc.InterfaceTopology) > 0) != tc.topology || (len(doc.InterfaceReviews) > 0) != tc.reviews {
+				t.Fatalf("unexpected interface analysis: topology=%d reviews=%d", len(doc.InterfaceTopology), len(doc.InterfaceReviews))
+			}
+			if !reflect.DeepEqual(doc.Assessment, full.Assessment) || !reflect.DeepEqual(doc.SDKs, full.SDKs) {
+				t.Fatal("interface options changed SDK analysis or assessment")
+			}
+		})
+	}
+	result.Kind = source.InputProjectSDK
+	result.Configurations = nil
+	if len(NewDocumentWithOptions(result, DocumentOptions{}).InterfaceReviews) != 0 || len(NewDocument(result).InterfaceReviews) != 1 {
+		t.Fatal("standalone review must only be generated when requested")
+	}
+}

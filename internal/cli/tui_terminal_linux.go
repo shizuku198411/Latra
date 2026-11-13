@@ -4,7 +4,6 @@ package cli
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -32,7 +31,8 @@ func ioctlTermios(fd uintptr, request uintptr, term *syscall.Termios) error {
 	return nil
 }
 
-func runTerminalExplorer(project string, entries []tuiSDK, resolver source.StoreResolver) error {
+func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) error {
+	project, entries := inventory.Project, inventory.SDKs
 	// /dev/tty keeps the UI off redirected stdout/stderr and is both readable and writable.
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
@@ -61,22 +61,15 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGWINCH)
 	defer signal.Stop(signals)
 	reader := bufio.NewReader(tty)
-	model := tuiExplorer{SDKs: entries}
-	if discovered, discoveryErr := source.DiscoverProject(context.Background(), project, sdk.DefaultLimits()); discoveryErr == nil {
-		model.Configurations = discovered.Configurations
-		model.Workshops = discovered.Workshops
-		var snapshot []sdk.SDK
-		for _, entry := range entries {
-			snapshot = append(snapshot, sdk.SDK{Metadata: entry.Metadata, Declarations: entry.Declarations})
-		}
-		for _, configuration := range discovered.Configurations {
-			graph := interfacegraph.Build(configuration, snapshot)
-			model.Topology = append(model.Topology, graph)
-			model.Reviews = append(model.Reviews, interfaceexposure.Build(configuration, snapshot, graph))
-		}
-	} else {
-		model.DiscoveryError = discoveryErr.Error()
-		model.Message = "Workshop discovery failed: " + safeTUILabel(discoveryErr.Error())
+	model := tuiExplorer{SDKs: entries, Configurations: inventory.Configurations, Workshops: inventory.Workshops}
+	var snapshot []sdk.SDK
+	for _, entry := range entries {
+		snapshot = append(snapshot, sdk.SDK{Metadata: entry.Metadata, Declarations: entry.Declarations})
+	}
+	for _, configuration := range inventory.Configurations {
+		graph := interfacegraph.Build(configuration, snapshot)
+		model.Topology = append(model.Topology, graph)
+		model.Reviews = append(model.Reviews, interfaceexposure.Build(configuration, snapshot, graph))
 	}
 	model.openTopology()
 	model.History = nil // Workshop list is the root screen.

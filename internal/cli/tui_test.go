@@ -685,3 +685,26 @@ func TestTUIInventorySpecialSDKVisibility(t *testing.T) {
 		}
 	}
 }
+
+func TestTUIInventoryIncludesWorkshopConfiguration(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "project-sdks", "valid-project")
+	inventory, err := discoverTUIInventory(root, t.TempDir(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Workshops) == 0 || len(inventory.Configurations) == 0 || len(inventory.SDKs) == 0 {
+		t.Fatalf("incomplete inventory: %+v", inventory)
+	}
+	for _, configuration := range inventory.Configurations {
+		found := false
+		for _, workshop := range inventory.Workshops {
+			if configuration.Definition == workshop.Definition {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("configuration has no matching workshop: %+v", configuration)
+		}
+	}
+}

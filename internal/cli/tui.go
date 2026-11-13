@@ -24,6 +24,13 @@ type tuiSDK struct {
 	MetadataError                            string
 }
 
+type tuiInventory struct {
+	Project        string
+	SDKs           []tuiSDK
+	Workshops      []source.Workshop
+	Configurations []source.Configuration
+}
+
 // loadTUIInventory keeps the cache-only behavior for callers without a Store resolver.
 func loadTUIInventory(project, cacheRoot string) (string, []tuiSDK, error) {
 	return loadTUIInventoryWithResolver(project, cacheRoot, nil, nil)
@@ -32,28 +39,33 @@ func loadTUIInventory(project, cacheRoot string) (string, []tuiSDK, error) {
 // loadTUIInventoryWithResolver reuses scan discovery and downloads only missing Store SDKs.
 // A failed Store resolution is displayed per SDK rather than aborting the explorer.
 func loadTUIInventoryWithResolver(project, cacheRoot string, resolver source.StoreResolver, onDownload func(string)) (string, []tuiSDK, error) {
+	inventory, err := discoverTUIInventory(project, cacheRoot, resolver, onDownload)
+	return inventory.Project, inventory.SDKs, err
+}
+
+func discoverTUIInventory(project, cacheRoot string, resolver source.StoreResolver, onDownload func(string)) (tuiInventory, error) {
 	absolute, err := filepath.Abs(project)
 	if err != nil {
-		return "", nil, err
+		return tuiInventory{}, err
 	}
 	// Unlike the generic scanner, the TUI only accepts Workshop projects.
 	// Check this before scanning so an empty directory is not interpreted as an SDK.
 	workshopDir, err := os.Stat(filepath.Join(absolute, ".workshop"))
 	if errors.Is(err, os.ErrNotExist) {
-		return "", nil, fmt.Errorf("%s is not a Workshop project: .workshop directory not found", absolute)
+		return tuiInventory{}, fmt.Errorf("%s is not a Workshop project: .workshop directory not found", absolute)
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("inspect .workshop: %w", err)
+		return tuiInventory{}, fmt.Errorf("inspect .workshop: %w", err)
 	}
 	if !workshopDir.IsDir() {
-		return "", nil, fmt.Errorf("%s is not a Workshop project: .workshop is not a directory", absolute)
+		return tuiInventory{}, fmt.Errorf("%s is not a Workshop project: .workshop is not a directory", absolute)
 	}
 	result, err := source.DiscoverProject(context.Background(), absolute, sdk.DefaultLimits())
 	if err != nil {
-		return "", nil, err
+		return tuiInventory{}, err
 	}
 	if result.Kind != source.InputProject {
-		return "", nil, fmt.Errorf("%s is an SDK directory, not a Workshop project", absolute)
+		return tuiInventory{}, fmt.Errorf("%s is an SDK directory, not a Workshop project", absolute)
 	}
 	if cacheRoot == "" {
 		cacheRoot = sdkcache.DefaultRoot
@@ -115,7 +127,7 @@ func loadTUIInventoryWithResolver(project, cacheRoot string, resolver source.Sto
 		}
 		entries = append(entries, entry)
 	}
-	return absolute, entries, nil
+	return tuiInventory{Project: absolute, SDKs: entries, Workshops: result.Workshops, Configurations: result.Configurations}, nil
 }
 
 func runTUI(args []string, stdout, stderr io.Writer, dependencies Dependencies) int {
@@ -141,7 +153,7 @@ func runTUI(args []string, stdout, stderr io.Writer, dependencies Dependencies) 
 			return usageError(stderr, "unknown explorer option %q", a)
 		}
 	}
-	absolute, entries, err := loadTUIInventoryWithResolver(project, dependencies.CacheRoot, dependencies.StoreResolver, func(name string) {
+	inventory, err := discoverTUIInventory(project, dependencies.CacheRoot, dependencies.StoreResolver, func(name string) {
 		fmt.Fprintf(stderr, "latra: explorer: downloading SDK %q...\n", name)
 	})
 	if err != nil {
@@ -149,7 +161,7 @@ func runTUI(args []string, stdout, stderr io.Writer, dependencies Dependencies) 
 		return exitError
 	}
 	// TUI requires the process's own terminal, not a redirected output stream.
-	if err := runTerminalExplorer(absolute, entries, dependencies.StoreResolver); err != nil {
+	if err := runTerminalExplorer(inventory, dependencies.StoreResolver); err != nil {
 		if errors.Is(err, errNotTerminal) {
 			fmt.Fprintln(stderr, "latra: explorer requires an interactive terminal")
 		} else {
