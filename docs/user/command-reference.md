@@ -400,3 +400,7 @@ runtime connection state. For structured data, use `latra scan --format json
 In the Explorer SDK list, press `w` to inspect configured connections and
 bindings by Workshop. Select an entry for its endpoint details and diagnostics.
 The configuration view does not connect interfaces or inspect runtime state.
+
+The Workshop configuration view also contains unscored Exposure review items;
+interface details show the applicable review and its limitations. Text scan
+reports include the same review; `--verbose` shows its declared evidence.

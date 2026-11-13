@@ -64,6 +64,9 @@ func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextO
 	if err := writeTopology(writer, document, true); err != nil {
 		return err
 	}
+	if err := writeExposure(writer, document, true); err != nil {
+		return err
+	}
 	if err := writeSummary(writer, document.Summary, document.Assessment, false); err != nil {
 		return err
 	}
@@ -104,6 +107,9 @@ func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, option
 		return err
 	}
 	if err := writeTopology(writer, document, false); err != nil {
+		return err
+	}
+	if err := writeExposure(writer, document, false); err != nil {
 		return err
 	}
 	if err := writeObservations(writer, document, false); err != nil {
@@ -879,6 +885,45 @@ func writeTopology(writer io.Writer, document Document, verbose bool) error {
 			if verbose {
 				if _, err := fmt.Fprintf(writer, "      From: %s (%s)  To: %s (%s)  Policy: %s\n", interfaceview.Safe(edge.From.Type), interfaceview.Safe(edge.From.Origin), interfaceview.Safe(edge.To.Type), interfaceview.Safe(edge.To.Origin), edge.Policy); err != nil {
 					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func writeExposure(writer io.Writer, document Document, verbose bool) error {
+	if len(document.InterfaceReviews) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(writer, "\nExposure review (static declarations; unscored)"); err != nil {
+		return err
+	}
+	for _, review := range document.InterfaceReviews {
+		label := review.Workshop + " (" + review.Definition + ")"
+		if review.Definition == "" {
+			label = "Standalone SDK"
+		}
+		if _, err := fmt.Fprintf(writer, "  %s: %d review items\n", interfaceview.Safe(label), len(review.Items)); err != nil {
+			return err
+		}
+		if review.Incomplete {
+			if _, err := fmt.Fprintln(writer, "    Not evaluated: some declarations or configuration unavailable"); err != nil {
+				return err
+			}
+		}
+		for _, item := range review.Items {
+			if _, err := fmt.Fprintf(writer, "    %s %s:%s [%s] — %s (%s)\n", item.Kind, interfaceview.Safe(item.SDK), interfaceview.Safe(item.Name), interfaceview.Safe(item.Source), interfaceview.Safe(item.Fact), item.State); err != nil {
+				return err
+			}
+			if verbose {
+				if _, err := fmt.Fprintf(writer, "      Declared value: %s\n      Limitation: %s\n", interfaceview.Safe(item.Value), interfaceview.Safe(item.Limitation)); err != nil {
+					return err
+				}
+				for _, edge := range item.Related {
+					if _, err := fmt.Fprintf(writer, "      %s %s → %s [%s]\n", edge.Kind, interfaceview.Safe(edge.From.Reference), interfaceview.Safe(edge.To.Reference), edge.State); err != nil {
+						return err
+					}
 				}
 			}
 		}

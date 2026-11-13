@@ -9,6 +9,7 @@ import (
 	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/buildinfo"
 	"github.com/shizuku198411/Latra/internal/finding"
+	"github.com/shizuku198411/Latra/internal/interfaceexposure"
 	"github.com/shizuku198411/Latra/internal/interfacegraph"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
@@ -30,6 +31,7 @@ type Document struct {
 	CompositionRelations []finding.CompositionRelation `json:"compositionRelations,omitempty"`
 	Diagnostics          []DocumentDiagnostic          `json:"diagnostics"`
 	InterfaceTopology    []interfacegraph.Graph        `json:"interfaceTopology,omitempty"`
+	InterfaceReviews     []interfaceexposure.Review    `json:"-"`
 }
 
 type Scanner struct {
@@ -266,7 +268,14 @@ func NewDocument(result *source.Result) Document {
 		Diagnostics:          []DocumentDiagnostic{},
 	}
 	for _, configuration := range result.Configurations {
-		document.InterfaceTopology = append(document.InterfaceTopology, interfacegraph.Build(configuration, result.SDKs))
+		graph := interfacegraph.Build(configuration, result.SDKs)
+		document.InterfaceTopology = append(document.InterfaceTopology, graph)
+		document.InterfaceReviews = append(document.InterfaceReviews, interfaceexposure.Build(configuration, result.SDKs, graph))
+	}
+	if result.Kind == source.InputProjectSDK {
+		for _, item := range result.SDKs {
+			document.InterfaceReviews = append(document.InterfaceReviews, interfaceexposure.Standalone(item))
+		}
 	}
 	sort.Slice(document.Workshops, func(i, j int) bool {
 		if document.Workshops[i].Name != document.Workshops[j].Name {

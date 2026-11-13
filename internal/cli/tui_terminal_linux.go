@@ -14,6 +14,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/shizuku198411/Latra/internal/interfaceexposure"
 	"github.com/shizuku198411/Latra/internal/interfacegraph"
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
@@ -66,7 +67,9 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 			snapshot = append(snapshot, sdk.SDK{Metadata: entry.Metadata, Declarations: entry.Declarations})
 		}
 		for _, configuration := range discovered.Configurations {
-			model.Topology = append(model.Topology, interfacegraph.Build(configuration, snapshot))
+			graph := interfacegraph.Build(configuration, snapshot)
+			model.Topology = append(model.Topology, graph)
+			model.Reviews = append(model.Reviews, interfaceexposure.Build(configuration, snapshot, graph))
 		}
 	}
 	type scanOutcome struct {

@@ -373,3 +373,11 @@ Configured interfaces lists explicit Workshop connections and plug bindings.
 `Invalid` identifies a detected configuration conflict. Interface policy and
 runtime state are not evaluated. Verbose JSON exposes the same static graph as
 `interfaceTopology` in schema version 6.
+
+Exposure review lists unscored review items derived from interface declarations,
+grouped by Workshop. Verbose text includes declared values, related configured
+edges, and limitations. `Not evaluated` indicates unavailable or uninterpretable
+input; it does not imply that no interface is present. These items do not change
+Risk, Assurance, Coverage, or Review Priority, and do not establish runtime
+connections or actual access. Declared attributes may contain sensitive data.
+The review is text/TUI only; JSON schema version 6 is unchanged.

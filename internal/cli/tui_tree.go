@@ -4,7 +4,9 @@ import (
 	"io/fs"
 	"path"
 	"sort"
+	"strings"
 
+	"github.com/shizuku198411/Latra/internal/interfaceexposure"
 	"github.com/shizuku198411/Latra/internal/interfacegraph"
 	"github.com/shizuku198411/Latra/internal/interfaceview"
 	"github.com/shizuku198411/Latra/internal/report"
@@ -23,6 +25,7 @@ type tuiNode struct {
 	Interface  *interfaceview.Entry
 	Children   []tuiNode
 	Edge       *interfacegraph.Edge
+	Review     *interfaceexposure.Item
 }
 
 type tuiExplorer struct {
@@ -37,6 +40,7 @@ type tuiExplorer struct {
 	Scan         *report.Document
 	Scanning     bool
 	Topology     []interfacegraph.Graph
+	Reviews      []interfaceexposure.Review
 	InTopology   bool
 }
 
@@ -74,6 +78,18 @@ func (m *tuiExplorer) enter() {
 		return
 	}
 	node := m.Nodes[m.SelectedNode]
+	if node.Kind == "exposure-review" {
+		i := node.Review
+		lines := []string{i.Fact, "SDK: " + i.SDK, "Interface: " + i.Kind + " " + i.Name, "Declared by: " + i.Source, "Workshop: " + i.Workshop + " (" + i.Definition + ")", "State: " + i.State, "Declared value: " + i.Value, "Limitation: " + i.Limitation}
+		for _, e := range i.Related {
+			lines = append(lines, e.Kind+": "+e.From.Reference+" → "+e.To.Reference+" ["+e.State+"]")
+		}
+		for n := range lines {
+			lines[n] = interfaceview.Safe(lines[n])
+		}
+		m.Preview = &tuiPreview{Path: "Exposure review", Status: "Static review (unscored)", Lines: lines, Interface: true}
+		return
+	}
 	if node.Kind == "topology-edge" {
 		e := node.Edge
 		lines := []string{"Kind: " + e.Kind, "From: " + e.From.Reference, "To: " + e.To.Reference, "State: " + e.State, "From type: " + e.From.Type + " (" + e.From.Origin + ")", "To type: " + e.To.Type + " (" + e.To.Origin + ")", "Policy: " + e.Policy, "Runtime: Not inspected"}
@@ -85,7 +101,23 @@ func (m *tuiExplorer) enter() {
 		return
 	}
 	if node.Kind == "interface" {
-		m.Preview = &tuiPreview{Path: node.Interface.Name, Status: "Interface declaration (read-only)", Lines: node.Interface.Details(), Interface: true}
+		lines := node.Interface.Details()
+		for _, review := range m.Reviews {
+			for _, entry := range review.Items {
+				owner := strings.TrimPrefix(strings.TrimPrefix(entry.SDK, "project-"), "try-")
+				matches := false
+				for _, d := range m.SDKs[m.SelectedSDK].Declarations {
+					if d.Definition == entry.Definition {
+						matches = true
+						break
+					}
+				}
+				if matches && owner == m.SDKs[m.SelectedSDK].Name && entry.Kind == node.Interface.Kind && entry.Name == node.Interface.Name && entry.Source == node.Interface.Source && (entry.Source != "Workshop" || entry.Definition == node.Interface.Definition) {
+					lines = append(lines, interfaceview.Safe("Review ("+entry.Workshop+"): "+entry.Fact+" — "+entry.State), interfaceview.Safe("Limitation: "+entry.Limitation))
+				}
+			}
+		}
+		m.Preview = &tuiPreview{Path: node.Interface.Name, Status: "Interface declaration (read-only)", Lines: lines, Interface: true}
 		m.Message = ""
 		return
 	}
@@ -165,6 +197,22 @@ func (m *tuiExplorer) openTopology() {
 		for _, edge := range graph.Edges {
 			e := edge
 			nodes = append(nodes, tuiNode{Kind: "topology-edge", Name: interfaceview.Safe(e.Kind + " " + e.From.Reference + " → " + e.To.Reference + " [" + e.State + "]"), Edge: &e})
+		}
+		for _, review := range m.Reviews {
+			if review.Definition != graph.Definition {
+				continue
+			}
+			nodes = append(nodes, tuiNode{Name: "[Exposure review]", Header: true})
+			if review.Incomplete {
+				nodes = append(nodes, tuiNode{Name: "Not evaluated: incomplete declarations", Header: true})
+			}
+			if len(review.Items) == 0 && !review.Incomplete {
+				nodes = append(nodes, tuiNode{Name: "No review items", Header: true})
+			}
+			for _, entry := range review.Items {
+				item := entry
+				nodes = append(nodes, tuiNode{Kind: "exposure-review", Name: interfaceview.Safe(item.Kind + " " + item.SDK + ":" + item.Name + " — " + item.Fact), Review: &item})
+			}
 		}
 	}
 	if len(nodes) == 0 {

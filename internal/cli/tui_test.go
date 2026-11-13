@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/shizuku198411/Latra/internal/interfaceexposure"
 	"github.com/shizuku198411/Latra/internal/interfacegraph"
 	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
@@ -126,6 +127,18 @@ func TestTUIWorkshopConfigurationNavigation(t *testing.T) {
 	m.back()
 	if m.InTree || m.InTopology {
 		t.Fatal("back did not return to SDK list")
+	}
+}
+
+func TestTUIExposureReviewNavigation(t *testing.T) {
+	m := tuiExplorer{Topology: []interfacegraph.Graph{{Workshop: "dev", Definition: "dev.yaml"}}, Reviews: []interfaceexposure.Review{{Workshop: "dev", Definition: "dev.yaml", Items: []interfaceexposure.Item{{SDK: "app", Name: "token", Kind: "Plug", Fact: "Secret plug declared", Limitation: "Runtime not inspected"}}}}}
+	m.openTopology()
+	if !m.InTopology {
+		t.Fatal("configuration did not open")
+	}
+	m.enter()
+	if m.Preview == nil || !strings.Contains(strings.Join(m.Preview.Lines, " "), "Runtime not inspected") {
+		t.Fatalf("preview: %+v", m.Preview)
 	}
 }
 
