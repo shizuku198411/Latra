@@ -467,15 +467,28 @@ func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessme
 			return err
 		}
 	}
-	if _, err := fmt.Fprintf(writer, "  Unknown Commands: %d\n", summary.UnknownCommands.Count); err != nil {
+	if _, err := fmt.Fprintf(writer, "  Command Coverage Gaps: %d unregistered, %d dynamic\n", summary.UnknownCommands.Count, summary.UnknownCommands.Dynamic); err != nil {
 		return err
 	}
 	for _, item := range summary.UnknownCommands.BySDK {
-		if _, err := fmt.Fprintf(writer, "    %s (%d)\n", item.SDKName, item.Count); err != nil {
+		if _, err := fmt.Fprintf(writer, "    %s (%d unregistered, %d dynamic)\n", item.SDKName, item.Count, item.Dynamic); err != nil {
 			return err
 		}
 		for _, file := range item.Files {
-			if _, err := fmt.Fprintf(writer, "      %s (%d): %s\n", file.FilePath, file.Count, formatCountedItems(file.CommandNames)); err != nil {
+			if _, err := fmt.Fprintf(writer, "      %s (%d unregistered, %d dynamic)", file.FilePath, file.Count, file.Dynamic); err != nil {
+				return err
+			}
+			if file.Count > 0 {
+				if _, err := fmt.Fprintf(writer, ": unregistered=%s", formatCountedItems(file.CommandNames)); err != nil {
+					return err
+				}
+			}
+			if file.Dynamic > 0 {
+				if _, err := fmt.Fprintf(writer, ": dynamic=%s", formatCountedItems(file.DynamicExpressions)); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintln(writer); err != nil {
 				return err
 			}
 		}
@@ -671,6 +684,16 @@ func writeFindings(writer io.Writer, findings []finding.Finding) error {
 			if _, err := fmt.Fprintf(writer, "        Evidence: %s %s", evidence.Type, evidence.ID); err != nil {
 				return err
 			}
+			if evidence.Derivation != "" {
+				if _, err := fmt.Fprintf(writer, " derivation=%s", evidence.Derivation); err != nil {
+					return err
+				}
+			}
+			if evidence.Resolution != "" {
+				if _, err := fmt.Fprintf(writer, " resolution=%s", evidence.Resolution); err != nil {
+					return err
+				}
+			}
 			if evidence.OperationID != "" {
 				if _, err := fmt.Fprintf(writer, " operation=%s", evidence.OperationID); err != nil {
 					return err
@@ -678,6 +701,31 @@ func writeFindings(writer io.Writer, findings []finding.Finding) error {
 			}
 			if evidence.FromOperationID != "" || evidence.ToOperationID != "" {
 				if _, err := fmt.Fprintf(writer, " flow=%s->%s", evidence.FromOperationID, evidence.ToOperationID); err != nil {
+					return err
+				}
+			}
+			for _, relation := range evidence.Relations {
+				if _, err := fmt.Fprintf(writer, " relation=%s:%s->%s", relation.Kind, relation.FromOperationID, relation.ToOperationID); err != nil {
+					return err
+				}
+			}
+			if evidence.Value != "" {
+				if _, err := fmt.Fprintf(writer, " value=%q", evidence.Value); err != nil {
+					return err
+				}
+			}
+			if evidence.Expression != "" {
+				if _, err := fmt.Fprintf(writer, " expression=%q", evidence.Expression); err != nil {
+					return err
+				}
+			}
+			if evidence.NormalizedValue != "" && evidence.NormalizedValue != evidence.Value {
+				if _, err := fmt.Fprintf(writer, " normalized=%q", evidence.NormalizedValue); err != nil {
+					return err
+				}
+			}
+			if len(evidence.NormalizedCandidates) > 0 {
+				if _, err := fmt.Fprintf(writer, " candidates=%q", evidence.NormalizedCandidates); err != nil {
 					return err
 				}
 			}

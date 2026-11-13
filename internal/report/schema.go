@@ -88,20 +88,25 @@ type CapabilitySummary struct {
 }
 
 type UnknownCommandSummary struct {
-	Count int                        `json:"count"`
-	BySDK []SDKUnknownCommandSummary `json:"bySdk"`
+	// Count retains the schema-v5 meaning: resolved but unregistered commands.
+	Count   int                        `json:"count"`
+	Dynamic int                        `json:"dynamic"`
+	BySDK   []SDKUnknownCommandSummary `json:"bySdk"`
 }
 
 type SDKUnknownCommandSummary struct {
 	SDKName string                      `json:"sdkName"`
 	Count   int                         `json:"count"`
+	Dynamic int                         `json:"dynamic"`
 	Files   []FileUnknownCommandSummary `json:"files"`
 }
 
 type FileUnknownCommandSummary struct {
-	FilePath     string        `json:"filePath"`
-	Count        int           `json:"count"`
-	CommandNames []CountedName `json:"commandNames"`
+	FilePath           string        `json:"filePath"`
+	Count              int           `json:"count"`
+	Dynamic            int           `json:"dynamic"`
+	CommandNames       []CountedName `json:"commandNames"`
+	DynamicExpressions []CountedName `json:"dynamicExpressions"`
 }
 
 type CountedName struct {
@@ -446,11 +451,14 @@ func summarize(document Document) Summary {
 				capabilityNames[capability.Kind]++
 			}
 			unknownNames := make(map[string]int)
-			unknownCount := collectUnknownCommands(hook.Operations, unknownNames)
-			if unknownCount > 0 {
+			dynamicExpressions := make(map[string]int)
+			unknownCount, dynamicCount := collectCommandCoverageGaps(hook.Operations, unknownNames, dynamicExpressions)
+			if unknownCount > 0 || dynamicCount > 0 {
 				unknownCommandSummary.Count += unknownCount
+				unknownCommandSummary.Dynamic += dynamicCount
 				unknownCommandSummary.Files = append(unknownCommandSummary.Files, FileUnknownCommandSummary{
-					FilePath: hook.Path, Count: unknownCount, CommandNames: sortedCounts(unknownNames),
+					FilePath: hook.Path, Count: unknownCount, Dynamic: dynamicCount,
+					CommandNames: sortedCounts(unknownNames), DynamicExpressions: sortedCounts(dynamicExpressions),
 				})
 			}
 		}
@@ -463,6 +471,7 @@ func summarize(document Document) Summary {
 		summary.Operations.Count += operationSummary.Count
 		summary.Capabilities.Count += capabilitySummary.Count
 		summary.UnknownCommands.Count += unknownCommandSummary.Count
+		summary.UnknownCommands.Dynamic += unknownCommandSummary.Dynamic
 		summary.Findings.Count += findingSummary.Count
 		summary.Findings.Risk += findingSummary.Risk
 		summary.Findings.Assurance += findingSummary.Assurance
@@ -481,16 +490,27 @@ func summarize(document Document) Summary {
 	return summary
 }
 
-func collectUnknownCommands(operations []analysis.Operation, names map[string]int) int {
-	count := 0
+func collectCommandCoverageGaps(operations []analysis.Operation, names, expressions map[string]int) (int, int) {
+	unregistered, dynamic := 0, 0
 	for _, operation := range operations {
-		if operation.Kind == analysis.OperationCommand && operation.Command.Resolution == analysis.Resolved && !analysis.IsKnownCommand(operation.Command) {
-			count++
-			names[operation.Command.Literal]++
+		if operation.Reachability == analysis.Unreachable {
+			continue
 		}
-		count += collectUnknownCommands(operation.Children, names)
+		if operation.Kind == analysis.OperationCommand {
+			switch {
+			case operation.Command.Resolution != analysis.Resolved:
+				dynamic++
+				expressions[analysis.StructuralExpression(operation.Command)]++
+			case !analysis.IsKnownCommand(operation.Command):
+				unregistered++
+				names[operation.Command.Literal]++
+			}
+		}
+		childUnregistered, childDynamic := collectCommandCoverageGaps(operation.Children, names, expressions)
+		unregistered += childUnregistered
+		dynamic += childDynamic
 	}
-	return count
+	return unregistered, dynamic
 }
 
 func collectOperationKinds(operations []analysis.Operation, kinds map[string]int) {

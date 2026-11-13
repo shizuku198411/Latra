@@ -94,24 +94,7 @@ func (b *builder) statement(statement *syntax.Stmt) []Operation {
 			operations = append(operations, b.assignment(assignment))
 		}
 	case *syntax.BinaryCmd:
-		operation := Operation{
-			Kind:       OperationControlFlow,
-			Name:       command.Op.String(),
-			Resolution: Resolved,
-			Location:   shell.LocationOf(b.sourceName, command),
-		}
-		if command.Op == syntax.Pipe || command.Op == syntax.PipeAll {
-			operation.Kind = OperationPipeline
-		}
-		operation.Children = append(operation.Children, b.statement(command.X)...)
-		operation.pipelineBoundary = len(operation.Children)
-		operation.Children = append(operation.Children, b.statement(command.Y)...)
-		if operation.Kind == OperationPipeline && len(operation.Children) > 1 {
-			stream := literalValue("stdout")
-			operation.Children[0].Outputs = append(operation.Children[0].Outputs, DataReference{Kind: "pipeline", Value: stream})
-			operation.Children[1].Inputs = append(operation.Children[1].Inputs, DataReference{Kind: "pipeline", Value: literalValue("stdin")})
-		}
-		operations = append(operations, operation)
+		operations = append(operations, b.binary(command))
 	case *syntax.FuncDecl:
 		name := ""
 		if command.Name != nil {
@@ -126,11 +109,7 @@ func (b *builder) statement(statement *syntax.Stmt) []Operation {
 	case *syntax.IfClause:
 		operations = append(operations, b.ifClause(command))
 	case *syntax.WhileClause:
-		child := b.child()
-		children := child.statements(command.Cond)
-		children = append(children, child.statements(command.Do)...)
-		operations = append(operations, Operation{Kind: OperationControlFlow, Name: "loop", Resolution: PartiallyResolved,
-			Location: shell.LocationOf(b.sourceName, command), Children: children})
+		operations = append(operations, b.whileClause(command))
 	case *syntax.ForClause:
 		child := b.child()
 		operations = append(operations, Operation{Kind: OperationControlFlow, Name: "loop", Resolution: PartiallyResolved,
@@ -262,63 +241,282 @@ func (b *builder) redirect(redirect *syntax.Redirect) Operation {
 	return operation
 }
 
-func (b *builder) ifClause(clause *syntax.IfClause) Operation {
-	before := cloneValues(b.variables)
-	beforeWorkingDirectory := b.workingDirectory
-	thenBuilder := b.child()
-	children := thenBuilder.statements(clause.Cond)
-	children = append(children, thenBuilder.statements(clause.Then)...)
-	branches := []map[string]Value{thenBuilder.variables}
-	workingDirectories := []Value{thenBuilder.workingDirectory}
-	if clause.Else != nil {
-		elseBuilder := b.child()
-		children = append(children, elseBuilder.ifBranch(clause.Else)...)
-		branches = append(branches, elseBuilder.variables)
-		workingDirectories = append(workingDirectories, elseBuilder.workingDirectory)
-	} else {
-		branches = append(branches, before)
-		workingDirectories = append(workingDirectories, beforeWorkingDirectory)
+type conditionTruth uint8
+
+const (
+	truthUnknown conditionTruth = iota
+	truthFalse
+	truthTrue
+)
+
+func (b *builder) binary(command *syntax.BinaryCmd) Operation {
+	operation := Operation{
+		Kind: OperationControlFlow, Name: command.Op.String(), Resolution: Resolved,
+		Location: shell.LocationOf(b.sourceName, command),
 	}
-	b.variables = mergeValues(branches)
-	b.workingDirectory = mergePathValues(workingDirectories)
-	return Operation{Kind: OperationControlFlow, Name: "if", Resolution: PartiallyResolved,
-		Location: shell.LocationOf(b.sourceName, clause), Children: children, workingDirectory: beforeWorkingDirectory}
+	left := b.statement(command.X)
+	operation.Children = append(operation.Children, left...)
+	operation.pipelineBoundary = len(operation.Children)
+
+	if command.Op == syntax.Pipe || command.Op == syntax.PipeAll {
+		operation.Kind = OperationPipeline
+		operation.Children = append(operation.Children, b.statement(command.Y)...)
+		if len(operation.Children) > 1 {
+			stream := literalValue("stdout")
+			operation.Children[0].Outputs = append(operation.Children[0].Outputs, DataReference{Kind: "pipeline", Value: stream})
+			operation.Children[operation.pipelineBoundary].Inputs = append(operation.Children[operation.pipelineBoundary].Inputs, DataReference{Kind: "pipeline", Value: literalValue("stdin")})
+		}
+		return operation
+	}
+
+	if command.Op != syntax.AndStmt && command.Op != syntax.OrStmt {
+		operation.Children = append(operation.Children, b.statement(command.Y)...)
+		return operation
+	}
+
+	leftTruth := staticStatement(command.X)
+	executeRight := leftTruth == truthTrue
+	if command.Op == syntax.OrStmt {
+		executeRight = leftTruth == truthFalse
+	}
+	switch {
+	case leftTruth == truthUnknown:
+		rightBuilder := b.child()
+		right := rightBuilder.statement(command.Y)
+		markReachability(right, ReachUnknown)
+		operation.Children = append(operation.Children, right...)
+		operation.Resolution = PartiallyResolved
+		b.variables = mergeValues([]map[string]Value{b.variables, rightBuilder.variables})
+		b.workingDirectory = mergePathValues([]Value{b.workingDirectory, rightBuilder.workingDirectory})
+	case executeRight:
+		operation.Children = append(operation.Children, b.statement(command.Y)...)
+	default:
+		right := b.child().statement(command.Y)
+		markReachability(right, Unreachable)
+		operation.Children = append(operation.Children, right...)
+	}
+	return operation
 }
 
-func (b *builder) ifBranch(clause *syntax.IfClause) []Operation {
-	children := b.statements(clause.Cond)
-	children = append(children, b.statements(clause.Then)...)
-	if clause.Else != nil {
-		children = append(children, b.ifBranch(clause.Else)...)
+func (b *builder) whileClause(clause *syntax.WhileClause) Operation {
+	child := b.child()
+	condition := child.statements(clause.Cond)
+	truth := staticCondition(clause.Cond)
+	if clause.Until {
+		truth = negateTruth(truth)
 	}
-	return children
+	bodyBuilder := child.child()
+	body := bodyBuilder.statements(clause.Do)
+	resolution := Resolved
+	switch truth {
+	case truthFalse:
+		markReachability(body, Unreachable)
+		b.variables = child.variables
+		b.workingDirectory = child.workingDirectory
+	case truthTrue:
+		// The body is reachable, but a statically true loop may not exit, so its
+		// resulting state is not propagated to following statements.
+	default:
+		resolution = PartiallyResolved
+		markReachability(body, ReachUnknown)
+		b.variables = mergeValues([]map[string]Value{child.variables, bodyBuilder.variables})
+		b.workingDirectory = mergePathValues([]Value{child.workingDirectory, bodyBuilder.workingDirectory})
+	}
+	return Operation{Kind: OperationControlFlow, Name: "loop", Resolution: resolution,
+		Location: shell.LocationOf(b.sourceName, clause), Children: append(condition, body...)}
+}
+
+func staticCondition(statements []*syntax.Stmt) conditionTruth {
+	if len(statements) != 1 {
+		return truthUnknown
+	}
+	return staticStatement(statements[0])
+}
+
+func staticStatement(statement *syntax.Stmt) conditionTruth {
+	if statement == nil || statement.Cmd == nil || statement.Background || len(statement.Redirs) > 0 {
+		return truthUnknown
+	}
+	var truth conditionTruth
+	switch command := statement.Cmd.(type) {
+	case *syntax.CallExpr:
+		if len(command.Assigns) != 0 || len(command.Args) != 1 {
+			return truthUnknown
+		}
+		word := command.Args[0]
+		if word == nil || len(word.Parts) != 1 {
+			return truthUnknown
+		}
+		literal, ok := word.Parts[0].(*syntax.Lit)
+		if !ok {
+			return truthUnknown
+		}
+		switch literal.Value {
+		case "true", ":":
+			truth = truthTrue
+		case "false":
+			truth = truthFalse
+		default:
+			truth = truthUnknown
+		}
+	case *syntax.BinaryCmd:
+		left := staticStatement(command.X)
+		right := staticStatement(command.Y)
+		switch command.Op {
+		case syntax.AndStmt:
+			truth = andTruth(left, right)
+		case syntax.OrStmt:
+			truth = orTruth(left, right)
+		default:
+			truth = truthUnknown
+		}
+	default:
+		truth = truthUnknown
+	}
+	if statement.Negated {
+		return negateTruth(truth)
+	}
+	return truth
+}
+
+func andTruth(left, right conditionTruth) conditionTruth {
+	if left == truthFalse || right == truthFalse {
+		return truthFalse
+	}
+	if left == truthTrue && right == truthTrue {
+		return truthTrue
+	}
+	return truthUnknown
+}
+
+func orTruth(left, right conditionTruth) conditionTruth {
+	if left == truthTrue || right == truthTrue {
+		return truthTrue
+	}
+	if left == truthFalse && right == truthFalse {
+		return truthFalse
+	}
+	return truthUnknown
+}
+
+func negateTruth(truth conditionTruth) conditionTruth {
+	switch truth {
+	case truthTrue:
+		return truthFalse
+	case truthFalse:
+		return truthTrue
+	default:
+		return truthUnknown
+	}
+}
+
+func markReachability(operations []Operation, reachability Reachability) {
+	for index := range operations {
+		operation := &operations[index]
+		if reachability == Unreachable || operation.Reachability == Reachable {
+			operation.Reachability = reachability
+		}
+		markReachability(operation.Children, reachability)
+	}
+}
+
+func (b *builder) ifClause(clause *syntax.IfClause) Operation {
+	beforeWorkingDirectory := b.workingDirectory
+	conditionBuilder := b.child()
+	children := conditionBuilder.statements(clause.Cond)
+	truth := staticCondition(clause.Cond)
+
+	thenBuilder := conditionBuilder.child()
+	thenOperations := thenBuilder.statements(clause.Then)
+
+	elseBuilder := conditionBuilder.child()
+	var elseOperations []Operation
+	if clause.Else != nil {
+		if len(clause.Else.Cond) == 0 {
+			elseOperations = elseBuilder.statements(clause.Else.Then)
+		} else {
+			elseOperations = []Operation{elseBuilder.ifClause(clause.Else)}
+		}
+	}
+	resolution := Resolved
+	switch truth {
+	case truthTrue:
+		markReachability(elseOperations, Unreachable)
+		b.variables = thenBuilder.variables
+		b.workingDirectory = thenBuilder.workingDirectory
+	case truthFalse:
+		markReachability(thenOperations, Unreachable)
+		b.variables = elseBuilder.variables
+		b.workingDirectory = elseBuilder.workingDirectory
+	default:
+		resolution = PartiallyResolved
+		markReachability(thenOperations, ReachUnknown)
+		markReachability(elseOperations, ReachUnknown)
+		b.variables = mergeValues([]map[string]Value{thenBuilder.variables, elseBuilder.variables})
+		b.workingDirectory = mergePathValues([]Value{thenBuilder.workingDirectory, elseBuilder.workingDirectory})
+	}
+	children = append(children, thenOperations...)
+	children = append(children, elseOperations...)
+	return Operation{Kind: OperationControlFlow, Name: "if", Resolution: resolution,
+		Location: shell.LocationOf(b.sourceName, clause), Children: children, workingDirectory: beforeWorkingDirectory}
 }
 
 func (b *builder) value(word *syntax.Word) Value {
 	if word == nil {
 		return literalValue("")
 	}
+	var value Value
 	if len(word.Parts) == 1 {
-		return b.wordPart(word.Parts[0], false)
-	}
-	value := Value{Resolution: Resolved}
-	var rendered strings.Builder
-	for _, part := range word.Parts {
-		partValue := b.wordPart(part, false)
-		value.Parts = append(value.Parts, partValue.Parts...)
-		if partValue.Resolution == Unknown {
-			value.Resolution = Unknown
-		} else if partValue.Resolution == PartiallyResolved && value.Resolution == Resolved {
-			value.Resolution = PartiallyResolved
+		value = b.wordPart(word.Parts[0], false)
+	} else {
+		pieces := make([]Value, 0, len(word.Parts))
+		for _, part := range word.Parts {
+			pieces = append(pieces, b.wordPart(part, false))
 		}
-		if partValue.Resolution == Resolved {
-			rendered.WriteString(partValue.Literal)
-		}
+		value = combineValues(pieces)
 	}
-	if value.Resolution == Resolved {
-		value.Literal = rendered.String()
+	if value.Resolution == Resolved && literalSourceWord(word) {
+		location := shell.LocationOf(b.sourceName, word)
+		value.SourceLocation = &location
 	}
 	return value
+}
+
+func literalSourceWord(word *syntax.Word) bool {
+	if word == nil || len(word.Parts) == 0 {
+		return false
+	}
+	for _, part := range word.Parts {
+		switch part := part.(type) {
+		case *syntax.Lit, *syntax.SglQuoted:
+			// The resolved value is represented directly by this source word.
+		case *syntax.DblQuoted:
+			if !literalSourceParts(part.Parts) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func literalSourceParts(parts []syntax.WordPart) bool {
+	if len(parts) == 0 {
+		return true
+	}
+	for _, part := range parts {
+		switch nested := part.(type) {
+		case *syntax.Lit, *syntax.SglQuoted:
+		case *syntax.DblQuoted:
+			if !literalSourceParts(nested.Parts) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (b *builder) wordPart(part syntax.WordPart, quoted bool) Value {
@@ -333,22 +531,17 @@ func (b *builder) wordPart(part syntax.WordPart, quoted bool) Value {
 			kind = PartGlob
 			resolution = PartiallyResolved
 		}
-		return Value{Parts: []ValuePart{{Kind: kind, Text: part.Value}}, Resolution: resolution, Literal: part.Value}
+		value := Value{Parts: []ValuePart{{Kind: kind, Text: part.Value}}, Resolution: resolution}
+		if resolution == Resolved {
+			value.Literal = part.Value
+		}
+		return value
 	case *syntax.SglQuoted:
 		return Value{Parts: []ValuePart{{Kind: PartQuotedLiteral, Text: part.Value}}, Resolution: Resolved, Literal: part.Value}
 	case *syntax.DblQuoted:
 		return b.parts(part.Parts, true)
 	case *syntax.ParamExp:
-		name := ""
-		if part.Param != nil {
-			name = part.Param.Value
-		}
-		piece := ValuePart{Kind: PartVariableReference, Name: name}
-		if known, ok := b.variables[name]; ok && !part.Excl && !part.Length && part.Index == nil && part.Exp == nil && part.Repl == nil {
-			known.Parts = []ValuePart{piece}
-			return known
-		}
-		return Value{Parts: []ValuePart{piece}, Resolution: Unknown}
+		return b.parameterExpansion(part)
 	case *syntax.CmdSubst:
 		return Value{Parts: []ValuePart{{Kind: PartCommandSubstitution}}, Resolution: Unknown}
 	case *syntax.ArithmExp:
@@ -364,24 +557,122 @@ func (b *builder) parts(parts []syntax.WordPart, quoted bool) Value {
 	if len(parts) == 1 {
 		return b.wordPart(parts[0], quoted)
 	}
-	value := Value{Resolution: Resolved}
-	var literal strings.Builder
+	pieces := make([]Value, 0, len(parts))
 	for _, part := range parts {
-		piece := b.wordPart(part, quoted)
-		value.Parts = append(value.Parts, piece.Parts...)
-		if piece.Resolution == Unknown {
-			value.Resolution = Unknown
-		} else if piece.Resolution == PartiallyResolved && value.Resolution == Resolved {
-			value.Resolution = PartiallyResolved
+		pieces = append(pieces, b.wordPart(part, quoted))
+	}
+	return combineValues(pieces)
+}
+
+func (b *builder) parameterExpansion(part *syntax.ParamExp) Value {
+	name := ""
+	if part.Param != nil {
+		name = part.Param.Value
+	}
+	reference := ValuePart{Kind: PartVariableReference, Name: name}
+	plain := part.Param != nil && part.Flags == nil && !part.Excl && !part.Length && !part.Width && !part.IsSet &&
+		part.Split == syntax.OptUnset && part.GlobSubst == syntax.OptUnset && part.RcExpand == syntax.OptUnset &&
+		part.NestedParam == nil && part.Index == nil && len(part.Modifiers) == 0 && part.Slice == nil && part.Repl == nil && part.Names == 0
+	simple := plain && part.Exp == nil
+	known, assigned := b.variables[name]
+	if simple && assigned {
+		known.Parts = []ValuePart{reference}
+		known.SourceLocation = nil
+		return known
+	}
+	if !plain || part.Exp == nil || part.Exp.Word == nil || (part.Exp.Op != syntax.DefaultUnset && part.Exp.Op != syntax.DefaultUnsetOrNull) {
+		return Value{Parts: []ValuePart{reference}, Resolution: Unknown}
+	}
+	if !assigned {
+		// An unassigned shell variable may still be supplied by the hook environment.
+		return Value{Parts: []ValuePart{reference, ValuePart{Kind: PartUnknownExpansion, Text: render(part)}}, Resolution: Unknown}
+	}
+	if part.Exp.Op == syntax.DefaultUnset {
+		known.Parts = []ValuePart{reference}
+		known.SourceLocation = nil
+		return known
+	}
+	defaultValue := b.value(part.Exp.Word)
+	defaultValue.SourceLocation = nil
+	if known.Resolution == Resolved {
+		if known.Literal != "" {
+			known.Parts = []ValuePart{reference}
+			known.SourceLocation = nil
+			return known
 		}
-		if piece.Resolution == Resolved {
-			literal.WriteString(piece.Literal)
+		return defaultValue
+	}
+	if known.Resolution == PartiallyResolved && len(known.Candidates) > 0 && defaultValue.Resolution == Resolved {
+		candidates := make([]string, 0, len(known.Candidates))
+		for _, candidate := range known.Candidates {
+			if candidate == "" {
+				candidate = defaultValue.Literal
+			}
+			if !contains(candidates, candidate) {
+				candidates = append(candidates, candidate)
+			}
+		}
+		if len(candidates) <= candidateLimit {
+			sort.Strings(candidates)
+			return Value{Parts: []ValuePart{reference}, Resolution: PartiallyResolved, Candidates: candidates}
 		}
 	}
-	if value.Resolution == Resolved {
-		value.Literal = literal.String()
+	return Value{Parts: []ValuePart{reference}, Resolution: Unknown}
+}
+
+func combineValues(values []Value) Value {
+	combined := Value{Resolution: Resolved}
+	choices := []string{""}
+	bounded := true
+	for _, value := range values {
+		combined.Parts = append(combined.Parts, value.Parts...)
+		switch value.Resolution {
+		case Resolved:
+			for index := range choices {
+				choices[index] += value.Literal
+			}
+		case PartiallyResolved:
+			if combined.Resolution == Resolved {
+				combined.Resolution = PartiallyResolved
+			}
+			if len(value.Candidates) == 0 {
+				bounded = false
+				continue
+			}
+			choices = combineCandidates(choices, value.Candidates)
+			if len(choices) == 0 {
+				bounded = false
+			}
+		case Unknown:
+			combined.Resolution = Unknown
+			bounded = false
+		}
 	}
-	return value
+	if combined.Resolution == Resolved {
+		combined.Literal = choices[0]
+		return combined
+	}
+	if combined.Resolution == PartiallyResolved && bounded && len(choices) > 0 {
+		sort.Strings(choices)
+		combined.Candidates = choices
+	}
+	return combined
+}
+
+func combineCandidates(prefixes, suffixes []string) []string {
+	if len(prefixes) == 0 || len(suffixes) == 0 || len(prefixes)*len(suffixes) > candidateLimit {
+		return nil
+	}
+	combined := make([]string, 0, len(prefixes)*len(suffixes))
+	for _, prefix := range prefixes {
+		for _, suffix := range suffixes {
+			candidate := prefix + suffix
+			if !contains(combined, candidate) {
+				combined = append(combined, candidate)
+			}
+		}
+	}
+	return combined
 }
 
 func (b *builder) substitutions(word *syntax.Word) []Operation {

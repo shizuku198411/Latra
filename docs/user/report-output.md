@@ -38,12 +38,12 @@ Summary
   Capabilities: 22
     project-base (12): code-execution (1), device-access (5), identity-change (2), network-access (3), system-modification (1)
     rust (10): code-execution (1), destructive-operation (1), dynamic-execution (1), identity-change (2), network-access (2), persistence (1), system-modification (2)
-  Unknown Commands: 7
-    project-base (7)
-      hooks/check-health (5): cd (1), clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
-      hooks/setup-base (1): cd (1)
-      hooks/setup-project (1): make (1)
-    rust (0)
+  Command Coverage Gaps: 7 unregistered, 0 dynamic
+    project-base (7 unregistered, 0 dynamic)
+      hooks/check-health (5 unregistered, 0 dynamic): unregistered=cd (1), clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
+      hooks/setup-base (1 unregistered, 0 dynamic): unregistered=cd (1)
+      hooks/setup-project (1 unregistered, 0 dynamic): unregistered=make (1)
+    rust (0 unregistered, 0 dynamic)
   Diagnostics: 0: -
 ```
 
@@ -225,7 +225,7 @@ Project-boundary flow findings connect both sides of the detected transfer:
 
 These rules require a connected operation flow. Separate commands that happen to download, read, write, or send data are not treated as connected without graph evidence.
 
-Use `--verbose` to see each finding's rule ID, level, confidence, source hook, and evidence. In JSON output, evidence can reference `operationId`, `fromOperationId`, and `toOperationId`; these values join back to the selected hook's `operations` and `relations`.
+Use `--verbose` to see each finding's rule ID, level, confidence, source hook, and evidence. Evidence displays its derivation (`direct`, `inferred`, or `unresolved`), resolution, relevant values, and exact relation edges when available. In JSON output, evidence can reference `operationId`, `fromOperationId`, and `toOperationId`; these values join back to the selected hook's `operations` and `relations`. Relation-backed evidence also retains the exact `relations` used by the Finding, including relation provenance. `location` identifies the containing operation, while optional `valueLocation` identifies the exact AST-derived range of a directly represented evidence value. The latter is omitted when the displayed value was expanded, normalized, inferred, derived, or is ambiguous.
 
 ```bash
 latra scan . --verbose
@@ -286,7 +286,7 @@ Assurance uses positive-language labels so it cannot be confused with Risk sever
 
 These labels describe observable assurance, not a guarantee that the SDK is safe.
 
-The `Key Risks` listed under each SDK explain which rules contribute to that SDK's assessment. Each entry includes its aggregated rule score, occurrence count, and every source location. The `sdk`, `file`, and `hook` values can be copied directly into `latra file <sdk> <file>` and `latra hook <sdk> <hook>`. The line and column suffix on `file` identify the precise evidence location and are not part of the path passed to `latra file`.
+The `Key Risks` listed under each SDK explain which rules contribute to that SDK's assessment. Each entry includes its aggregated rule score, occurrence count, and every source location. The `sdk`, `file`, and `hook` values can be copied directly into `latra file <sdk> <file>` and `latra hook <sdk> <hook>`. The line and column suffix on `file` identifies the containing evidence operation and is not part of the path passed to `latra file`. JSON Key Risk scopes may additionally contain `valueLocation`; Explorer uses that exact range for highlighting and falls back conservatively to the operation location and displayed value when it is unavailable.
 
 Assurance is never subtracted from risk. For example, a verified artifact can still perform a high-impact root operation. In that case both the high risk and strong control remain visible. Incomplete analysis raises Review Priority through the coverage penalty and produces `insufficient-evidence`.
 
@@ -300,20 +300,20 @@ The possible classifications are:
 | `high-priority-review` | High or critical risk requires prompt review. |
 | `insufficient-evidence` | Static analysis coverage is not sufficient for a conclusive evaluation. |
 
-## Unknown Commands
+## Command Coverage Gaps
 
 ```text
-Unknown Commands: 7
-  project-base (7)
-    hooks/check-health (5): cd (1), clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
-    hooks/setup-base (1): cd (1)
-    hooks/setup-project (1): make (1)
-  rust (0)
+Command Coverage Gaps: 7 unregistered, 0 dynamic
+  project-base (7 unregistered, 0 dynamic)
+    hooks/check-health (5 unregistered, 0 dynamic): unregistered=cd (1), clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
+    hooks/setup-base (1 unregistered, 0 dynamic): unregistered=cd (1)
+    hooks/setup-project (1 unregistered, 0 dynamic): unregistered=make (1)
+  rust (0 unregistered, 0 dynamic)
 ```
 
-An unknown command was found in a hook but is not covered by Latra's embedded command database. Unknown does not mean malicious, and it does not mean safe. It means Latra has no command-specific knowledge for that command yet.
+An unregistered command has a resolved name but is not covered by Latra's embedded command database. Unregistered does not mean malicious, and it does not mean safe. A dynamic command is different: its name could not be resolved statically and is also reported as a Semantic Gap with its structural expression.
 
-The report groups unknown commands by SDK and hook path. To investigate the first group above:
+The report groups both categories by SDK and hook path. To investigate the first group above:
 
 1. take the SDK name `project-base`;
 2. take the final component of `hooks/check-health`, which is `check-health`;
@@ -354,5 +354,5 @@ For a typical investigation:
 3. Review `Diagnostics` and resolve incomplete scans first.
 4. Use `Files` paths with `latra file <sdk> <file>`.
 5. Use `Hooks` names with `latra hook <sdk> <hook>`.
-6. Follow hook paths under `Unknown Commands` and inspect those hooks first.
+6. Follow hook paths under `Command Coverage Gaps` and inspect unregistered and dynamic entries separately.
 7. Use Operations and Capabilities to identify behavior that needs closer source review.

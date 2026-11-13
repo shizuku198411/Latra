@@ -35,6 +35,14 @@ command-definitions:
     category: shell-builtin
     description: Shell builtin that returns a successful status.
 
+  false:
+    category: shell-builtin
+    description: Shell builtin that returns an unsuccessful status.
+
+  ":":
+    category: shell-builtin
+    description: Shell no-op builtin that returns a successful status.
+
   add-apt-repository:
     category: system-utility
     description: Ubuntu utility for managing APT repositories.

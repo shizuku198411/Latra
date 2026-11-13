@@ -2,7 +2,11 @@
 // operation and capability inventory.
 package analysis
 
-import "github.com/shizuku198411/Latra/internal/shell"
+import (
+	"strings"
+
+	"github.com/shizuku198411/Latra/internal/shell"
+)
 
 // Resolution describes how completely a value or operation was resolved.
 type Resolution string
@@ -11,6 +15,17 @@ const (
 	Resolved          Resolution = "Resolved"
 	PartiallyResolved Resolution = "PartiallyResolved"
 	Unknown           Resolution = "Unknown"
+)
+
+// Reachability describes whether a shell operation can execute. The zero
+// value means reachable so reports produced before this field remain
+// semantically compatible.
+type Reachability string
+
+const (
+	Reachable    Reachability = ""
+	Unreachable  Reachability = "Unreachable"
+	ReachUnknown Reachability = "Unknown"
 )
 
 // ValuePartKind identifies one component of a shell word.
@@ -27,11 +42,16 @@ const (
 )
 
 // Value preserves shell word structure instead of flattening it prematurely.
+// Literal is populated only when the complete shell value is Resolved.
+// Candidates is a bounded set of complete possible values for a
+// PartiallyResolved value. Parts retain known source structure even when no
+// complete value or bounded candidate set can be produced.
 type Value struct {
-	Parts      []ValuePart `json:"parts,omitempty"`
-	Resolution Resolution  `json:"resolution"`
-	Literal    string      `json:"literal,omitempty"`
-	Candidates []string    `json:"candidates,omitempty"`
+	Parts          []ValuePart     `json:"parts,omitempty"`
+	Resolution     Resolution      `json:"resolution"`
+	Literal        string          `json:"literal,omitempty"`
+	Candidates     []string        `json:"candidates,omitempty"`
+	SourceLocation *shell.Location `json:"-"`
 }
 
 // ValuePart is a source-level component of a Value.
@@ -39,6 +59,29 @@ type ValuePart struct {
 	Kind ValuePartKind `json:"kind"`
 	Text string        `json:"text,omitempty"`
 	Name string        `json:"name,omitempty"`
+}
+
+// StructuralExpression renders known shell value structure without claiming
+// it is a resolved runtime value.
+func StructuralExpression(value Value) string {
+	var expression strings.Builder
+	for _, part := range value.Parts {
+		switch part.Kind {
+		case PartLiteral, PartQuotedLiteral, PartGlob, PartUnknownExpansion:
+			expression.WriteString(part.Text)
+		case PartVariableReference:
+			expression.WriteString("$")
+			expression.WriteString(part.Name)
+		case PartCommandSubstitution:
+			expression.WriteString("$(...)")
+		case PartArithmeticExpansion:
+			expression.WriteString("$((...))")
+		}
+	}
+	if expression.Len() == 0 {
+		return "<unresolved>"
+	}
+	return expression.String()
 }
 
 // OperationKind identifies a normalized shell operation.
@@ -113,20 +156,21 @@ type IncludedSource struct {
 
 // Operation is Latra's parser-independent representation of shell behavior.
 type Operation struct {
-	ID         string          `json:"id,omitempty"`
-	ParentID   string          `json:"parentId,omitempty"`
-	Sequence   int             `json:"sequence"`
-	Kind       OperationKind   `json:"kind"`
-	Command    Value           `json:"command,omitzero"`
-	Name       string          `json:"name,omitempty"`
-	Wrappers   []string        `json:"wrappers,omitempty"`
-	Arguments  []Value         `json:"arguments,omitempty"`
-	Inputs     []DataReference `json:"inputs,omitempty"`
-	Outputs    []DataReference `json:"outputs,omitempty"`
-	Resolution Resolution      `json:"resolution"`
-	Location   shell.Location  `json:"location"`
-	Children   []Operation     `json:"children,omitempty"`
-	Include    *IncludedSource `json:"include,omitempty"`
+	ID           string          `json:"id,omitempty"`
+	ParentID     string          `json:"parentId,omitempty"`
+	Sequence     int             `json:"sequence"`
+	Kind         OperationKind   `json:"kind"`
+	Command      Value           `json:"command,omitzero"`
+	Name         string          `json:"name,omitempty"`
+	Wrappers     []string        `json:"wrappers,omitempty"`
+	Arguments    []Value         `json:"arguments,omitempty"`
+	Inputs       []DataReference `json:"inputs,omitempty"`
+	Outputs      []DataReference `json:"outputs,omitempty"`
+	Resolution   Resolution      `json:"resolution"`
+	Reachability Reachability    `json:"reachability,omitempty"`
+	Location     shell.Location  `json:"location"`
+	Children     []Operation     `json:"children,omitempty"`
+	Include      *IncludedSource `json:"include,omitempty"`
 
 	pipelineBoundary int
 	workingDirectory Value

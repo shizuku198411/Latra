@@ -78,8 +78,8 @@ func AnalyzeComposition(items []sdk.SDK) ([]Finding, []CompositionRelation) {
 							Severity: rule.Severity, Confidence: rule.Confidence, Weight: rule.Weight,
 							Scope: Scope{SDK: runner.item.Name, Hook: sdk.HookSetupProject},
 							Evidence: []Evidence{
-								{SDK: writer.item.Name, Type: "capability", ID: "cross-sdk-project-artifact-write", OperationID: capability.OperationID, Value: capability.Target.Literal, NormalizedValue: artifact, Resolution: capability.Resolution, Location: &writerLocation},
-								{SDK: runner.item.Name, Type: "composition-flow", ID: "project-artifact-execution", OperationID: operation.ID, FromOperationID: capability.OperationID, ToOperationID: operation.ID, Value: executed, NormalizedValue: filepath.Clean(executed), Resolution: analysis.Resolved, Location: &runnerLocation},
+								{SDK: writer.item.Name, Type: "capability", ID: "cross-sdk-project-artifact-write", OperationID: capability.OperationID, Value: capability.Target.Literal, NormalizedValue: artifact, Resolution: capability.Resolution, Location: &writerLocation, ValueLocation: uniqueValueLocation(capability.Target.Literal, []analysis.Value{capability.Target})},
+								{SDK: runner.item.Name, Type: "composition-flow", ID: "project-artifact-execution", OperationID: operation.ID, FromOperationID: capability.OperationID, ToOperationID: operation.ID, Value: executed, NormalizedValue: filepath.Clean(executed), Resolution: analysis.Resolved, Location: &runnerLocation, ValueLocation: uniqueValueLocation(executed, []analysis.Value{operation.Command})},
 							},
 							Message: rule.Message, Remediation: rule.Remediation,
 							ProtectsAgainst: append([]string{}, rule.ProtectsAgainst...), Limitations: append([]string{}, rule.Limitations...),
@@ -88,6 +88,9 @@ func AnalyzeComposition(items []sdk.SDK) ([]Finding, []CompositionRelation) {
 				}
 			}
 		}
+	}
+	for index := range findings {
+		annotateEvidence(findings[index].Evidence)
 	}
 	sortFindings(findings)
 	sort.SliceStable(relations, func(i, j int) bool {

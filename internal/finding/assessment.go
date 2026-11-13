@@ -74,6 +74,7 @@ type SemanticCoverage struct {
 	DataFlow        SemanticDimension `json:"dataFlow"`
 	IncludedSources SemanticDimension `json:"includedSources"`
 	Functions       SemanticDimension `json:"functions"`
+	DynamicCommands SemanticDimension `json:"dynamicCommands"`
 	Lifecycle       SemanticDimension `json:"lifecycle"`
 	Composition     SemanticDimension `json:"composition"`
 	Aliases         SemanticDimension `json:"aliases"`
@@ -107,6 +108,9 @@ func semanticCoverageForSDK(item sdk.SDK) SemanticCoverage {
 			}
 		}
 		for _, operation := range flatten(hook.Analysis.Operations) {
+			if operation.Reachability == analysis.Unreachable {
+				continue
+			}
 			switch operation.Kind {
 			case analysis.OperationSource:
 				coverage.IncludedSources.Applicable++
@@ -125,6 +129,14 @@ func semanticCoverageForSDK(item sdk.SDK) SemanticCoverage {
 					coverage.Functions.Resolved++
 				} else {
 					addSemanticGap(&coverage, &coverage.Functions, SemanticGap{Code: "unresolved-function-call", Dimension: "functions", Severity: "critical", Hook: hook.Name, OperationID: operation.ID, Message: "A function invocation or its positional arguments could not be fully expanded."})
+				}
+			case analysis.OperationEval:
+				coverage.DynamicCommands.Applicable++
+				addSemanticGap(&coverage, &coverage.DynamicCommands, SemanticGap{Code: "dynamic-eval", Dimension: "dynamic-commands", Severity: "critical", Hook: hook.Name, OperationID: operation.ID, Message: "eval content cannot be fully analyzed as static shell operations."})
+			case analysis.OperationCommand:
+				if operation.Command.Resolution != analysis.Resolved {
+					coverage.DynamicCommands.Applicable++
+					addSemanticGap(&coverage, &coverage.DynamicCommands, SemanticGap{Code: "unresolved-command-name", Dimension: "dynamic-commands", Severity: "critical", Hook: hook.Name, OperationID: operation.ID, Message: "A dynamic command name could not be resolved to a statically analyzable command."})
 				}
 			}
 			if isSymbolicLinkOperation(operation) {
@@ -190,6 +202,11 @@ func semanticCoverageForSDK(item sdk.SDK) SemanticCoverage {
 }
 
 func addSemanticGap(coverage *SemanticCoverage, dimension *SemanticDimension, gap SemanticGap) {
+	for _, existing := range coverage.Gaps {
+		if existing.Code == gap.Code && existing.Dimension == gap.Dimension && existing.Hook == gap.Hook && existing.OperationID == gap.OperationID {
+			return
+		}
+	}
 	dimension.Gaps++
 	coverage.Gaps = append(coverage.Gaps, gap)
 	if gap.Severity == "critical" {
@@ -202,7 +219,13 @@ func finalizeSemanticCoverage(coverage *SemanticCoverage) {
 		coverage.Gaps = []SemanticGap{}
 	}
 	penalty := 0
+	penalized := make(map[string]bool)
 	for _, gap := range coverage.Gaps {
+		key := gap.Dimension + "\x00" + gap.Code
+		if penalized[key] {
+			continue
+		}
+		penalized[key] = true
 		if gap.Severity == "critical" {
 			penalty += 25
 		} else {
@@ -227,6 +250,9 @@ func addSemanticCoverage(target *SemanticCoverage, value SemanticCoverage) {
 	target.Functions.Applicable += value.Functions.Applicable
 	target.Functions.Resolved += value.Functions.Resolved
 	target.Functions.Gaps += value.Functions.Gaps
+	target.DynamicCommands.Applicable += value.DynamicCommands.Applicable
+	target.DynamicCommands.Resolved += value.DynamicCommands.Resolved
+	target.DynamicCommands.Gaps += value.DynamicCommands.Gaps
 	target.Lifecycle.Applicable += value.Lifecycle.Applicable
 	target.Lifecycle.Resolved += value.Lifecycle.Resolved
 	target.Lifecycle.Gaps += value.Lifecycle.Gaps
@@ -306,10 +332,15 @@ type RiskHighlight struct {
 }
 
 type RiskScope struct {
-	SDK      string          `json:"sdk"`
-	Hook     sdk.HookName    `json:"hook,omitempty"`
-	Location *shell.Location `json:"location,omitempty"`
-	Value    string          `json:"value,omitempty"`
+	SDK           string              `json:"sdk"`
+	Hook          sdk.HookName        `json:"hook,omitempty"`
+	Location      *shell.Location     `json:"location,omitempty"`
+	ValueLocation *shell.Location     `json:"valueLocation,omitempty"`
+	Value         string              `json:"value,omitempty"`
+	Expression    string              `json:"expression,omitempty"`
+	Resolution    analysis.Resolution `json:"resolution,omitempty"`
+	Derivation    EvidenceDerivation  `json:"derivation,omitempty"`
+	Relations     []analysis.Relation `json:"relations,omitempty"`
 }
 
 type AssessmentInput struct {
@@ -368,10 +399,16 @@ func riskHighlights(findings []Finding) []RiskHighlight {
 		current.highlight.Occurrences++
 		current.weights = append(current.weights, float64(item.Weight)*confidenceFactor(item.Confidence))
 		for _, evidence := range item.Evidence {
-			scope := RiskScope{SDK: item.Scope.SDK, Hook: item.Scope.Hook, Location: evidence.Location, Value: evidence.Value}
-			key := scope.SDK + "\x00" + string(scope.Hook) + "\x00" + scope.Value
+			scope := RiskScope{SDK: item.Scope.SDK, Hook: item.Scope.Hook, Location: evidence.Location, ValueLocation: evidence.ValueLocation,
+				Value: evidence.Value, Expression: evidence.Expression, Resolution: evidence.Resolution, Derivation: evidence.Derivation,
+				Relations: append([]analysis.Relation{}, evidence.Relations...)}
+			key := scope.SDK + "\x00" + string(scope.Hook) + "\x00" + scope.Value + "\x00" + scope.Expression
+			key += "\x00" + string(scope.Resolution) + "\x00" + string(scope.Derivation)
 			if scope.Location != nil {
 				key += "\x00" + scope.Location.Path + "\x00" + strconv.Itoa(scope.Location.StartLine) + "\x00" + strconv.Itoa(scope.Location.StartColumn)
+			}
+			if scope.ValueLocation != nil {
+				key += "\x00value\x00" + scope.ValueLocation.Path + "\x00" + strconv.Itoa(scope.ValueLocation.StartLine) + "\x00" + strconv.Itoa(scope.ValueLocation.StartColumn)
 			}
 			if current.seen[key] {
 				continue
@@ -539,7 +576,7 @@ func coverageForSDK(item sdk.SDK) Coverage {
 			continue
 		}
 		for _, operation := range flatten(hook.Analysis.Operations) {
-			if operation.Kind != analysis.OperationCommand {
+			if operation.Reachability == analysis.Unreachable || operation.Kind != analysis.OperationCommand {
 				continue
 			}
 			coverage.Commands.Total++

@@ -42,7 +42,10 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 				}
 				matched.evidence = append(matched.evidence, includeEvidence(matched.hook, matched.evidence)...)
 				matched.evidence = append(matched.evidence, aliasEvidence(matched.hook, matched.evidence)...)
+				matched.evidence = append(matched.evidence, unresolvedArgumentEvidence(matched.hook, matched.evidence)...)
+				attachValueLocations(matched.hook, matched.evidence)
 			}
+			annotateEvidence(matched.evidence)
 			key := rule.ID + "\x00" + item.Name + "\x00" + string(hookName) + "\x00" + matched.key
 			if seen[key] || len(matched.evidence) == 0 {
 				continue
@@ -64,6 +67,135 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 	findings = suppressSubsumedFindings(findings)
 	sortFindings(findings)
 	return findings
+}
+
+func unresolvedArgumentEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
+	if hook == nil || hook.Analysis == nil {
+		return nil
+	}
+	relevant := make(map[string]bool)
+	for _, item := range evidence {
+		for _, operationID := range []string{item.OperationID, item.FromOperationID, item.ToOperationID} {
+			if operationID != "" {
+				relevant[operationID] = true
+			}
+		}
+	}
+	operations := operationMap(hook.Analysis.Operations)
+	seen := make(map[string]bool)
+	var additions []Evidence
+	for operationID := range relevant {
+		operation, ok := operations[operationID]
+		if !ok {
+			continue
+		}
+		for _, argument := range operation.Arguments {
+			if argument.Resolution == analysis.Resolved {
+				continue
+			}
+			expression := analysis.StructuralExpression(argument)
+			key := operationID + "\x00" + expression + "\x00" + string(argument.Resolution)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			location := operation.Location
+			additions = append(additions, Evidence{Type: "operation", ID: "unresolved-argument", OperationID: operationID,
+				Expression: expression, NormalizedCandidates: append([]string{}, argument.Candidates...),
+				Resolution: argument.Resolution, Derivation: EvidenceUnresolved, Location: &location})
+		}
+	}
+	sort.SliceStable(additions, func(i, j int) bool {
+		if additions[i].OperationID != additions[j].OperationID {
+			return additions[i].OperationID < additions[j].OperationID
+		}
+		return additions[i].Expression < additions[j].Expression
+	})
+	return additions
+}
+
+func annotateEvidence(evidence []Evidence) {
+	for index := range evidence {
+		item := &evidence[index]
+		if item.Derivation != "" {
+			continue
+		}
+		switch {
+		case item.Resolution == analysis.Unknown || item.Resolution == analysis.PartiallyResolved || len(item.NormalizedCandidates) > 0:
+			item.Derivation = EvidenceUnresolved
+		case len(item.Relations) > 0 || item.FromOperationID != "" || item.ToOperationID != "" ||
+			item.Type == "capability" || item.Type == "data-flow" || item.Type == "artifact-flow" ||
+			item.Type == "lifecycle-flow" || item.Type == "composition-flow" || item.Type == "include" || item.Type == "alias" ||
+			item.NormalizedValue != "" && item.NormalizedValue != item.Value:
+			item.Derivation = EvidenceInferred
+		default:
+			item.Derivation = EvidenceDirect
+		}
+	}
+}
+
+// attachValueLocations promotes source ranges already carried by structured
+// operation values. It never searches source text, and leaves derived,
+// normalized, expanded, or ambiguous values without a fabricated range.
+func attachValueLocations(hook *sdk.Hook, evidence []Evidence) {
+	if hook == nil || hook.Analysis == nil {
+		return
+	}
+	operations := operationMap(hook.Analysis.Operations)
+	capabilities := capabilityOccurrencesByOperation(hook.Analysis.Capabilities)
+	for index := range evidence {
+		item := &evidence[index]
+		if item.Value == "" || item.ValueLocation != nil {
+			continue
+		}
+		switch item.Type {
+		case "capability", "data-flow", "operation", "lifecycle-flow":
+		default:
+			continue
+		}
+		var values []analysis.Value
+		for _, capability := range capabilities[item.OperationID] {
+			if capability.Target.Literal == item.Value {
+				values = append(values, capability.Target)
+			}
+		}
+		if operation, ok := operations[item.OperationID]; ok {
+			values = append(values, operationValues(operation)...)
+		}
+		item.ValueLocation = uniqueValueLocation(item.Value, values)
+	}
+}
+
+func operationValues(operation analysis.Operation) []analysis.Value {
+	values := []analysis.Value{operation.Command}
+	values = append(values, operation.Arguments...)
+	for _, input := range operation.Inputs {
+		values = append(values, input.Value)
+	}
+	for _, output := range operation.Outputs {
+		values = append(values, output.Value)
+	}
+	return values
+}
+
+func uniqueValueLocation(literal string, values []analysis.Value) *shell.Location {
+	locations := make(map[string]shell.Location)
+	for _, value := range values {
+		if value.Literal != literal || value.SourceLocation == nil {
+			continue
+		}
+		location := *value.SourceLocation
+		key := fmt.Sprintf("%s\x00%d\x00%d\x00%d\x00%d", location.Path, location.StartLine, location.StartColumn, location.EndLine, location.EndColumn)
+		locations[key] = location
+	}
+	if len(locations) != 1 {
+		return nil
+	}
+	for _, location := range locations {
+		result := location
+		return &result
+	}
+	return nil
 }
 
 func aliasEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
@@ -89,7 +221,8 @@ func aliasEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
 		location := operations[relation.FromOperationID].Location
 		additions = append(additions, Evidence{Type: "alias", ID: "static-path-alias", OperationID: relation.ToOperationID,
 			FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
-			Value: relation.Name, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution, Location: &location})
+			Value: relation.Name, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution,
+			Relations: []analysis.Relation{relation}, Location: &location})
 	}
 	return additions
 }
@@ -121,7 +254,8 @@ func includeEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
 					location := operations[relation.FromOperationID].Location
 					additions = append(additions, Evidence{Type: "include", ID: "sdk-local-include", OperationID: relation.FromOperationID,
 						FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
-						Value: relation.Artifact.Literal, NormalizedValue: relation.Digest, Resolution: relation.Resolution, Location: &location})
+						Value: relation.Artifact.Literal, NormalizedValue: relation.Digest, Resolution: relation.Resolution,
+						Relations: []analysis.Relation{relation}, Location: &location})
 				}
 				break
 			}
@@ -1146,11 +1280,11 @@ func matchUnknownCommands(item sdk.SDK, rule findingconfig.Rule) []match {
 			continue
 		}
 		for _, operation := range flatten(hook.Analysis.Operations) {
-			if operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved || analysis.IsKnownCommand(operation.Command) {
+			if operation.Reachability == analysis.Unreachable || operation.Kind != analysis.OperationCommand || operation.Command.Resolution != analysis.Resolved || analysis.IsKnownCommand(operation.Command) {
 				continue
 			}
 			location := operation.Location
-			matches = append(matches, match{hook: hook, key: operation.ID, evidence: []Evidence{{Type: "operation", ID: "unknown-command", OperationID: operation.ID, Value: operation.Command.Literal, Resolution: analysis.Resolved, Location: &location}}})
+			matches = append(matches, match{hook: hook, key: operation.ID, evidence: []Evidence{{Type: "operation", ID: "unregistered-command", OperationID: operation.ID, Value: operation.Command.Literal, Resolution: analysis.Resolved, Location: &location}}})
 		}
 	}
 	return matches
@@ -1339,11 +1473,12 @@ func flowMatch(hook *sdk.Hook, rule findingconfig.Rule, source, sink analysis.Ca
 		}
 		evidence = append(evidence, Evidence{Type: "artifact-flow", ID: string(relation.Kind), OperationID: relation.ToOperationID,
 			FromOperationID: relation.FromOperationID, ToOperationID: relation.ToOperationID,
-			Value: relation.Artifact.Literal, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution})
+			Value: relation.Artifact.Literal, NormalizedValue: relation.Artifact.Literal, Resolution: relation.Resolution,
+			Relations: []analysis.Relation{relation}})
 	}
 	evidence = append(evidence, Evidence{Type: "data-flow", ID: sinkEvidenceID(rule), OperationID: sink.OperationID, FromOperationID: source.OperationID, ToOperationID: sink.OperationID,
 		Value: sink.Target.Literal, NormalizedValue: sink.NormalizedTarget.Literal, NormalizedCandidates: append([]string{}, sink.NormalizedTarget.Candidates...),
-		Resolution: resolution, Location: &toLocation})
+		Resolution: resolution, Relations: append([]analysis.Relation{}, path...), Location: &toLocation})
 	return match{hook: hook, key: source.OperationID + "->" + sink.OperationID + ":" + capabilityTargetKey(source) + ":" + capabilityTargetKey(sink), confidence: confidenceFor(resolution), evidence: evidence}
 }
 
@@ -1489,6 +1624,9 @@ func hookHasUnknownCommand(hook sdk.Hook) bool {
 		return true
 	}
 	for _, operation := range flatten(hook.Analysis.Operations) {
+		if operation.Reachability == analysis.Unreachable {
+			continue
+		}
 		if operation.Kind == analysis.OperationCommand && operation.Command.Resolution == analysis.Resolved && !analysis.IsKnownCommand(operation.Command) {
 			return true
 		}
@@ -1506,7 +1644,7 @@ func commandCount(item sdk.SDK) int {
 			continue
 		}
 		for _, operation := range flatten(hook.Analysis.Operations) {
-			if operation.Kind == analysis.OperationCommand {
+			if operation.Reachability != analysis.Unreachable && operation.Kind == analysis.OperationCommand {
 				count++
 			}
 		}
