@@ -35,6 +35,27 @@ type Entry struct {
 	ProjectRelative string
 }
 
+// ReadMetadata reads metadata from the selected entry without walking its contents.
+func ReadMetadata(entry Entry, limits sdk.Limits) (*sdk.Metadata, string, error) {
+	var root *os.Root
+	var err error
+	if entry.ProjectRoot != "" {
+		project, openErr := os.OpenRoot(entry.ProjectRoot)
+		if openErr != nil {
+			return nil, "", openErr
+		}
+		defer project.Close()
+		root, err = project.OpenRoot(entry.ProjectRelative)
+	} else {
+		root, err = os.OpenRoot(entry.Root)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	defer root.Close()
+	return sdk.ReadMetadataRoot(root, entry.SDK, limits)
+}
+
 // List returns every complete Store SDK cache entry. An entry is complete when
 // both its extracted revision directory and corresponding .sdk archive exist.
 func List(cacheRoot string) ([]Entry, error) {

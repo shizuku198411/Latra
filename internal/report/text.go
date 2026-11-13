@@ -2,15 +2,15 @@
 package report
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"unicode"
 
 	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/finding"
+	"github.com/shizuku198411/Latra/internal/interfaceexposure"
+	"github.com/shizuku198411/Latra/internal/interfaceview"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
 	"github.com/shizuku198411/Latra/internal/source"
@@ -60,10 +60,16 @@ func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextO
 			return err
 		}
 	}
-	if err := writeSummary(writer, document.Summary, document.Assessment, false); err != nil {
+	if err := writeTopology(writer, document); err != nil {
 		return err
 	}
-	if err := writeObservations(writer, document, true); err != nil {
+	if err := writeExposure(writer, document); err != nil {
+		return err
+	}
+	if err := writeSummary(writer, document.Summary, document.Assessment); err != nil {
+		return err
+	}
+	if err := writeObservations(writer, document); err != nil {
 		return err
 	}
 	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
@@ -72,14 +78,14 @@ func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextO
 	return writeDocumentDiagnostics(writer, document.Diagnostics)
 }
 
-// WriteTextSummary renders input, Workshop definitions, and the summary only.
+// WriteTextSummary renders input, Workshop definitions, and assessment.
 func WriteTextSummary(writer io.Writer, result *source.Result) error {
 	return WriteTextSummaryWithOptions(writer, result, TextOptions{})
 }
 
 // WriteTextSummaryWithOptions renders the compact representation with explicit text options.
 func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, options TextOptions) error {
-	document := NewDocument(result)
+	document := NewDocumentWithOptions(result, DocumentOptions{})
 	if _, err := fmt.Fprintf(writer, "Input\n  Kind: %s\n  Root: %s\n", document.Input.Kind, document.Input.Root); err != nil {
 		return err
 	}
@@ -93,19 +99,10 @@ func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, option
 			}
 		}
 	}
-	if err := writeSummary(writer, document.Summary, document.Assessment, true); err != nil {
-		return err
-	}
-	if err := writeObservations(writer, document, false); err != nil {
-		return err
-	}
-	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
-		return err
-	}
-	return writeDocumentDiagnostics(writer, document.Diagnostics)
+	return writeAssessment(writer, document.Assessment, options.Color)
 }
 
-func writeObservations(writer io.Writer, document Document, verbose bool) error {
+func writeObservations(writer io.Writer, document Document) error {
 	if _, err := fmt.Fprintf(writer, "\nObservations\n  Project Access: %d", document.Summary.Observations.Count); err != nil {
 		return err
 	}
@@ -116,26 +113,6 @@ func writeObservations(writer io.Writer, document Document, verbose bool) error 
 	}
 	if _, err := fmt.Fprintf(writer, " (%d reads, %d writes)\n", reads, writes); err != nil {
 		return err
-	}
-	if !verbose {
-		if _, err := fmt.Fprintln(writer, "  By SDK:"); err != nil {
-			return err
-		}
-		wrote := false
-		for _, item := range document.Summary.Observations.BySDK {
-			if item.Count == 0 {
-				continue
-			}
-			wrote = true
-			if _, err := fmt.Fprintf(writer, "    %s: %d (%d reads, %d writes)\n", item.SDKName, item.Count, item.ProjectAccess.Reads, item.ProjectAccess.Writes); err != nil {
-				return err
-			}
-		}
-		if !wrote {
-			_, err := fmt.Fprintln(writer, "    -")
-			return err
-		}
-		return nil
 	}
 	if document.Summary.Observations.Count == 0 {
 		_, err := fmt.Fprintln(writer, "    -")
@@ -204,18 +181,23 @@ func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool
 	if err := writeAssessmentScores(writer, assessment.ReviewPriority, assessment.Risk, assessment.Assurance, assessment.Coverage, "  ", color); err != nil {
 		return err
 	}
+	return WriteSDKAssessmentsWithOptions(writer, assessment.BySDK, TextOptions{Color: color})
+}
+
+// WriteSDKAssessmentsWithOptions renders the per-SDK part of an assessment.
+func WriteSDKAssessmentsWithOptions(writer io.Writer, items []finding.SDKAssessment, options TextOptions) error {
 	if _, err := fmt.Fprintln(writer, "  By SDK:"); err != nil {
 		return err
 	}
-	if len(assessment.BySDK) == 0 {
+	if len(items) == 0 {
 		_, err := fmt.Fprintln(writer, "    -")
 		return err
 	}
-	for _, item := range assessment.BySDK {
+	for _, item := range items {
 		if _, err := fmt.Fprintf(writer, "    %s: %s\n", item.SDK, item.Classification); err != nil {
 			return err
 		}
-		if err := writeAssessmentScores(writer, item.ReviewPriority, item.Risk, item.Assurance, item.Coverage, "      ", color); err != nil {
+		if err := writeAssessmentScores(writer, item.ReviewPriority, item.Risk, item.Assurance, item.Coverage, "      ", options.Color); err != nil {
 			return err
 		}
 		if err := writeKeyRisks(writer, item.KeyRisks, "      "); err != nil {
@@ -223,6 +205,11 @@ func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool
 		}
 	}
 	return nil
+}
+
+// WriteAssessmentWithOptions renders the scan assessment with explicit color settings.
+func WriteAssessmentWithOptions(writer io.Writer, assessment finding.Assessment, options TextOptions) error {
+	return writeAssessment(writer, assessment, options.Color)
 }
 
 func writeAssessmentScores(writer io.Writer, priority finding.Score, risk, assurance finding.ScoredAxis, coverage finding.Coverage, indent string, color bool) error {
@@ -396,7 +383,7 @@ func writeKeyRisks(writer io.Writer, highlights []finding.RiskHighlight, indent 
 	return nil
 }
 
-func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessment, compactFiles bool) error {
+func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessment) error {
 	if _, err := fmt.Fprintf(writer, "\nSummary\n  SDKs: %d (%d resolved, %d unresolved)\n    Resolved: %s\n    Unresolved: %s\n",
 		summary.SDKs.Count, summary.SDKs.Resolved, summary.SDKs.Unresolved,
 		formatSummaryItems(summary.SDKs.SDKNames.Resolved),
@@ -411,15 +398,7 @@ func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessme
 		return err
 	}
 	for _, item := range summary.Files.BySDK {
-		filePaths := item.FilePaths
-		omitted := 0
-		if compactFiles {
-			filePaths, omitted = compactSummaryFiles(item.FilePaths, item.Count)
-		}
-		formatted := formatSummaryItems(filePaths)
-		if omitted > 0 {
-			formatted += fmt.Sprintf(", ... and more files (%d)", omitted)
-		}
+		formatted := formatSummaryItems(item.FilePaths)
 		itemLabel := fmt.Sprintf("%s (%d", item.SDKName, item.Count)
 		if item.ContentSkipped > 0 {
 			itemLabel += fmt.Sprintf(", %d content skipped", item.ContentSkipped)
@@ -429,15 +408,7 @@ func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessme
 			return err
 		}
 		if item.ContentSkipped > 0 {
-			skipped := item.SkippedFiles
-			omittedSkipped := 0
-			if compactFiles && len(skipped) > 5 {
-				skipped, omittedSkipped = skipped[:5], len(skipped)-5
-			}
-			formattedSkipped := formatSkippedFiles(skipped)
-			if omittedSkipped > 0 {
-				formattedSkipped += fmt.Sprintf(", ... and more skipped files (%d)", omittedSkipped)
-			}
+			formattedSkipped := formatSkippedFiles(item.SkippedFiles)
 			if _, err := fmt.Fprintf(writer, "      Content skipped: %s\n", formattedSkipped); err != nil {
 				return err
 			}
@@ -529,36 +500,6 @@ func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessme
 	return err
 }
 
-func compactSummaryFiles(filePaths []string, total int) ([]string, int) {
-	selected := make([]string, 0, len(filePaths))
-	for _, filePath := range filePaths {
-		if filePath == "sdk.yaml" || filePath == "meta/sdk.yaml" || isHookPath(filePath) {
-			selected = append(selected, filePath)
-		}
-	}
-	omitted := total - len(selected)
-	if omitted < 0 {
-		omitted = 0
-	}
-	return selected, omitted
-}
-
-func isHookPath(filePath string) bool {
-	prefix := "hooks/"
-	if strings.HasPrefix(filePath, "sdk/hooks/") {
-		prefix = "sdk/hooks/"
-	} else if !strings.HasPrefix(filePath, prefix) {
-		return false
-	}
-	name := strings.TrimPrefix(filePath, prefix)
-	for _, hookName := range sdk.HookNames {
-		if name == string(hookName) {
-			return true
-		}
-	}
-	return false
-}
-
 func formatCountedItems(items []CountedName) string {
 	if len(items) == 0 {
 		return "-"
@@ -601,6 +542,9 @@ func writeSDK(writer io.Writer, item SDK) error {
 		}
 	}
 	if err := writeFindings(writer, item.Findings); err != nil {
+		return err
+	}
+	if err := writeSDKInterfaces(writer, item); err != nil {
 		return err
 	}
 	if item.State != sdk.StateResolved {
@@ -815,27 +759,128 @@ func writeMetadata(writer io.Writer, item SDK) error {
 			}
 		}
 	}
-	if err := writeInterfaces(writer, "Plugs", metadata.Plugs); err != nil {
-		return err
-	}
-	return writeInterfaces(writer, "Slots", metadata.Slots)
+	return nil
 }
 
-func writeInterfaces(writer io.Writer, label string, interfaces map[string]any) error {
-	if _, err := fmt.Fprintf(writer, "      %s: %d\n", label, len(interfaces)); err != nil {
+func writeTopology(writer io.Writer, document Document) error {
+	if len(document.InterfaceTopology) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(writer, "\nConfigured interfaces (static; runtime not inspected)"); err != nil {
 		return err
 	}
-	names := make([]string, 0, len(interfaces))
-	for name := range interfaces {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		encoded, err := json.Marshal(interfaces[name])
-		if err != nil {
+	for _, graph := range document.InterfaceTopology {
+		if _, err := fmt.Fprintf(writer, "  %s (%s)\n", interfaceview.Safe(graph.Workshop), interfaceview.Safe(graph.Definition)); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(writer, "        %s: %s\n", name, encoded); err != nil {
+		if graph.Incomplete {
+			if _, err := fmt.Fprintln(writer, "    incomplete: configuration limit exceeded"); err != nil {
+				return err
+			}
+		}
+		if len(graph.Edges) == 0 {
+			if _, err := fmt.Fprintln(writer, "    None configured"); err != nil {
+				return err
+			}
+		}
+		for _, edge := range graph.Edges {
+			if _, err := fmt.Fprintf(writer, "    %s %s → %s [%s]\n", edge.Kind, interfaceview.Safe(edge.From.Reference), interfaceview.Safe(edge.To.Reference), edge.State); err != nil {
+				return err
+			}
+			for _, diagnostic := range edge.Diagnostics {
+				if _, err := fmt.Fprintf(writer, "      %s\n", interfaceview.Safe(diagnostic)); err != nil {
+					return err
+				}
+			}
+			if policy, reason := interfaceexposure.EdgePolicy(document.InterfaceReviews, graph.Definition, edge); policy != "" {
+				if _, err := fmt.Fprintf(writer, "      Startup policy: %s — %s\n", interfaceview.Safe(policy), interfaceview.Safe(reason)); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintf(writer, "      From: %s (%s)  To: %s (%s)  Policy: %s\n", interfaceview.Safe(edge.From.Type), interfaceview.Safe(edge.From.Origin), interfaceview.Safe(edge.To.Type), interfaceview.Safe(edge.To.Origin), edge.Policy); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func writeExposure(writer io.Writer, document Document) error {
+	if len(document.InterfaceReviews) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(writer, "\nExposure review (static declarations; unscored)"); err != nil {
+		return err
+	}
+	for _, review := range document.InterfaceReviews {
+		label := review.Workshop + " (" + review.Definition + ")"
+		if review.Definition == "" {
+			label = "Standalone SDK"
+		}
+		if _, err := fmt.Fprintf(writer, "  %s: %d review items\n", interfaceview.Safe(label), len(review.Items)); err != nil {
+			return err
+		}
+		if review.Incomplete {
+			if _, err := fmt.Fprintln(writer, "    Not evaluated: some declarations or configuration unavailable"); err != nil {
+				return err
+			}
+		}
+		for _, item := range review.Items {
+			if _, err := fmt.Fprintf(writer, "    %s %s:%s [%s] — %s (%s)\n", item.Kind, interfaceview.Safe(item.SDK), interfaceview.Safe(item.Name), interfaceview.Safe(item.Source), interfaceview.Safe(item.Fact), item.State); err != nil {
+				return err
+			}
+			if item.Kind == "Plug" {
+				if _, err := fmt.Fprintf(writer, "      Startup: %s; candidate: %s; basis: %s\n      Reason: %s\n", interfaceview.Safe(item.Startup), interfaceview.Safe(item.Target), interfaceview.Safe(item.Basis), interfaceview.Safe(item.Reason)); err != nil {
+					return err
+				}
+				if item.ViaStartup != "" {
+					if _, err := fmt.Fprintf(writer, "      Delegated plug startup: %s; candidate: %s\n      Delegated plug reason: %s\n", interfaceview.Safe(item.ViaStartup), interfaceview.Safe(item.ViaTarget), interfaceview.Safe(item.ViaReason)); err != nil {
+						return err
+					}
+				}
+			}
+			if _, err := fmt.Fprintf(writer, "      Declared value: %s\n      Limitation: %s\n", interfaceview.Safe(item.Value), interfaceview.Safe(item.Limitation)); err != nil {
+				return err
+			}
+			for _, edge := range item.Related {
+				if _, err := fmt.Fprintf(writer, "      %s %s → %s [%s]\n", edge.Kind, interfaceview.Safe(edge.From.Reference), interfaceview.Safe(edge.To.Reference), edge.State); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func writeSDKInterfaces(writer io.Writer, item SDK) error {
+	if _, err := fmt.Fprintln(writer, "    Interfaces (static; connection not inspected):"); err != nil {
+		return err
+	}
+	if item.Metadata == nil {
+		if _, err := fmt.Fprintln(writer, "      SDK declarations: unavailable"); err != nil {
+			return err
+		}
+	} else if len(item.Metadata.Plugs)+len(item.Metadata.Slots) == 0 {
+		if _, err := fmt.Fprintln(writer, "      SDK declarations: none"); err != nil {
+			return err
+		}
+	}
+	for _, e := range interfaceview.Entries(item.Metadata, item.MetadataPath, item.Declarations) {
+		origin := e.Source
+		if e.Source == "Workshop" {
+			origin += ": " + e.Workshop + " (" + e.Definition + ")"
+		}
+		kind := e.Type
+		if e.Form == "binding" {
+			kind = "bind → " + kind
+		}
+		if e.Form == "uninterpreted" {
+			kind = "uninterpreted"
+		}
+		if _, err := fmt.Fprintf(writer, "      %s %s: %s [%s]\n", e.Kind, interfaceview.Safe(e.Name), interfaceview.Safe(kind), interfaceview.Safe(origin)); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(writer, "        Declared value: %s\n", interfaceview.Safe(e.Value)); err != nil {
 			return err
 		}
 	}

@@ -4,360 +4,142 @@
 
 # Latra
 
-Latra is an open-source static analysis tool for [Canonical Workshop](https://ubuntu.com/workshop) SDKs. It is designed to reveal SDK contents and behavior that are otherwise difficult to inspect before a Workshop environment is created.
+**Explore your Canonical Workshop SDKs before you run them.**
 
-Workshop SDKs can include shell hooks that run during environment setup, health checks, and refresh operations. Because SDKs may come from third-party publishers, Latra treats every SDK as untrusted input and analyzes it without executing its hooks.
+Latra is an open-source static analysis tool for [Canonical Workshop](https://ubuntu.com/workshop). Start with a Workshop, follow its SDKs and interfaces, and inspect the hooks and files behind each finding—all from your terminal.
 
-Latra aims to provide:
+SDKs can include hooks that run during environment setup, health checks, and refresh operations. Latra inventories and analyzes their contents without executing those hooks, helping you decide what needs a closer look.
 
-- an inventory of SDK metadata, bundled files, and lifecycle hooks;
-- Bash syntax analysis based on an abstract syntax tree rather than text matching;
-- normalized commands, file and network interactions, data flows, and capabilities;
-- evidence-backed risk and assurance findings with explainable SDK assessments;
-- deterministic, versioned JSON output for local tooling and CI integration;
-- support for in-project SDKs followed by SDK Store resolution and analysis.
+## Why Latra?
 
-Latra reports review priority, risk, assurance, and static-analysis coverage independently. These assessments support review decisions; they do not declare an SDK safe or malicious.
+- **Investigate in context.** Browse from a Workshop to its SDKs, configuration, and per-SDK assessments in the interactive Explorer.
+- **Understand interface relationships.** See declared slots and the plugs associated with them, including configured connections and automatic-connection candidates.
+- **Follow findings to the source.** Open SDK metadata, hooks, and files; risk and semantic-gap annotations point to relevant lines when a location is available.
+- **Review with evidence.** Latra reports review priority, risk, assurance, and analysis coverage separately, with findings and source locations to guide investigation.
+- **Use the CLI and JSON too.** Get a concise assessment in the terminal or export detailed results for local tooling and CI.
 
-## Screenshots
+## Get started
 
-1. Scan and Assesment (CLI Operation)
+### Install
 
-<p>
-  <img src="./assets/latra_scan_assesment.png" alt="scan_and_assesment" width="800">
-</p>
-
-2. Explorer (TUI Operation)
-
-<p>
-  <img src="./assets/latra_explorer_1.png" alt="explorer_1" width="800">
-</p>
-
-<p>
-  <img src="./assets/latra_explorer_2.png" alt="explorer_2" width="800">
-</p>
-
-<p>
-  <img src="./assets/latra_explorer_3.png" alt="explorer_3" width="800">
-</p>
-
-## Quick Start
-
-### Build and install
-
-Build Latra inside the Workshop environment and install the resulting binary
-on the host:
+Build and install from a checkout of this repository. The installer requires Canonical Workshop and builds Latra in the project's development Workshop:
 
 ```bash
+git clone https://github.com/shizuku198411/Latra.git
+cd Latra
 ./scripts/install.sh
 ```
 
-### TUI Operation
+By default, the binary is installed to `~/.local/bin`; add that directory to your `PATH` if needed. Set `LATRA_INSTALL_DIR` to choose another installation directory. To remove it, run `./scripts/uninstall.sh` from the checkout, using the same `LATRA_INSTALL_DIR` if you set one.
 
-Latra provides an interactive TUI to help you inspect and investigate SDKs.  
-Launch it from your Workshop project root.
+### Open a Workshop project
+
+From your Workshop project root, run:
 
 ```bash
 latra explorer
 ```
 
-When the TUI starts, it automatically retrieves and scans the SDKs. Once scanning is complete, the Review Priority score is displayed for each SDK in the SDK list.
+Or select a project from elsewhere:
 
-```text
- Latra / SDK Explorer
- Project: /project/internaldocs/sample-project
- SDKs: 2  (read-only, auto-fetch missing SDKs)
- ────────────────────────────────────────────────────────────────────────────────────────────────────
- ❯ kernel-dev-base          project  local                          Review Priority: 68/100
-   rust                     store    cached        latest/stable    Review Priority: 25/100
+```bash
+latra explorer --project /path/to/project
 ```
 
-To verify the scan results and examine the actual SDK contents, select an SDK using Enter or the right arrow key (→).
-The Explorer displays the SDK's **Metadata**, **Hooks**, and **Files**.
+Explorer currently requires Linux and an interactive terminal. It opens on the Workshop list, fetches missing Store SDKs when needed, and starts a background scan. Store resolution may require network access; progress or failures are shown in the Explorer. Project SDKs are read locally.
 
-```text
- Latra / SDK Explorer
- Project: /project/internaldocs/sample-project
- SDK: kernel-dev-base  (read-only tree)
- ────────────────────────────────────────────────────────────────────────────────────────────────────
- [SDK Metadata]
-     sdk.yaml
- [Hooks]
-   ▾ hooks
-       check-health
-       setup-base
- ❯     setup-project
- [Files]
-```
+## Explore a Workshop
 
-You can inspect any file, but a good starting point is to focus on the highlighted files.  
-Files flagged by Latra for further review include inline Risk or Semantic Gap annotations that identify the relevant source lines and explain why they were flagged.
+The following walkthrough uses a project with two Workshop definitions, `rkc-actions` and `rkc-dev`. Names, SDK versions, cache status, and scores depend on the project and scan environment.
 
-```text
- Latra / SDK Explorer
- Project: /project/internaldocs/sample-project
- File: hooks/setup-project  (read-only preview)
- ────────────────────────────────────────────────────────────────────────────────────────────────────
-     1  #!/usr/bin/env bash
-     2  set -euxo pipefail
-     3  
-     4  # clone and build opensbi
-     5  OPENSBI_VERSION="v1.9"
-     6  OPENSBI_URL="https://github.com/riscv-software-src/opensbi.git"
-     7  
-     8  echo "[*] OpenSBI version: ${OPENSBI_VERSION}"
-     9  echo "[*] OpenSBI url: ${OPENSBI_URL}"
-    10  
-    11  # clone opensbi from github
-    12  if [ ! -d opensbi ]; then
- #Risk > Remote content is written into the Workshop project, medium, score=25/100
-    13    git clone \
-    14      --depth=1 \
-    15      --branch="${OPENSBI_VERSION}" \
-    16      --single-branch \
-    17      "${OPENSBI_URL}" \
-    18      opensbi
-    19  fi
-    20  
-    21  # build firmware
-```
+### 1. Choose a Workshop
 
+Explorer starts with the Workshop definitions found under `.workshop`:
 
-### CLI Operation
-You can also scan and inspect SDKs directly from the command line.  
-Run the following command from your Workshop project root.
+<p>
+  <img src="./assets/ss_1.png" alt="Latra Explorer in a terminal" width="800">
+</p>
+
+Select `rkc-dev` to see its SDKs, interface configuration, and scan results. When the scan finishes, SDK rows show their review priority where available.
+
+<p>
+  <img src="./assets/ss_2.png" alt="Latra Explorer in a terminal" width="800">
+</p>
+
+Open **SDK assessment** for the assessments of SDKs used by this Workshop. The assessment values come from the project scan; the view filters the SDKs shown to those declared by the selected Workshop.
+
+<p>
+  <img src="./assets/ss_5.png" alt="Exploring SDKs and Workshop configuration in Latra" width="800">
+</p>
+
+### 2. Follow interfaces
+
+Open **Configuration → Interfaces** to view interfaces around their slots and associated plugs. For example, a tunnel slot in `rkc-dev` is shown with a plug that could connect to it:
+
+<p>
+  <img src="./assets/ss_4.png" alt="Exploring SDKs and Workshop configuration in Latra" width="800">
+</p>
+
+Open a row for details. The view uses SDK declarations, Workshop configuration, and connection policy to describe configured relationships and candidates. A candidate is not proof of a connection: Latra does not inspect the running Workshop or its effective runtime exposure.
+
+### 3. Inspect an SDK and its evidence
+
+Open an SDK to browse its metadata, hooks, interfaces, and files. Select a file to read it in a read-only preview. After the scan completes, relevant files and source lines can carry risk or semantic-gap annotations, making it easier to move from an assessment to the code behind it.
+
+<p>
+  <img src="./assets/ss_3.png" alt="Exploring SDKs and Workshop configuration in Latra" width="800">
+</p>
+
+Use `↑` / `↓` to move or scroll, `Enter` / `→` to open or expand, and `Esc` / `←` to go back. Press `q` to quit. From the Workshop list, press `s` to browse the project-wide SDK list instead.
+
+## Scan from the command line
+
+From a Workshop project root:
 
 ```bash
 latra scan
 ```
 
-The default text report summarizes the detected SDKs, files, hooks, operations, capabilities, command coverage gaps, and diagnostics.
+<p>
+  <img src="./assets/ss_6.png" alt="Latra scan and assessment output" width="800">
+</p>
 
-<details>
-<summary>Example output</summary>
+The assessment separates **review priority**, **risk**, **assurance**, **coverage**, and **semantic coverage**. Per-SDK findings and semantic gaps explain what was detected and where investigation may be needed. These are review aids, not guarantees that an SDK is safe or malicious. A scan can also be incomplete; check its exit status when automating it.
 
-```text
-Input
-  Kind: project
-  Root: /project/internaldocs/sample-project
-
-Workshops
-  kernel-dev
-    Definition: .workshop/kernel-dev.yaml
-    Base: ubuntu@24.04
-
-Summary
-  SDKs: 2 (2 resolved, 0 unresolved)
-    Resolved: kernel-dev-base, rust
-    Unresolved: -
-  Files: 26
-    kernel-dev-base (5): hooks/check-health, hooks/setup-base, hooks/setup-project, sdk.yaml, ... and more files (1)
-    rust (21): meta/sdk.yaml, sdk/hooks/check-health, sdk/hooks/setup-base, ... and more files (18)
-  Hooks: 5
-    kernel-dev-base (3): check-health, setup-base, setup-project
-    rust (2): check-health, setup-base
-  Operations: 61
-    kernel-dev-base (47): assignment (10), command-invocation (23), control-flow (9), redirect-write (5)
-    rust (14): command-invocation (9), control-flow (1), redirect-read (1), redirect-write (2), source (1)
-  Capabilities: 25
-    kernel-dev-base (14): code-execution (1), device-access (5), identity-change (2), network-access (3), network-download (1), project-write (1), system-modification (1)
-    rust (11): code-execution (1), destructive-operation (1), dynamic-execution (1), identity-change (2), network-access (2), persistence (2), system-modification (2)
-  Command Coverage Gaps: 4 unregistered, 0 dynamic
-    kernel-dev-base (4 unregistered, 0 dynamic)
-      hooks/check-health (3 unregistered, 0 dynamic): unregistered=llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
-      hooks/setup-project (1 unregistered, 0 dynamic): unregistered=make (1)
-    rust (0 unregistered, 0 dynamic)
-  Findings: 13 (5 risk, 8 assurance)
-    High-priority risks:
-      kernel-dev-base (high): risk.remote-content-to-project (1), risk.unknown-command-root (3)
-  Diagnostics: 1: external-include (1)
-
-Observations
-  Project Access: 1 (0 reads, 1 writes)
-  By SDK:
-    kernel-dev-base: 1 (0 reads, 1 writes)
-```
-
-</details>
-
-#### Review the assessment
-
-Each scan ends with an assessment that separates detected risk, positive
-assurance, general analysis coverage, and semantic coverage:
-
-```text
-Assessment
-  Classification: requires-semantic-review
-  Review Priority: 72/100 (high)          [██████████████░░░░░░]
-  Risk:            72/100 (high)          [██████████████░░░░░░]
-  Assurance:       80/100 (strong)        [████████████████░░░░]
-  Coverage:        75/100 (insufficient)  [███████████████░░░░░]
-  Semantic:        75/100 (insufficient)  [███████████████░░░░░]
-    Semantic gap [included-sources/external-include]: source at rust/sdk/hooks/setup-base is not a statically resolvable SDK-local include
-  By SDK:
-    kernel-dev-base: powerful-but-controlled
-      Review Priority: 68/100 (high)          [██████████████░░░░░░]
-      Risk:            68/100 (high)          [██████████████░░░░░░]
-      Assurance:       66/100 (strong)        [█████████████░░░░░░░]
-      Coverage:        93/100 (sufficient)    [███████████████████░]
-      Semantic:        100/100 (sufficient)   [████████████████████]
-      Key Risks:
-        risk.unknown-command-root: Unknown command runs in a root hook [medium, score=58, occurrences=3]
-          sdk=kernel-dev-base file=hooks/check-health:8:1 hook=check-health value="qemu-system-riscv64"
-          sdk=kernel-dev-base file=hooks/check-health:10:1 hook=check-health value="llvm-objdump"
-          sdk=kernel-dev-base file=hooks/check-health:11:1 hook=check-health value="llvm-objcopy"
-        risk.remote-content-to-project: Remote content is written into the Workshop project [medium, score=25, occurrences=1]
-          sdk=kernel-dev-base file=hooks/setup-project:13:3 hook=setup-project value="git"
-          sdk=kernel-dev-base file=hooks/setup-project:13:3 hook=setup-project value="opensbi"
-    rust: requires-semantic-review
-      Review Priority: 25/100 (medium)        [█████░░░░░░░░░░░░░░░]
-      Risk:            10/100 (low)           [██░░░░░░░░░░░░░░░░░░]
-      Assurance:       68/100 (strong)        [██████████████░░░░░░]
-      Coverage:        75/100 (insufficient)  [███████████████░░░░░]
-      Semantic:        75/100 (insufficient)  [███████████████░░░░░]
-        Semantic gap [included-sources/external-include]: source at rust/sdk/hooks/setup-base is not a statically resolvable SDK-local include
-      Key Risks:
-        risk.profile-environment-write: Shell environment profile is written during base setup [low, score=10, occurrences=1]
-          sdk=rust file=sdk/hooks/setup-base:4:11 hook=setup-base value="/etc/profile.d/rust.sh"
-
-Diagnostics
-  rust: [warning] external-include (include): source at rust/sdk/hooks/setup-base is not a statically resolvable SDK-local include
-```
-
-This result indicates that the project SDK requires focused review because it
-runs resolved but unregistered commands as root and writes remotely obtained content into the
-project. The Rust SDK has one low-risk static environment configuration write,
-but its absolute `source` of `/etc/profile.d/rust.sh` cannot currently be
-analyzed as an SDK-local include. That semantic gap limits both the Rust SDK and
-combined project coverage to 75 and produces the `requires-semantic-review`
-classification. These classifications describe the observed behavior, analysis
-coverage, and controls; they do not guarantee that either SDK is safe.
-
-The per-SDK `Key Risks` and `Semantic gap` entries identify what needs review
-and why. Risk `sdk`, `file`, and `hook` values can be passed directly to the
-inspection commands in the next section. In the TUI, semantic gaps backed by an
-operation location are attached to the corresponding source line.
-
-#### Inspect a hook or file
-
-Use an SDK name and hook reported by the scan:
+Inspect a hook or file from an SDK declared by the current project:
 
 ```bash
-# command: latra hook <sdk> <hook>
-
-latra hook rust setup-base
+latra hook rkc-base setup-project
+latra file rkc-base hooks/setup-project
 ```
 
-<details>
-<summary>Example output</summary>
+For Store SDKs, these inspection commands use an SDK already in Latra's cache; run a scan first if needed. Replace the SDK and paths with values from your own project.
 
-```text
-apt-get update
-apt-get install build-essential
-
-cat <<EOF >> /etc/profile.d/rust.sh
-PATH="$SDK/bin:\$PATH"
-EOF
-
-# Ensure hook is idempotent.
-rm -f /home/workshop/.rustup/settings.toml
-
-sudo -u workshop --login rustup default stable
-
-# shellcheck source=/dev/null
-. /etc/profile.d/rust.sh
-rustup completions bash > /etc/bash_completion.d/rustup.sh
-```
-
-</details><br>
-
-Display any detected SDK file by its reported path:
+Export a compact JSON summary or a complete report:
 
 ```bash
-# command: latra file <sdk> <file>
-
-latra file rust meta/sdk.yaml
+latra scan --format json
+latra scan --format json --verbose --output latra-report.json
 ```
 
-<details>
-<summary>Example output</summary>
+## Documentation
 
-```text
-name: rust
-version: 1.99.1
-summary: The Rust toolchain installer
-description: |
-  This SDK provides rustup and the Rust toolchain for Rust development.
-  Toolchains and Cargo configuration are persisted on the host across
-  workshop updates. Automatically detects project toolchain requirements
-  via rust-toolchain.toml.
-base: ubuntu@24.04
-architecture: arm64
-website: https://github.com/canonical/rust-sdk
-license: Apache-2.0 OR MIT
-plugs:
-  cargo-registry:
-    interface: mount
-    workshop-target: /home/workshop/.cargo/registry
-sdkcraft-started-at: '2026-10-16T19:27:34.158961+00:00'
-```
+- [Documentation overview](docs/README.md)
+- [Quick Start](docs/user/quickstart.md) — scan a project, inspect SDK content, and write a report
+- [Command reference](docs/user/command-reference.md) — CLI options, exit codes, and environment variables
+- [Understanding scan output](docs/user/report-output.md) — interpret reports and findings
+- [Development environment](docs/development/development.md) and [analysis databases](docs/development/database/README.md)
 
-</details><br>
+## Project status
 
-Replace `rust`, `setup-base`, and `meta/sdk.yaml` with values from your project report. Latra resolves the SDK from the current project's `.workshop/*.yaml` definitions, including its declared channel.
+Latra is under active development and is not yet recommended for production enforcement. Static analysis has limits: unresolved SDKs, dynamic shell behavior, and incomplete analysis can affect the evidence and coverage reported.
 
-#### Write a JSON report
+Latra is an independent project and is not affiliated with or endorsed by Canonical Ltd.
 
-Print the summary as JSON:
+## Contributing and security
 
-```bash
-latra scan . --format json
-```
-
-Write the complete inventory and analysis details to a file:
-
-```bash
-latra scan . --format json --verbose --output latra-report.json
-```
-
-### Uninstall
-
-```bash
-./scripts/uninstall.sh
-```
-
-## User documentation
-
-- [Documentation overview](docs/README.md) — documentation organized by
-  audience and purpose.
-- [Quick Start](docs/user/quickstart.md) — scan a project, inspect SDK content,
-  and write a JSON report.
-- [Command reference](docs/user/command-reference.md) — CLI commands, arguments,
-  options, exit codes, and environment variables.
-- [Understanding scan output](docs/user/report-output.md) — how to read each report
-  section and use its SDK, hook, and file values for further investigation.
-
-## Developer documentation
-
-- [Analysis databases](docs/development/database/README.md) — command
-  knowledge, capabilities, path semantics, and finding rules.
-- [Development environment](docs/development/development.md) — build, test,
-  and run Latra in Workshop.
-
-## Contributing
-
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before participating.
-
-## Security
-
-Do not report security vulnerabilities through public issues. See [SECURITY.md](SECURITY.md) for the reporting process.
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). For security vulnerabilities, follow [SECURITY.md](SECURITY.md) rather than opening a public issue.
 
 ## License
 
 Latra is licensed under the [MIT License](LICENSE).
-
-## Project status
-
-Latra is under active development and is not yet recommended for production enforcement. The current scope focuses on deterministic SDK inventory generation and investigation workflows.
-
-Latra is an independent project and is not affiliated with or endorsed by Canonical Ltd.

@@ -87,6 +87,14 @@ func readProject(ctx context.Context, projectPath string, limits sdk.Limits, res
 			Runtime:    definition.Runtime,
 			Definition: relative,
 		})
+		configuration := Configuration{Name: definition.Name, Definition: relative}
+		for i, declaration := range definition.SDKs {
+			configuration.SDKs = append(configuration.SDKs, ConfigurationSDK{Name: declaration.Name, Order: i, Plugs: declaration.Plugs, Slots: declaration.Slots})
+		}
+		for i, connection := range definition.Connections {
+			configuration.Connections = append(configuration.Connections, Connection{Plug: connection.Plug, Slot: connection.Slot, Order: i})
+		}
+		result.Configurations = append(result.Configurations, configuration)
 
 		seen := make(map[string]bool)
 		for declarationOrder, declaration := range definition.SDKs {

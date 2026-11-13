@@ -13,12 +13,12 @@ func WriteJSON(writer io.Writer, result *source.Result) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(NewDocument(result))
+	return encoder.Encode(NewDocumentWithOptions(result, DocumentOptions{IncludeTopology: true}))
 }
 
 // WriteJSONSummary writes metadata and the project-wide summary without SDK details.
 func WriteJSONSummary(writer io.Writer, result *source.Result) error {
-	document := NewDocument(result)
+	document := NewDocumentWithOptions(result, DocumentOptions{})
 	compact := struct {
 		SchemaVersion string               `json:"schemaVersion"`
 		Scanner       Scanner              `json:"scanner"`

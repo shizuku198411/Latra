@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/shizuku198411/Latra/internal/cli"
+	"github.com/shizuku198411/Latra/internal/report"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
 )
@@ -216,7 +217,7 @@ func TestRunScanJSONToStandardOutput(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &document); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout.String())
 	}
-	if document.SchemaVersion != "5" || document.Summary.SDKs.Count != 5 || len(document.SDKs) != 0 {
+	if document.SchemaVersion != report.SchemaVersion || document.Summary.SDKs.Count != 5 || len(document.SDKs) != 0 {
 		t.Errorf("document = %#v", document)
 	}
 	if stderr.Len() != 0 {
@@ -293,13 +294,15 @@ func TestRunScanTextIsCompactByDefault(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
 	}
-	for _, want := range []string{"Input\n", "Workshops\n", "Summary\n"} {
+	for _, want := range []string{"Input\n", "Workshops\n", "Assessment\n"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Errorf("stdout does not contain %q", want)
 		}
 	}
-	if strings.Contains(stdout.String(), "\nSDKs\n") {
-		t.Errorf("compact stdout contains SDK details:\n%s", stdout.String())
+	for _, heading := range []string{"SDKs", "Summary", "Interfaces", "Configured interfaces", "Exposure review", "Observations", "Diagnostics"} {
+		if strings.Contains(stdout.String(), "\n"+heading+"\n") || strings.Contains(stdout.String(), "\n"+heading+" (") {
+			t.Errorf("compact stdout contains %s:\n%s", heading, stdout.String())
+		}
 	}
 }
 

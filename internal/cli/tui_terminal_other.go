@@ -10,4 +10,4 @@ import (
 
 var errNotTerminal = errors.New("TUI is currently supported on Linux only")
 
-func runTerminalExplorer(_ string, _ []tuiSDK, _ source.StoreResolver) error { return errNotTerminal }
+func runTerminalExplorer(_ tuiInventory, _ source.StoreResolver) error { return errNotTerminal }

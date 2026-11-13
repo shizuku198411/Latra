@@ -226,8 +226,8 @@ func TestProjectObservationsAreReportedSeparately(t *testing.T) {
 	if err := report.WriteTextSummary(&compact, result); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(compact.String(), "Project Access: 2 (1 reads, 1 writes)") || !strings.Contains(compact.String(), "example: 2 (1 reads, 1 writes)") {
-		t.Errorf("compact observations missing:\n%s", compact.String())
+	if strings.Contains(compact.String(), "Observations\n") {
+		t.Errorf("compact observations should be omitted:\n%s", compact.String())
 	}
 
 	var verbose bytes.Buffer
@@ -355,9 +355,16 @@ func TestDocumentIncludesSDKResolutionDiagnostic(t *testing.T) {
 	if err := report.WriteTextSummary(&output, result); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"1 unresolved", "store-download-failed", "service unavailable"} {
+	if strings.Contains(output.String(), "Diagnostics\n") {
+		t.Errorf("compact diagnostics should be omitted: %s", output.String())
+	}
+	output.Reset()
+	if err := report.WriteText(&output, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"store-download-failed", "service unavailable"} {
 		if !strings.Contains(output.String(), want) {
-			t.Errorf("text does not contain %q:\n%s", want, output.String())
+			t.Errorf("verbose text does not contain %q", want)
 		}
 	}
 	output.Reset()
@@ -385,15 +392,8 @@ func TestWriteTextSummaryCompactsNonHookFiles(t *testing.T) {
 	if err := report.WriteTextSummary(&compact, result); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"hooks/setup-project", "sdk.yaml", "... and more files (2)"} {
-		if !strings.Contains(compact.String(), want) {
-			t.Errorf("compact text does not contain %q:\n%s", want, compact.String())
-		}
-	}
-	for _, excluded := range []string{"bin/tool", "share/config.json"} {
-		if strings.Contains(compact.String(), excluded) {
-			t.Errorf("compact text unexpectedly contains %q:\n%s", excluded, compact.String())
-		}
+	if strings.Contains(compact.String(), "Summary\n") || strings.Contains(compact.String(), "bin/tool") {
+		t.Errorf("compact inventory should be omitted: %s", compact.String())
 	}
 
 	var verbose bytes.Buffer
@@ -444,10 +444,8 @@ func TestReportIncludesSkippedFileStatusAndSummary(t *testing.T) {
 	if err := report.WriteTextSummary(&compact, result); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Files: 2 (1 content skipped)", "example (2, 1 content skipped)", "Content skipped: bin/model (size-limit, 4096 bytes)"} {
-		if !strings.Contains(compact.String(), want) {
-			t.Errorf("compact text does not contain %q:\n%s", want, compact.String())
-		}
+	if strings.Contains(compact.String(), "Content skipped:") {
+		t.Errorf("compact skipped-file detail should be omitted: %s", compact.String())
 	}
 
 	var verbose bytes.Buffer

@@ -9,12 +9,14 @@ import (
 	"github.com/shizuku198411/Latra/internal/analysis"
 	"github.com/shizuku198411/Latra/internal/buildinfo"
 	"github.com/shizuku198411/Latra/internal/finding"
+	"github.com/shizuku198411/Latra/internal/interfaceexposure"
+	"github.com/shizuku198411/Latra/internal/interfacegraph"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/shell"
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
-const SchemaVersion = "5"
+const SchemaVersion = "6"
 
 // Document is the stable, versioned JSON inventory representation.
 type Document struct {
@@ -28,6 +30,8 @@ type Document struct {
 	SDKs                 []SDK                         `json:"sdks"`
 	CompositionRelations []finding.CompositionRelation `json:"compositionRelations,omitempty"`
 	Diagnostics          []DocumentDiagnostic          `json:"diagnostics"`
+	InterfaceTopology    []interfacegraph.Graph        `json:"interfaceTopology,omitempty"`
+	InterfaceReviews     []interfaceexposure.Review    `json:"-"`
 }
 
 type Scanner struct {
@@ -247,6 +251,18 @@ type DocumentDiagnostic struct {
 
 // NewDocument builds a deterministic report document from a scan result.
 func NewDocument(result *source.Result) Document {
+	return NewDocumentWithOptions(result, DocumentOptions{IncludeTopology: true, IncludeInterfaceReviews: true})
+}
+
+// DocumentOptions selects optional interface analysis for a report.
+// Interface reviews require, and therefore automatically enable, topology.
+type DocumentOptions struct {
+	IncludeTopology         bool
+	IncludeInterfaceReviews bool
+}
+
+// NewDocumentWithOptions builds a report with the requested interface analysis.
+func NewDocumentWithOptions(result *source.Result, options DocumentOptions) Document {
 	info := buildinfo.Current()
 	compositionFindings, compositionRelations := finding.AnalyzeComposition(result.SDKs)
 	compositionBySDK := make(map[string][]finding.Finding)
@@ -262,6 +278,20 @@ func NewDocument(result *source.Result) Document {
 		SDKs:                 []SDK{},
 		CompositionRelations: compositionRelations,
 		Diagnostics:          []DocumentDiagnostic{},
+	}
+	if options.IncludeTopology || options.IncludeInterfaceReviews {
+		for _, configuration := range result.Configurations {
+			graph := interfacegraph.Build(configuration, result.SDKs)
+			document.InterfaceTopology = append(document.InterfaceTopology, graph)
+			if options.IncludeInterfaceReviews {
+				document.InterfaceReviews = append(document.InterfaceReviews, interfaceexposure.Build(configuration, result.SDKs, graph))
+			}
+		}
+	}
+	if options.IncludeInterfaceReviews && result.Kind == source.InputProjectSDK {
+		for _, item := range result.SDKs {
+			document.InterfaceReviews = append(document.InterfaceReviews, interfaceexposure.Standalone(item))
+		}
 	}
 	sort.Slice(document.Workshops, func(i, j int) bool {
 		if document.Workshops[i].Name != document.Workshops[j].Name {

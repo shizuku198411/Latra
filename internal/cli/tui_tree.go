@@ -1,36 +1,71 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"sort"
+	"strings"
 
+	"github.com/shizuku198411/Latra/internal/finding"
+	"github.com/shizuku198411/Latra/internal/interfaceexposure"
+	"github.com/shizuku198411/Latra/internal/interfacegraph"
+	"github.com/shizuku198411/Latra/internal/interfaceview"
 	"github.com/shizuku198411/Latra/internal/report"
+	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
+	"github.com/shizuku198411/Latra/internal/source"
 )
 
 type tuiNode struct {
-	Name, Path string
-	Depth      int
-	Directory  bool
-	Symlink    bool
-	Expanded   bool
-	Header     bool
-	Group      string
+	Name, Path       string
+	Depth            int
+	Directory        bool
+	Symlink          bool
+	Expanded         bool
+	Header           bool
+	Group            string
+	Kind             string
+	Interface        *interfaceview.Entry
+	Children         []tuiNode
+	Edge             *interfacegraph.Edge
+	Review           *interfaceexposure.Item
+	SlotRef          string
+	SlotBasis        string
+	Index            int
+	DeclarationOrder int
+}
+
+type tuiFrame struct {
+	Nodes                     []tuiNode
+	SelectedNode, SelectedSDK int
+	InTree, InTopology        bool
+	Title                     string
 }
 
 type tuiExplorer struct {
-	SDKs         []tuiSDK
-	SelectedSDK  int
-	InTree       bool
-	SelectedNode int
-	Nodes        []tuiNode
-	Message      string
-	ScanStatus   string
-	Preview      *tuiPreview
-	Scan         *report.Document
-	Scanning     bool
+	SDKs            []tuiSDK
+	SelectedSDK     int
+	InTree          bool
+	SelectedNode    int
+	Nodes           []tuiNode
+	Message         string
+	ScanStatus      string
+	Preview         *tuiPreview
+	Scan            *report.Document
+	Scanning        bool
+	Topology        []interfacegraph.Graph
+	Reviews         []interfaceexposure.Review
+	InTopology      bool
+	Configurations  []source.Configuration
+	Workshops       []source.Workshop
+	CurrentWorkshop int
+	Title           string
+	History         []tuiFrame
+	DiscoveryError  string
 }
 
 func (m *tuiExplorer) enter() {
@@ -41,26 +76,100 @@ func (m *tuiExplorer) enter() {
 		if len(m.SDKs) == 0 {
 			return
 		}
-		item := m.SDKs[m.SelectedSDK]
-		if item.Status != "local" && item.Status != "cached" {
-			m.Message = fmt.Sprintf("%s: %s", item.Name, item.Status)
-			if item.Error != "" {
-				m.Message += ": " + item.Error
-			}
-			return
+		if len(m.History) > 0 {
+			m.push()
 		}
-		children, err := readTUIGroupedNodes(item.Entry)
-		if err != nil {
-			m.Message = err.Error()
-			return
+		m.openSDK()
+		if !m.InTree && len(m.History) > 1 {
+			m.pop()
 		}
-		m.Nodes, m.SelectedNode, m.InTree, m.Message = children, firstTUISelectable(children), true, ""
 		return
 	}
 	if len(m.Nodes) == 0 {
 		return
 	}
 	node := m.Nodes[m.SelectedNode]
+	switch node.Kind {
+	case "workshop":
+		m.openWorkshop(node.Index)
+		return
+	case "workshop-sdk":
+		m.push()
+		m.SelectedSDK = node.Index
+		m.InTree = false
+		m.openSDK()
+		if !m.InTree {
+			m.pop()
+		}
+		return
+	case "workshop-system":
+		m.openSystem(node.Index)
+		return
+	case "workshop-interfaces":
+		m.openWorkshopInterfaces()
+		return
+	case "workshop-assessment":
+		m.openAssessment()
+		return
+	}
+	if node.Kind == "exposure-review" {
+		i := node.Review
+		lines := []string{i.Fact, "SDK: " + i.SDK, "Interface: " + i.Kind + " " + i.Name, "Type: " + i.Type, "Declared by: " + i.Source, "Workshop: " + i.Workshop + " (" + i.Definition + ")", "Startup: " + i.Startup, "Candidate: " + i.Target, "Basis: " + i.Basis, "Reason: " + i.Reason, "Runtime: Not inspected", "Declared value: " + i.Value, "Limitation: " + i.Limitation}
+		if node.SlotRef != "" {
+			lines = append(lines, "Displayed slot: "+node.SlotRef, "Relationship: "+node.SlotBasis)
+		}
+		if i.ViaStartup != "" {
+			lines = append(lines, "Delegated plug startup: "+i.ViaStartup, "Delegated plug candidate: "+i.ViaTarget, "Delegated plug reason: "+i.ViaReason)
+		}
+		for _, e := range i.Related {
+			lines = append(lines, e.Kind+": "+e.From.Reference+" → "+e.To.Reference+" ["+e.State+"]")
+		}
+		for n := range lines {
+			lines[n] = interfaceview.Safe(lines[n])
+		}
+		m.Preview = &tuiPreview{Path: "Interface details", Status: "Static candidates; runtime not inspected", Lines: lines, Interface: true}
+		return
+	}
+	if node.Kind == "topology-edge" {
+		e := node.Edge
+		lines := []string{"Kind: " + e.Kind, "From: " + e.From.Reference, "To: " + e.To.Reference, "State: " + e.State, "From type: " + e.From.Type + " (" + e.From.Origin + ")", "To type: " + e.To.Type + " (" + e.To.Origin + ")", "Policy: " + e.Policy, "Runtime: Not inspected"}
+		if m.CurrentWorkshop < len(m.Configurations) {
+			lines = append(lines, "Definition: "+m.Configurations[m.CurrentWorkshop].Definition)
+			if policy, reason := interfaceexposure.EdgePolicy(m.Reviews, m.Configurations[m.CurrentWorkshop].Definition, *e); policy != "" {
+				lines = append(lines, "Startup policy: "+policy, "Reason: "+reason)
+			}
+		}
+		lines = append(lines, e.Diagnostics...)
+		for i := range lines {
+			lines[i] = interfaceview.Safe(lines[i])
+		}
+		m.Preview = &tuiPreview{Path: "Configured interface", Status: "Static configuration (read-only)", Lines: lines, Interface: true}
+		return
+	}
+	if node.Kind == "interface" {
+		lines := node.Interface.Details()
+		for _, review := range m.Reviews {
+			for _, entry := range review.Items {
+				if m.InTopology || len(m.SDKs) == 0 {
+					continue
+				}
+				owner := strings.TrimPrefix(strings.TrimPrefix(entry.SDK, "project-"), "try-")
+				matches := false
+				for _, d := range m.SDKs[m.SelectedSDK].Declarations {
+					if d.Definition == entry.Definition {
+						matches = true
+						break
+					}
+				}
+				if matches && owner == m.SDKs[m.SelectedSDK].Name && entry.Kind == node.Interface.Kind && entry.Name == node.Interface.Name && entry.Source == node.Interface.Source && (entry.Source != "Workshop" || entry.Definition == node.Interface.Definition) {
+					lines = append(lines, interfaceview.Safe("Review ("+entry.Workshop+"): "+entry.Fact+" — "+entry.State), interfaceview.Safe("Limitation: "+entry.Limitation))
+				}
+			}
+		}
+		m.Preview = &tuiPreview{Path: node.Interface.Name, Status: "Interface declaration (read-only)", Lines: lines, Interface: true}
+		m.Message = ""
+		return
+	}
 	if node.Header {
 		return
 	}
@@ -87,6 +196,12 @@ func (m *tuiExplorer) enter() {
 		m.Message = ""
 		return
 	}
+	if node.Kind == "interface-group" || node.Kind == "slot-group" {
+		i := m.SelectedNode
+		m.Nodes = append(m.Nodes[:i+1], append(append([]tuiNode{}, node.Children...), m.Nodes[i+1:]...)...)
+		m.Nodes[i].Expanded = true
+		return
+	}
 	children, err := readTUINodes(m.SDKs[m.SelectedSDK].Entry, node.Path, node.Depth+1)
 	if err == nil {
 		children = filterTUIGroup(children, node.Group)
@@ -110,9 +225,297 @@ func (m *tuiExplorer) back() {
 		m.Message = ""
 		return
 	}
-	if m.InTree {
-		m.InTree, m.Nodes, m.SelectedNode, m.Message = false, nil, 0, ""
+	if m.InTree || len(m.History) > 0 {
+		if !m.pop() {
+			m.InTree, m.InTopology, m.Nodes, m.SelectedNode, m.Title = false, false, nil, 0, ""
+		}
+		m.Message = ""
 	}
+}
+
+func (m *tuiExplorer) push() {
+	m.History = append(m.History, tuiFrame{Nodes: m.Nodes, SelectedNode: m.SelectedNode, SelectedSDK: m.SelectedSDK, InTree: m.InTree, InTopology: m.InTopology, Title: m.Title})
+}
+func (m *tuiExplorer) pop() bool {
+	if len(m.History) == 0 {
+		return false
+	}
+	n := len(m.History) - 1
+	f := m.History[n]
+	m.History = m.History[:n]
+	m.Nodes, m.SelectedNode, m.SelectedSDK, m.InTree, m.InTopology, m.Title = f.Nodes, f.SelectedNode, f.SelectedSDK, f.InTree, f.InTopology, f.Title
+	return true
+}
+func (m *tuiExplorer) show(nodes []tuiNode, title string) {
+	m.push()
+	m.Nodes = nodes
+	m.SelectedNode = firstTUISelectable(nodes)
+	m.InTree = true
+	m.InTopology = true
+	m.Title = title
+	m.Message = ""
+}
+func (m *tuiExplorer) openSDK() {
+	item := m.SDKs[m.SelectedSDK]
+	var children []tuiNode
+	if item.Status == "local" || item.Status == "cached" {
+		var err error
+		children, err = readTUIGroupedNodes(item.Entry)
+		if err != nil {
+			m.Message = err.Error()
+			return
+		}
+	}
+	interfaces := interfaceNodes(item)
+	insert := len(children)
+	for i, node := range children {
+		if node.Header && node.Name == "[Files]" {
+			insert = i
+			break
+		}
+	}
+	children = append(children[:insert], append(interfaces, children[insert:]...)...)
+	m.Nodes, m.SelectedNode, m.InTree, m.InTopology, m.Message = children, firstTUISelectable(children), true, false, ""
+	m.Title = " SDK: " + interfaceview.Safe(item.Name) + "  (read-only tree)"
+	if len(m.History) > 0 && m.History[len(m.History)-1].InTopology && m.CurrentWorkshop < len(m.Configurations) {
+		m.Title = " Workshop: " + interfaceview.Safe(m.Configurations[m.CurrentWorkshop].Name) + "  ›  SDK: " + interfaceview.Safe(item.Name)
+	}
+}
+
+// openSDKList switches from the root Workshop list to the existing SDK list.
+func (m *tuiExplorer) openSDKList() {
+	if !m.InTree || !m.InTopology || len(m.History) != 0 || m.Preview != nil {
+		return
+	}
+	m.push()
+	m.InTree, m.InTopology, m.Nodes, m.Title, m.Message = false, false, nil, "", ""
+}
+func (m *tuiExplorer) openTopology() {
+	if m.InTree || m.Preview != nil {
+		return
+	}
+	nodes := []tuiNode{}
+	nameWidth := 0
+	for _, c := range m.Configurations {
+		nameWidth = max(nameWidth, len([]rune(interfaceview.Safe(c.Name))))
+	}
+	for i, c := range m.Configurations {
+		name := interfaceview.Safe(c.Name)
+		label := name + strings.Repeat(" ", nameWidth-len([]rune(name))+3) + interfaceview.Safe(c.Definition)
+		nodes = append(nodes, tuiNode{Kind: "workshop", Index: i, Name: label})
+	}
+	if len(nodes) == 0 {
+		message := "No Workshop definitions"
+		if m.DiscoveryError != "" {
+			message = "Workshop discovery failed: " + interfaceview.Safe(m.DiscoveryError)
+		}
+		nodes = append(nodes, tuiNode{Header: true, Name: message})
+	}
+	m.show(nodes, fmt.Sprintf(" Workshops: %d", len(m.Configurations)))
+}
+func (m *tuiExplorer) openWorkshop(index int) {
+	m.CurrentWorkshop = index
+	c := m.Configurations[index]
+	nodes := []tuiNode{{Header: true, Name: "[SDKs]"}}
+	type sdkRow struct {
+		node                          tuiNode
+		name, source, status, channel string
+	}
+	var rows []sdkRow
+	for _, d := range c.SDKs {
+		if d.Name == "system" {
+			rows = append(rows, sdkRow{node: tuiNode{Kind: "workshop-system", Index: d.Order}, name: "system", source: "built-in", status: "configuration"})
+			continue
+		}
+		found := -1
+		for i, item := range m.SDKs {
+			for _, usage := range item.Declarations {
+				if usage.Definition == c.Definition && usage.Order == d.Order {
+					found = i
+					break
+				}
+			}
+			if found >= 0 {
+				break
+			}
+		}
+		if found >= 0 {
+			item := m.SDKs[found]
+			rows = append(rows, sdkRow{node: tuiNode{Kind: "workshop-sdk", Index: found, DeclarationOrder: d.Order}, name: item.Name, source: item.Source, status: item.Status, channel: item.Channel})
+		} else {
+			rows = append(rows, sdkRow{node: tuiNode{Header: true}, name: d.Name, status: "unavailable"})
+		}
+	}
+	var nameWidth, sourceWidth, statusWidth int
+	for i := range rows {
+		row := &rows[i]
+		row.name, row.source, row.status, row.channel = interfaceview.Safe(row.name), interfaceview.Safe(row.source), interfaceview.Safe(row.status), interfaceview.Safe(row.channel)
+		nameWidth = max(nameWidth, len([]rune(row.name)))
+		sourceWidth = max(sourceWidth, len([]rune(row.source)))
+		statusWidth = max(statusWidth, len([]rune(row.status)))
+	}
+	for _, row := range rows {
+		row.node.Name = row.name + strings.Repeat(" ", nameWidth-len([]rune(row.name))+3) + row.source + strings.Repeat(" ", sourceWidth-len([]rune(row.source))+3) + row.status
+		if row.channel != "" {
+			row.node.Name += strings.Repeat(" ", statusWidth-len([]rune(row.status))+3) + row.channel
+		}
+		nodes = append(nodes, row.node)
+	}
+	if len(c.SDKs) == 0 {
+		nodes = append(nodes, tuiNode{Header: true, Name: "No SDKs declared"})
+	}
+	nodes = append(nodes, tuiNode{Header: true, Name: "[Configuration]"}, tuiNode{Kind: "workshop-interfaces", Name: "Interfaces  ›"}, tuiNode{Header: true, Name: "[Scan results]"}, tuiNode{Kind: "workshop-assessment", Name: "SDK assessment  ›"})
+	base := ""
+	for _, w := range m.Workshops {
+		if w.Definition == c.Definition {
+			base = w.Base
+			break
+		}
+	}
+	m.show(nodes, interfaceview.Safe(" Workshop: "+c.Name+"  ("+c.Definition+")  "+base))
+}
+func (m *tuiExplorer) openSystem(order int) {
+	c := m.Configurations[m.CurrentWorkshop]
+	for _, d := range c.SDKs {
+		if d.Order != order {
+			continue
+		}
+		item := tuiSDK{Declarations: []sdk.Declaration{{Workshop: c.Name, Definition: c.Definition, Plugs: d.Plugs, Slots: d.Slots}}}
+		nodes := interfaceNodes(item)
+		nodes = append(nodes[:1], nodes[2:]...)
+		m.show(nodes, interfaceview.Safe(" Workshop: "+c.Name+"  ›  system configuration"))
+		return
+	}
+}
+func (m *tuiExplorer) openWorkshopInterfaces() {
+	c := m.Configurations[m.CurrentWorkshop]
+	nodes := []tuiNode{}
+	var selected *interfaceexposure.Review
+	for i := range m.Reviews {
+		if m.Reviews[i].Definition == c.Definition {
+			selected = &m.Reviews[i]
+			break
+		}
+	}
+	if selected == nil {
+		nodes = append(nodes, tuiNode{Header: true, Name: "Interface information unavailable"})
+	} else {
+		nodes = append(nodes, tuiInterfaceSlotNodes(*selected)...)
+	}
+
+	// Preserve configured edges whose source plug could not be represented as a declaration.
+	var orphans []tuiNode
+	for _, graph := range m.Topology {
+		if graph.Definition != c.Definition {
+			continue
+		}
+		for _, edge := range graph.Edges {
+			represented := false
+			if selected != nil {
+				for _, item := range selected.Items {
+					if item.Kind == "Plug" && item.SDK == edge.From.SDK && item.Name == edge.From.Name {
+						represented = true
+						break
+					}
+				}
+			}
+			if !represented {
+				e := edge
+				orphans = append(orphans, tuiNode{Kind: "topology-edge", Name: interfaceview.Safe(e.Kind + " " + e.From.Reference + " → " + e.To.Reference + " [" + e.State + "]"), Edge: &e})
+			}
+		}
+	}
+	if len(orphans) > 0 {
+		nodes = append(nodes, tuiNode{Header: true, Name: "[Unresolved configuration]"})
+		nodes = append(nodes, orphans...)
+	}
+	m.show(nodes, interfaceview.Safe(" Workshop: "+c.Name+"  ›  Interfaces (runtime not inspected)"))
+}
+
+func (m *tuiExplorer) openAssessment() {
+	if m.Scan == nil {
+		if m.Scanning {
+			m.Message = "Scan in progress"
+		} else {
+			m.Message = "Scan result unavailable"
+		}
+		return
+	}
+	var output bytes.Buffer
+	assessment := m.Scan.Assessment
+	workshop := m.InTopology && m.CurrentWorkshop >= 0 && m.CurrentWorkshop < len(m.Configurations)
+	if workshop {
+		config := m.Configurations[m.CurrentWorkshop]
+		orders := make(map[int]bool, len(config.SDKs))
+		for _, declaration := range config.SDKs {
+			orders[declaration.Order] = true
+		}
+		assessment.BySDK = nil
+		for _, item := range m.Scan.Assessment.BySDK {
+			for _, declaration := range item.Declarations {
+				if declaration.Definition == config.Definition && orders[declaration.Order] {
+					assessment.BySDK = append(assessment.BySDK, item)
+					break
+				}
+			}
+		}
+	}
+	assessment, err := safeTUIAssessment(assessment)
+	if err != nil {
+		m.Message = "Cannot display assessment: " + err.Error()
+		return
+	}
+	color := os.Getenv("NO_COLOR") == ""
+	if workshop {
+		err = report.WriteSDKAssessmentsWithOptions(&output, assessment.BySDK, report.TextOptions{Color: color})
+	} else {
+		err = report.WriteAssessmentWithOptions(&output, assessment, report.TextOptions{Color: color})
+	}
+	if err != nil {
+		m.Message = "Cannot display assessment: " + err.Error()
+		return
+	}
+	lines := strings.Split(strings.Trim(output.String(), "\n"), "\n")
+	status := "Project-wide scan assessment (all Workshops)"
+	if workshop {
+		status = "SDK assessments for this Workshop"
+	}
+	m.Preview = &tuiPreview{Path: "SDK assessment", Status: status, Lines: lines, Interface: true, Colored: color}
+}
+
+// Sanitize untrusted evidence before the report renderer adds its own ANSI colors.
+func safeTUIAssessment(assessment finding.Assessment) (finding.Assessment, error) {
+	encoded, err := json.Marshal(assessment)
+	if err != nil {
+		return finding.Assessment{}, err
+	}
+	var value any
+	if err := json.Unmarshal(encoded, &value); err != nil {
+		return finding.Assessment{}, err
+	}
+	var clean func(any) any
+	clean = func(v any) any {
+		switch x := v.(type) {
+		case string:
+			return interfaceview.Safe(x)
+		case []any:
+			for i := range x {
+				x[i] = clean(x[i])
+			}
+		case map[string]any:
+			for k, item := range x {
+				x[k] = clean(item)
+			}
+		}
+		return v
+	}
+	encoded, err = json.Marshal(clean(value))
+	if err != nil {
+		return finding.Assessment{}, err
+	}
+	var result finding.Assessment
+	err = json.Unmarshal(encoded, &result)
+	return result, err
 }
 
 func (m *tuiExplorer) move(delta int) {

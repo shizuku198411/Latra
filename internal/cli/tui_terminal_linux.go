@@ -13,7 +13,11 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/shizuku198411/Latra/internal/finding"
+	"github.com/shizuku198411/Latra/internal/interfaceexposure"
+	"github.com/shizuku198411/Latra/internal/interfacegraph"
 	"github.com/shizuku198411/Latra/internal/report"
+	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
@@ -27,7 +31,8 @@ func ioctlTermios(fd uintptr, request uintptr, term *syscall.Termios) error {
 	return nil
 }
 
-func runTerminalExplorer(project string, entries []tuiSDK, resolver source.StoreResolver) error {
+func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) error {
+	project, entries := inventory.Project, inventory.SDKs
 	// /dev/tty keeps the UI off redirected stdout/stderr and is both readable and writable.
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
@@ -56,7 +61,18 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGWINCH)
 	defer signal.Stop(signals)
 	reader := bufio.NewReader(tty)
-	model := tuiExplorer{SDKs: entries}
+	model := tuiExplorer{SDKs: entries, Configurations: inventory.Configurations, Workshops: inventory.Workshops}
+	var snapshot []sdk.SDK
+	for _, entry := range entries {
+		snapshot = append(snapshot, sdk.SDK{Metadata: entry.Metadata, Declarations: entry.Declarations})
+	}
+	for _, configuration := range inventory.Configurations {
+		graph := interfacegraph.Build(configuration, snapshot)
+		model.Topology = append(model.Topology, graph)
+		model.Reviews = append(model.Reviews, interfaceexposure.Build(configuration, snapshot, graph))
+	}
+	model.openTopology()
+	model.History = nil // Workshop list is the root screen.
 	type scanOutcome struct {
 		document *report.Document
 		err      error
@@ -76,7 +92,11 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 			height, width = 24, 80
 		}
 		var b strings.Builder
-		b.WriteString("\x1b[H\x1b[2J\x1b[1;36m Latra / SDK Explorer\x1b[0m\r\n")
+		name := "SDK Explorer"
+		if model.InTopology || (model.InTree && len(model.History) > 0 && model.History[len(model.History)-1].InTopology) {
+			name = "Workshop Explorer"
+		}
+		b.WriteString("\x1b[H\x1b[2J\x1b[1;36m Latra / " + name + "\x1b[0m\r\n")
 		fmt.Fprintf(&b, " Project: %s\r\n", fitLine(project, width-10))
 		b.WriteString(fitLine(tuiExplorerHeader(&model), width) + "\r\n")
 		b.WriteString(" " + strings.Repeat("─", max(0, min(width-2, 100))) + "\r\n")
@@ -94,24 +114,38 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 			start = selected - available + 1
 		}
 		if model.Preview != nil {
-			annotations := risksForPreview(model.Scan, entries[model.SelectedSDK].Name, model.Preview.Path)
-			for _, line := range tuiPreviewRows(model.Preview, annotations, width, available) {
-				b.WriteString(line + "\r\n")
+			var annotations map[int][]tuiRisk
+			if !model.Preview.Interface {
+				annotations = risksForPreview(model.Scan, entries[model.SelectedSDK].Name, model.Preview.Path)
+			}
+			if model.Preview.Interface {
+				for i := model.Preview.Scroll; i < len(model.Preview.Lines) && i < model.Preview.Scroll+available; i++ {
+					line := " " + model.Preview.Lines[i]
+					if model.Preview.Colored {
+						line = fitTUIANSI(line, width)
+					} else {
+						line = fitLine(line, width)
+					}
+					b.WriteString(line + "\r\n")
+				}
+			} else {
+				for _, line := range tuiPreviewRows(model.Preview, annotations, width, available) {
+					b.WriteString(line + "\r\n")
+				}
 			}
 		}
 		var treeRisks map[string]string
-		if model.InTree {
+		if model.InTree && !model.InTopology && len(entries) > 0 {
 			treeRisks = tuiTreeRisks(model.Scan, entries[model.SelectedSDK].Name)
 		}
 		for i := start; model.Preview == nil && i < count && i < start+available; i++ {
 			var line string
-			if model.Preview != nil {
-				line = " " + model.Preview.Lines[i]
-			} else if model.InTree {
+			coloredLine := false
+			if model.InTree {
 				n := model.Nodes[i]
 				symbol := "  "
 				if n.Header {
-					line = " " + n.Name
+					line = " " + strings.Repeat("  ", n.Depth) + n.Name
 				} else if n.Symlink {
 					symbol = "@ "
 				} else if n.Directory && n.Expanded {
@@ -127,7 +161,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 				line = tuiSDKListLine(sdk, model.Scan, width)
 			}
 			level := ""
-			if model.InTree && !model.Nodes[i].Header {
+			if model.InTree && !model.Nodes[i].Header && model.Nodes[i].Kind == "" {
 				level = treeRisks[model.Nodes[i].Path]
 			}
 			if model.Preview == nil && i == selected {
@@ -135,6 +169,11 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 				if level == "" {
 					b.WriteString("\x1b[7m")
 				}
+			}
+			if model.InTree && model.Nodes[i].Kind == "workshop-sdk" && model.CurrentWorkshop < len(model.Configurations) {
+				node := model.Nodes[i]
+				score := workshopSDKScore(model.Scan, model.Configurations[model.CurrentWorkshop].Definition, node.DeclarationOrder)
+				line, coloredLine = tuiScoreLine(line, score, width)
 			}
 			if level != "" {
 				// Fit before ANSI styling to preserve terminal column widths.
@@ -145,7 +184,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 					line = report.ColorReviewPriority(line, level)
 				}
 			}
-			if model.Preview == nil && !model.InTree {
+			if (model.Preview == nil && !model.InTree) || coloredLine {
 				b.WriteString(line) // Already fitted before adding ANSI score colors.
 			} else {
 				if level != "" {
@@ -173,11 +212,14 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		} else if !model.InTree && len(entries) > 0 {
 			b.WriteString(fitLine(" Workshop: "+entries[model.SelectedSDK].Workshops, width) + "\r\n")
 		}
-		help := " ↑/↓: move    Enter/→: open SDK    Esc/←: quit"
+		help := " ↑/↓: move    Enter/→: open SDK    Esc/←: workshops    q: quit"
 		if model.Preview != nil {
 			help = " ↑/↓: scroll    Esc/←: file tree    q: quit"
 		} else if model.InTree {
-			help = " ↑/↓: move    Enter/→: open / toggle    Esc/←: SDK list    q: quit"
+			help = " ↑/↓: move    Enter/→: open / toggle    Esc/←: back    q: quit"
+			if len(model.History) == 0 {
+				help = " ↑/↓: move    Enter/→: open Workshop    s: SDKs    Esc/←: quit"
+			}
 		}
 		b.WriteString(fitLine(help, width))
 		fmt.Fprint(tty, b.String())
@@ -206,6 +248,8 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		}
 		move := 0
 		switch key {
+		case 's':
+			model.openSDKList()
 		case 'q', 3:
 			return nil
 		case '\r', '\n':
@@ -213,7 +257,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		case 27:
 			// ANSI arrow keys: ESC [ A/B/C/D. A lone Esc also exits.
 			if reader.Buffered() == 0 && !ttyInputReady(fd, 80*time.Millisecond) {
-				if model.InTree {
+				if model.Preview != nil || len(model.History) > 0 {
 					model.back()
 					break
 				}
@@ -232,7 +276,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 			case 'C':
 				model.enter()
 			case 'D':
-				if model.InTree {
+				if model.Preview != nil || len(model.History) > 0 {
 					model.back()
 				} else {
 					return nil
@@ -282,16 +326,41 @@ func tuiSDKListLine(item tuiSDK, document *report.Document, width int) string {
 		if assessment.SDK != item.Name {
 			continue
 		}
-		value := fmt.Sprintf("%d/100", assessment.ReviewPriority.Score)
-		prefix := "  Review Priority: "
-		// Retain a useful SDK name if the terminal is too narrow for both columns.
-		if width-len([]rune(prefix))-len(value) < 12 {
-			return fitLine(line, width)
-		}
-		left := fitLine(line, width-len([]rune(prefix))-len(value))
-		return left + prefix + report.ColorReviewPriority(value, assessment.ReviewPriority.Level)
+		formatted, _ := tuiScoreLine(line, &assessment.ReviewPriority, width)
+		return formatted
 	}
 	return fitLine(line, width)
+}
+
+func workshopSDKScore(document *report.Document, definition string, order int) *finding.Score {
+	if document == nil {
+		return nil
+	}
+	for _, assessment := range document.Assessment.BySDK {
+		for _, declaration := range assessment.Declarations {
+			if declaration.Definition == definition && declaration.Order == order {
+				score := assessment.ReviewPriority
+				return &score
+			}
+		}
+	}
+	return nil
+}
+
+// tuiScoreLine adds the same right-aligned priority display to both SDK lists.
+func tuiScoreLine(line string, score *finding.Score, width int) (string, bool) {
+	if score == nil {
+		return fitLine(line, width), false
+	}
+	const prefix = "  Review Priority: "
+	const scoreWidth = len("100/100")
+	leftWidth := width - len(prefix) - scoreWidth
+	if leftWidth < 12 {
+		return fitLine(line, width), false
+	}
+	left := fitLine(line, leftWidth)
+	left += strings.Repeat(" ", max(0, leftWidth-len([]rune(left))))
+	return left + prefix + report.ColorReviewPriority(fmt.Sprintf("%d/100", score.Score), score.Level), true
 }
 
 // tuiExplorerHeader keeps scan progress separate from transient navigation messages.
@@ -299,9 +368,19 @@ func tuiExplorerHeader(model *tuiExplorer) string {
 	var heading string
 	switch {
 	case model.Preview != nil:
-		heading = fmt.Sprintf(" File: %s  (read-only preview)", model.Preview.Path)
+		if model.Preview.Interface {
+			heading = fmt.Sprintf(" Interface: %s  (read-only)", safeTUILabel(model.Preview.Path))
+		} else {
+			heading = fmt.Sprintf(" File: %s  (read-only preview)", model.Preview.Path)
+		}
 	case model.InTree:
-		heading = fmt.Sprintf(" SDK: %s  (read-only tree)", model.SDKs[model.SelectedSDK].Name)
+		if model.Title != "" {
+			heading = model.Title
+		} else if model.InTopology {
+			heading = " Workshop configuration  (static view)"
+		} else {
+			heading = fmt.Sprintf(" SDK: %s  (read-only tree)", model.SDKs[model.SelectedSDK].Name)
+		}
 	default:
 		heading = fmt.Sprintf(" SDKs: %d  (read-only, auto-fetch missing SDKs)", len(model.SDKs))
 	}
