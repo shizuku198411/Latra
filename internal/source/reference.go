@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path"
 	"sort"
 	"strings"
 
@@ -30,24 +29,16 @@ func StoreSDKNames(projectPath string) ([]string, error) {
 	}
 	defer root.Close()
 
-	entries, err := fs.ReadDir(root.FS(), ".workshop")
+	definitions, err := workshopDefinitions(root)
 	if err != nil {
-		return nil, fmt.Errorf("read .workshop: %w", err)
+		return nil, err
 	}
-	definitionNames := make([]string, 0)
-	for _, entry := range entries {
-		if !entry.IsDir() && path.Ext(entry.Name()) == ".yaml" {
-			definitionNames = append(definitionNames, entry.Name())
-		}
-	}
-	sort.Strings(definitionNames)
-	if len(definitionNames) == 0 {
-		return nil, fmt.Errorf("no Workshop definitions found under .workshop")
+	if len(definitions) == 0 {
+		return nil, fmt.Errorf("no Workshop definitions found (workshop.yaml, .workshop.yaml, or .workshop/*.yaml)")
 	}
 
 	names := make(map[string]bool)
-	for _, definitionName := range definitionNames {
-		relative := path.Join(".workshop", definitionName)
+	for _, relative := range definitions {
 		content, err := readBounded(root, relative, maxDefinitionBytes)
 		if err != nil {
 			return nil, err
@@ -94,21 +85,13 @@ func ResolveSDKReference(projectPath, name string) (SDKReference, error) {
 	}
 	defer root.Close()
 
-	entries, err := fs.ReadDir(root.FS(), ".workshop")
+	definitions, err := workshopDefinitions(root)
 	if err != nil {
-		return SDKReference{}, fmt.Errorf("read .workshop: %w", err)
+		return SDKReference{}, err
 	}
-	definitionNames := make([]string, 0)
-	for _, entry := range entries {
-		if !entry.IsDir() && path.Ext(entry.Name()) == ".yaml" {
-			definitionNames = append(definitionNames, entry.Name())
-		}
-	}
-	sort.Strings(definitionNames)
 
 	references := make(map[string]*SDKReference)
-	for _, definitionName := range definitionNames {
-		relative := path.Join(".workshop", definitionName)
+	for _, relative := range definitions {
 		content, err := readBounded(root, relative, maxDefinitionBytes)
 		if err != nil {
 			return SDKReference{}, err

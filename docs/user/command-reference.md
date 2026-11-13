@@ -30,7 +30,7 @@ latra scan <PROJECT_OR_PROJECT_SDK> [options]
 
 | Argument | Description |
 | --- | --- |
-| `PROJECT_OR_PROJECT_SDK` | A Workshop project containing `.workshop/*.yaml`, or a project SDK directory containing SDK metadata. |
+| `PROJECT_OR_PROJECT_SDK` | A Workshop project containing `workshop.yaml`, `.workshop.yaml`, or `.workshop/*.yaml`, or a project SDK directory containing SDK metadata. |
 
 ### Options
 
@@ -43,6 +43,8 @@ latra scan <PROJECT_OR_PROJECT_SDK> [options]
 | `--no-color` | Disable terminal colors where supported. |
 
 The `--format` and `--output` options also accept `--format=<value>` and `--output=<value>`.
+
+Use one root definition or `.workshop/*.yaml` definitions. Latra reports an error if both root filenames exist or if a root definition is mixed with `.workshop/*.yaml`. A `.workshop/` directory containing project SDKs can coexist with a root definition.
 
 ### Compact and verbose reports
 
@@ -191,7 +193,7 @@ Options may use either `--option value` or `--option=value` syntax.
 
 When `--channel` is not supplied, Latra:
 
-1. reads `.workshop/*.yaml` from the current directory or `--project` path;
+1. reads Workshop definitions from the current directory or `--project` path (`workshop.yaml`, `.workshop.yaml`, or `.workshop/*.yaml`);
 2. finds the requested SDK declaration;
 3. uses the declared Store channel, or the `stable` default when omitted;
 4. selects the newest matching cached revision unless `--revision` is supplied;

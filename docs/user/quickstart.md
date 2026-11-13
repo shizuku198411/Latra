@@ -34,7 +34,7 @@ Display any detected SDK file by its reported path:
 latra file go meta/sdk.yaml
 ```
 
-Replace `go`, `setup-base`, and `meta/sdk.yaml` with values from your project report. Latra resolves the SDK from the current project's `.workshop/*.yaml` definitions, including its declared channel.
+Replace `go`, `setup-base`, and `meta/sdk.yaml` with values from your project report. Latra resolves the SDK from the current project's Workshop definitions (`workshop.yaml`, `.workshop.yaml`, or `.workshop/*.yaml`), including its declared channel.
 
 ## Write a JSON report
 

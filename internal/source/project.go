@@ -42,6 +42,41 @@ type connection struct {
 	Slot string `yaml:"slot"`
 }
 
+// workshopDefinitions returns project-relative definition paths in a stable order.
+// A root definition may coexist with .workshop/ project SDK directories, but
+// multiple root definitions or root and named definitions are ambiguous.
+func workshopDefinitions(root *os.Root) ([]string, error) {
+	var rootDefinitions, namedDefinitions []string
+	for _, name := range []string{"workshop.yaml", ".workshop.yaml"} {
+		info, err := root.Stat(name)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("inspect %s: %w", name, err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s is not a regular file", name)
+		}
+		rootDefinitions = append(rootDefinitions, name)
+	}
+	entries, err := fs.ReadDir(root.FS(), ".workshop")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("read .workshop: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && path.Ext(entry.Name()) == ".yaml" {
+			namedDefinitions = append(namedDefinitions, path.Join(".workshop", entry.Name()))
+		}
+	}
+	if len(rootDefinitions) > 1 || (len(rootDefinitions) > 0 && len(namedDefinitions) > 0) {
+		return nil, fmt.Errorf("conflicting Workshop definitions: %s", strings.Join(append(rootDefinitions, namedDefinitions...), ", "))
+	}
+	definitions := append(rootDefinitions, namedDefinitions...)
+	sort.Strings(definitions)
+	return definitions, nil
+}
+
 func readProject(ctx context.Context, projectPath string, limits sdk.Limits, resolver StoreResolver, includeUnsupported bool) (*Result, error) {
 	root, err := os.OpenRoot(projectPath)
 	if err != nil {
@@ -49,26 +84,17 @@ func readProject(ctx context.Context, projectPath string, limits sdk.Limits, res
 	}
 	defer root.Close()
 
-	entries, err := fs.ReadDir(root.FS(), ".workshop")
+	definitions, err := workshopDefinitions(root)
 	if err != nil {
-		return nil, fmt.Errorf("read .workshop: %w", err)
+		return nil, err
 	}
-	definitionNames := make([]string, 0)
-	for _, entry := range entries {
-		if entry.IsDir() || path.Ext(entry.Name()) != ".yaml" {
-			continue
-		}
-		definitionNames = append(definitionNames, entry.Name())
-	}
-	sort.Strings(definitionNames)
-	if len(definitionNames) == 0 {
-		return nil, fmt.Errorf("no Workshop definitions found under .workshop")
+	if len(definitions) == 0 {
+		return nil, fmt.Errorf("no Workshop definitions found (workshop.yaml, .workshop.yaml, or .workshop/*.yaml)")
 	}
 
 	result := &Result{Kind: InputProject, Root: projectPath}
 	index := make(map[string]int)
-	for _, definitionName := range definitionNames {
-		relative := path.Join(".workshop", definitionName)
+	for _, relative := range definitions {
 		content, err := readBounded(root, relative, maxDefinitionBytes)
 		if err != nil {
 			return nil, err

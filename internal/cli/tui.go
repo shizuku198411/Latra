@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -47,18 +46,6 @@ func discoverTUIInventory(project, cacheRoot string, resolver source.StoreResolv
 	absolute, err := filepath.Abs(project)
 	if err != nil {
 		return tuiInventory{}, err
-	}
-	// Unlike the generic scanner, the TUI only accepts Workshop projects.
-	// Check this before scanning so an empty directory is not interpreted as an SDK.
-	workshopDir, err := os.Stat(filepath.Join(absolute, ".workshop"))
-	if errors.Is(err, os.ErrNotExist) {
-		return tuiInventory{}, fmt.Errorf("%s is not a Workshop project: .workshop directory not found", absolute)
-	}
-	if err != nil {
-		return tuiInventory{}, fmt.Errorf("inspect .workshop: %w", err)
-	}
-	if !workshopDir.IsDir() {
-		return tuiInventory{}, fmt.Errorf("%s is not a Workshop project: .workshop is not a directory", absolute)
 	}
 	result, err := source.DiscoverProject(context.Background(), absolute, sdk.DefaultLimits())
 	if err != nil {
