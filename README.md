@@ -131,54 +131,7 @@ Run the following command from your Workshop project root.
 latra scan
 ```
 
-The default text report summarizes the detected SDKs, files, hooks, operations, capabilities, command coverage gaps, and diagnostics.
-
-<details>
-<summary>Example output</summary>
-
-```text
-Input
-  Kind: project
-  Root: /project/internaldocs/sample-project
-
-Workshops
-  kernel-dev
-    Definition: .workshop/kernel-dev.yaml
-    Base: ubuntu@24.04
-
-Summary
-  SDKs: 2 (2 resolved, 0 unresolved)
-    Resolved: kernel-dev-base, rust
-    Unresolved: -
-  Files: 26
-    kernel-dev-base (5): hooks/check-health, hooks/setup-base, hooks/setup-project, sdk.yaml, ... and more files (1)
-    rust (21): meta/sdk.yaml, sdk/hooks/check-health, sdk/hooks/setup-base, ... and more files (18)
-  Hooks: 5
-    kernel-dev-base (3): check-health, setup-base, setup-project
-    rust (2): check-health, setup-base
-  Operations: 61
-    kernel-dev-base (47): assignment (10), command-invocation (23), control-flow (9), redirect-write (5)
-    rust (14): command-invocation (9), control-flow (1), redirect-read (1), redirect-write (2), source (1)
-  Capabilities: 25
-    kernel-dev-base (14): code-execution (1), device-access (5), identity-change (2), network-access (3), network-download (1), project-write (1), system-modification (1)
-    rust (11): code-execution (1), destructive-operation (1), dynamic-execution (1), identity-change (2), network-access (2), persistence (2), system-modification (2)
-  Command Coverage Gaps: 4 unregistered, 0 dynamic
-    kernel-dev-base (4 unregistered, 0 dynamic)
-      hooks/check-health (3 unregistered, 0 dynamic): unregistered=llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
-      hooks/setup-project (1 unregistered, 0 dynamic): unregistered=make (1)
-    rust (0 unregistered, 0 dynamic)
-  Findings: 13 (5 risk, 8 assurance)
-    High-priority risks:
-      kernel-dev-base (high): risk.remote-content-to-project (1), risk.unknown-command-root (3)
-  Diagnostics: 1: external-include (1)
-
-Observations
-  Project Access: 1 (0 reads, 1 writes)
-  By SDK:
-    kernel-dev-base: 1 (0 reads, 1 writes)
-```
-
-</details>
+The default text report shows input, Workshop definitions, and Assessment. Use `latra scan --verbose` for the SDK inventory, interfaces, observations, and diagnostics.
 
 #### Review the assessment
 

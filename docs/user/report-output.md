@@ -6,7 +6,7 @@ This guide explains the default human-readable output from:
 latra scan .
 ```
 
-The default output is a compact summary intended for terminal use. It does not require `--verbose` or `--format json`.
+The default text output contains Input, Workshops, and Assessment. Use `--verbose` for the full inventory, interface declarations, observations, summary, and diagnostics. JSON output retains its existing compact and verbose formats.
 
 ## Example
 
@@ -22,29 +22,22 @@ Workshops
     Definition: .workshop/development.yaml
     Base: ubuntu@24.04
 
-Summary
-  SDKs: 2 (2 resolved, 0 unresolved)
-    Resolved: project-base, rust
-    Unresolved: -
-  Files: 26
-    project-base (5): hooks/check-health, hooks/setup-base, hooks/setup-project, sdk.yaml, ... and more files (1)
-    rust (21): meta/sdk.yaml, sdk/hooks/check-health, sdk/hooks/setup-base, ... and more files (18)
-  Hooks: 5
-    project-base (3): check-health, setup-base, setup-project
-    rust (2): check-health, setup-base
-  Operations: 61
-    project-base (47): assignment (10), command-invocation (23), control-flow (9), redirect-write (5)
-    rust (14): command-invocation (9), control-flow (1), redirect-read (1), redirect-write (2), source (1)
-  Capabilities: 22
-    project-base (12): code-execution (1), device-access (5), identity-change (2), network-access (3), system-modification (1)
-    rust (10): code-execution (1), destructive-operation (1), dynamic-execution (1), identity-change (2), network-access (2), persistence (1), system-modification (2)
-  Command Coverage Gaps: 7 unregistered, 0 dynamic
-    project-base (7 unregistered, 0 dynamic)
-      hooks/check-health (5 unregistered, 0 dynamic): unregistered=cd (1), clang (1), llvm-objcopy (1), llvm-objdump (1), qemu-system-riscv64 (1)
-      hooks/setup-base (1 unregistered, 0 dynamic): unregistered=cd (1)
-      hooks/setup-project (1 unregistered, 0 dynamic): unregistered=make (1)
-    rust (0 unregistered, 0 dynamic)
-  Diagnostics: 0: -
+Assessment
+  Classification: expected-and-controlled
+  Review Priority: 0/100 (info)           [░░░░░░░░░░░░░░░░░░░░]
+  Risk:            0/100 (info)           [░░░░░░░░░░░░░░░░░░░░]
+  Assurance:       72/100 (strong)        [██████████████░░░░░░]
+  Coverage:        100/100 (sufficient)   [████████████████████]
+  Semantic:        100/100 (sufficient)   [████████████████████]
+  By SDK:
+    project-base: expected-and-controlled
+      Review Priority: 0/100 (info)           [░░░░░░░░░░░░░░░░░░░░]
+      Risk:            0/100 (info)           [░░░░░░░░░░░░░░░░░░░░]
+      Assurance:       72/100 (strong)        [██████████████░░░░░░]
+      Coverage:        100/100 (sufficient)   [████████████████████]
+      Semantic:        100/100 (sufficient)   [████████████████████]
+      Key Risks:
+        -
 ```
 
 ## Input
@@ -81,6 +74,8 @@ A project may contain multiple Workshop definitions. Latra combines their SDK de
 
 ## SDKs
 
+The following inventory sections are available with `--verbose`.
+
 ```text
 SDKs: 2 (2 resolved, 0 unresolved)
   Resolved: project-base, rust
@@ -115,12 +110,7 @@ Files: 26
 
 When Latra cannot retain non-essential file content within its resource limits, the section also reports a `content skipped` count and lists the affected paths with their reason and size. Their path, size, and digest remain inventoried, and metadata and hook analysis continues. A skipped non-essential file does not by itself make assessment coverage insufficient.
 
-Each SDK line contains:
-
-1. the SDK name;
-2. the total number of entries for that SDK;
-3. its metadata file and standard Workshop hook files;
-4. the number of additional entries hidden from the compact output.
+The verbose inventory lists each SDK and its files. The verbose Summary provides counts by SDK.
 
 The paths shown here can be passed directly to `latra file` together with the SDK name:
 
@@ -131,7 +121,7 @@ latra file rust meta/sdk.yaml
 
 Text files are printed as-is. For binary files, Latra prints the detected file type, MIME type, size, and SHA3-384 digest instead of raw binary data.
 
-The compact report intentionally hides non-hook files behind `... and more files`. Use the verbose report to discover every inventoried path, then pass the selected path to `latra file`:
+Use the verbose report to discover inventoried paths, then pass the selected path to `latra file`:
 
 ```bash
 latra scan . --verbose
@@ -210,7 +200,7 @@ Findings: 8 (3 risk, 5 assurance)
 
 Findings combine operations, capabilities, hook context, and operation-graph relations into reviewable security observations.
 
-The compact Summary lists only risk IDs for SDKs whose aggregated risk level is `high` or `critical`. Assurance findings and lower-priority SDK details remain counted in the header and available in JSON or verbose output. This keeps the terminal summary focused on findings that drive immediate review.
+The verbose Summary lists finding counts, and verbose SDK details include individual findings and evidence.
 
 - A `risk` finding describes behavior and impact that may require review. It does not claim that the SDK is malicious.
 - An `assurance` finding describes an observed control, scope limit, or analysis-quality property. It does not claim that the SDK is safe.
@@ -243,7 +233,7 @@ Observations
 
 Observations record important facts without increasing or reducing Risk, Assurance, Review Priority, or Classification. Project Access shows how often SDK hooks read or modify the mounted project.
 
-The compact report contains occurrence totals. With `--verbose`, each access includes the SDK, hook, source location, normalized project path, original shell path, and resolution status:
+With `--verbose`, each access includes the SDK, hook, source location, normalized project path, original shell path, and resolution status:
 
 ```text
 sdk=project-base file=hooks/setup-project:4:1 hook=setup-project value="/project/README.md" raw="README.md" resolution=Resolved
@@ -253,7 +243,7 @@ In JSON, `summary.observations` contains project-wide and per-SDK totals. Full J
 
 ## Assessment
 
-Assessment is displayed separately from Summary because Summary contains occurrence counts, while Assessment answers how urgently the result should be reviewed.
+Assessment answers how urgently the result should be reviewed. The verbose report also includes Summary occurrence counts.
 
 ```text
 Assessment
@@ -358,7 +348,7 @@ For a typical investigation:
 7. Use Operations and Capabilities to identify behavior that needs closer source review.
 # Interface declarations
 
-The text scan report includes an Interfaces section listing SDK-declared and
+The verbose text scan report includes an Interfaces section listing SDK-declared and
 Workshop-declared plugs and slots separately. These are static declarations;
 they do not establish that a connection is active. An unavailable SDK may
 still have Workshop declarations. Use `--verbose` for declared attribute
@@ -367,14 +357,14 @@ values. Values and keyring lookup attributes may contain sensitive information.
 Compact JSON retains its existing summary format. Use `--format json --verbose`
 to inspect the existing SDK metadata and Workshop declaration fields.
 
-Configured interfaces lists explicit Workshop connections and plug bindings.
+In verbose text, Configured interfaces lists explicit Workshop connections and plug bindings.
 `Configured` and `Bound` describe the declaration, not the running Workshop;
 `Unresolved` means the available inventory cannot verify an endpoint, and
 `Invalid` identifies a detected configuration conflict. Interface policy and
 runtime state are not evaluated. Verbose JSON exposes the same static graph as
 `interfaceTopology` in schema version 6.
 
-Exposure review lists unscored review items derived from interface declarations,
+In verbose text, Exposure review lists unscored review items derived from interface declarations,
 grouped by Workshop. Verbose text includes declared values, related configured
 edges, and limitations. `Not evaluated` indicates unavailable or uninterpretable
 input; it does not imply that no interface is present. These items do not change

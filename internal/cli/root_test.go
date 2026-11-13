@@ -294,13 +294,15 @@ func TestRunScanTextIsCompactByDefault(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d; stderr = %q", code, stderr.String())
 	}
-	for _, want := range []string{"Input\n", "Workshops\n", "Summary\n"} {
+	for _, want := range []string{"Input\n", "Workshops\n", "Assessment\n"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Errorf("stdout does not contain %q", want)
 		}
 	}
-	if strings.Contains(stdout.String(), "\nSDKs\n") {
-		t.Errorf("compact stdout contains SDK details:\n%s", stdout.String())
+	for _, heading := range []string{"SDKs", "Summary", "Interfaces", "Configured interfaces", "Exposure review", "Observations", "Diagnostics"} {
+		if strings.Contains(stdout.String(), "\n"+heading+"\n") || strings.Contains(stdout.String(), "\n"+heading+" (") {
+			t.Errorf("compact stdout contains %s:\n%s", heading, stdout.String())
+		}
 	}
 }
 

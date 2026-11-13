@@ -79,7 +79,7 @@ func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextO
 	return writeDocumentDiagnostics(writer, document.Diagnostics)
 }
 
-// WriteTextSummary renders input, Workshop definitions, and the summary only.
+// WriteTextSummary renders input, Workshop definitions, and assessment.
 func WriteTextSummary(writer io.Writer, result *source.Result) error {
 	return WriteTextSummaryWithOptions(writer, result, TextOptions{})
 }
@@ -100,25 +100,7 @@ func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, option
 			}
 		}
 	}
-	if err := writeSummary(writer, document.Summary, document.Assessment, true); err != nil {
-		return err
-	}
-	if err := writeInterfaceSummary(writer, document.SDKs); err != nil {
-		return err
-	}
-	if err := writeTopology(writer, document, false); err != nil {
-		return err
-	}
-	if err := writeExposure(writer, document, false); err != nil {
-		return err
-	}
-	if err := writeObservations(writer, document, false); err != nil {
-		return err
-	}
-	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
-		return err
-	}
-	return writeDocumentDiagnostics(writer, document.Diagnostics)
+	return writeAssessment(writer, document.Assessment, options.Color)
 }
 
 func writeObservations(writer io.Writer, document Document, verbose bool) error {

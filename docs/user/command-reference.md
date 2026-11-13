@@ -46,14 +46,8 @@ The `--format` and `--output` options also accept `--format=<value>` and `--outp
 
 ### Compact and verbose reports
 
-Without `--verbose`, both text and JSON reports contain:
-
-- input information;
-- Workshop definitions;
-- the summary;
-- diagnostics.
-
-The compact text summary displays only SDK metadata and standard hook paths in its Files section. Other entries are represented by `... and more files (<count>)`.
+Without `--verbose`, the text report contains Input, Workshops, and Assessment.
+The compact JSON report retains its existing summary, assessment, and diagnostics.
 
 With `--verbose`, the report includes the complete SDK inventory and analysis details. Text file contents are included directly. Binary file contents are represented by metadata and a digest.
 
@@ -391,8 +385,8 @@ A scan can produce a report and still return `1` when hook parsing was incomplet
 | `SDK_STORE_URL` | Override the SDK Store API base URL used by `latra scan`. Intended for testing or alternate compatible services. |
 # Interface inspection
 
-`latra scan` lists static interface declarations in its text report;
-`latra scan --verbose` also displays their declared values. `latra explorer`
+`latra scan --verbose` lists static interface declarations and their declared
+values in its text report. `latra explorer`
 offers an Interfaces tree and read-only details. Neither view determines the
 runtime connection state. For structured data, use `latra scan --format json
 --verbose` and inspect SDK metadata and Workshop declarations.

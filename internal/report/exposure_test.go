@@ -19,7 +19,7 @@ func TestExposureReviewDoesNotChangeAssessment(t *testing.T) {
 		t.Fatal("exposure review changed assessment")
 	}
 	var b bytes.Buffer
-	if err := WriteTextSummary(&b, result); err != nil {
+	if err := WriteText(&b, result); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(b.String(), "Exposure review") || !strings.Contains(b.String(), "Secret plug declared") {
