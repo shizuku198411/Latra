@@ -220,18 +220,23 @@ func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool
 	if err := writeAssessmentScores(writer, assessment.ReviewPriority, assessment.Risk, assessment.Assurance, assessment.Coverage, "  ", color); err != nil {
 		return err
 	}
+	return WriteSDKAssessmentsWithOptions(writer, assessment.BySDK, TextOptions{Color: color})
+}
+
+// WriteSDKAssessmentsWithOptions renders the per-SDK part of an assessment.
+func WriteSDKAssessmentsWithOptions(writer io.Writer, items []finding.SDKAssessment, options TextOptions) error {
 	if _, err := fmt.Fprintln(writer, "  By SDK:"); err != nil {
 		return err
 	}
-	if len(assessment.BySDK) == 0 {
+	if len(items) == 0 {
 		_, err := fmt.Fprintln(writer, "    -")
 		return err
 	}
-	for _, item := range assessment.BySDK {
+	for _, item := range items {
 		if _, err := fmt.Fprintf(writer, "    %s: %s\n", item.SDK, item.Classification); err != nil {
 			return err
 		}
-		if err := writeAssessmentScores(writer, item.ReviewPriority, item.Risk, item.Assurance, item.Coverage, "      ", color); err != nil {
+		if err := writeAssessmentScores(writer, item.ReviewPriority, item.Risk, item.Assurance, item.Coverage, "      ", options.Color); err != nil {
 			return err
 		}
 		if err := writeKeyRisks(writer, item.KeyRisks, "      "); err != nil {
@@ -239,6 +244,16 @@ func writeAssessment(writer io.Writer, assessment finding.Assessment, color bool
 		}
 	}
 	return nil
+}
+
+// WriteAssessment renders the same assessment section used by scan text reports.
+func WriteAssessment(writer io.Writer, assessment finding.Assessment) error {
+	return writeAssessment(writer, assessment, false)
+}
+
+// WriteAssessmentWithOptions renders the scan assessment with explicit color settings.
+func WriteAssessmentWithOptions(writer io.Writer, assessment finding.Assessment, options TextOptions) error {
+	return writeAssessment(writer, assessment, options.Color)
 }
 
 func writeAssessmentScores(writer io.Writer, priority finding.Score, risk, assurance finding.ScoredAxis, coverage finding.Coverage, indent string, color bool) error {

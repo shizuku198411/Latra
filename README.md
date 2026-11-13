@@ -61,7 +61,7 @@ Launch it from your Workshop project root.
 latra explorer
 ```
 
-When the TUI starts, it automatically retrieves and scans the SDKs. Once scanning is complete, the Review Priority score is displayed for each SDK in the SDK list.
+The Explorer opens with the Workshop list and automatically retrieves and scans the SDKs. Select a Workshop to inspect its SDKs and configuration, or press `s` to open the SDK list. Once scanning is complete, each SDK's Review Priority appears in the SDK list.
 
 ```text
  Latra / SDK Explorer

@@ -303,13 +303,14 @@ type Coverage struct {
 }
 
 type SDKAssessment struct {
-	SDK            string          `json:"sdk"`
-	Classification string          `json:"classification"`
-	ReviewPriority Score           `json:"reviewPriority"`
-	Risk           ScoredAxis      `json:"risk"`
-	Assurance      ScoredAxis      `json:"assurance"`
-	Coverage       Coverage        `json:"coverage"`
-	KeyRisks       []RiskHighlight `json:"keyRisks"`
+	SDK            string            `json:"sdk"`
+	Declarations   []sdk.Declaration `json:"-"`
+	Classification string            `json:"classification"`
+	ReviewPriority Score             `json:"reviewPriority"`
+	Risk           ScoredAxis        `json:"risk"`
+	Assurance      ScoredAxis        `json:"assurance"`
+	Coverage       Coverage          `json:"coverage"`
+	KeyRisks       []RiskHighlight   `json:"keyRisks"`
 }
 
 type Assessment struct {
@@ -375,7 +376,7 @@ func AssessSDK(item sdk.SDK, findings []Finding) SDKAssessment {
 	risk := scoreAxis(findings, KindRisk)
 	assurance := scoreAxis(findings, KindAssurance)
 	coverage := coverageForSDK(item)
-	assessment := SDKAssessment{SDK: item.Name, Risk: risk, Assurance: assurance, Coverage: coverage, KeyRisks: riskHighlights(findings)}
+	assessment := SDKAssessment{SDK: item.Name, Declarations: item.Declarations, Risk: risk, Assurance: assurance, Coverage: coverage, KeyRisks: riskHighlights(findings)}
 	finalizeAssessment(&assessment.Classification, &assessment.ReviewPriority, risk, assurance, coverage)
 	return assessment
 }

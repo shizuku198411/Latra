@@ -18,6 +18,7 @@ const maxTUIPreviewBytes = 1 << 20
 
 type tuiPreview struct {
 	Interface   bool
+	Colored     bool
 	Path        string
 	Status      string
 	Lines       []string

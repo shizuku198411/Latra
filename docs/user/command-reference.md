@@ -397,10 +397,14 @@ offers an Interfaces tree and read-only details. Neither view determines the
 runtime connection state. For structured data, use `latra scan --format json
 --verbose` and inspect SDK metadata and Workshop declarations.
 
-In the Explorer SDK list, press `w` to inspect configured connections and
-bindings by Workshop. Select an entry for its endpoint details and diagnostics.
+The Explorer starts with the Workshop list. Select a Workshop to inspect its
+SDKs, configured interfaces and exposure review, or press `s` to open the SDK
+list. Open
+an SDK to use the existing SDK tree, or open Interfaces to inspect bindings and
+connections. Select a connection or binding for endpoint details and diagnostics.
 The configuration view does not connect interfaces or inspect runtime state.
 
-The Workshop configuration view also contains unscored Exposure review items;
-interface details show the applicable review and its limitations. Text scan
+The Workshop configuration view contains a Scan results section with the SDK
+assessments and unscored Interface exposure review items for that Workshop.
+Interface details show the applicable review and its limitations. Text scan
 reports include the same review; `--verbose` shows its declared evidence.
