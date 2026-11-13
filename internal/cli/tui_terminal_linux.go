@@ -148,9 +148,7 @@ func runTerminalExplorer(project string, entries []tuiSDK, resolver source.Store
 		for i := start; model.Preview == nil && i < count && i < start+available; i++ {
 			var line string
 			coloredLine := false
-			if model.Preview != nil {
-				line = " " + model.Preview.Lines[i]
-			} else if model.InTree {
+			if model.InTree {
 				n := model.Nodes[i]
 				symbol := "  "
 				if n.Header {

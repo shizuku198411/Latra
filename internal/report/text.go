@@ -2,10 +2,8 @@
 package report
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"unicode"
 
@@ -62,16 +60,16 @@ func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextO
 			return err
 		}
 	}
-	if err := writeTopology(writer, document, true); err != nil {
+	if err := writeTopology(writer, document); err != nil {
 		return err
 	}
-	if err := writeExposure(writer, document, true); err != nil {
+	if err := writeExposure(writer, document); err != nil {
 		return err
 	}
-	if err := writeSummary(writer, document.Summary, document.Assessment, false); err != nil {
+	if err := writeSummary(writer, document.Summary, document.Assessment); err != nil {
 		return err
 	}
-	if err := writeObservations(writer, document, true); err != nil {
+	if err := writeObservations(writer, document); err != nil {
 		return err
 	}
 	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
@@ -104,7 +102,7 @@ func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, option
 	return writeAssessment(writer, document.Assessment, options.Color)
 }
 
-func writeObservations(writer io.Writer, document Document, verbose bool) error {
+func writeObservations(writer io.Writer, document Document) error {
 	if _, err := fmt.Fprintf(writer, "\nObservations\n  Project Access: %d", document.Summary.Observations.Count); err != nil {
 		return err
 	}
@@ -115,26 +113,6 @@ func writeObservations(writer io.Writer, document Document, verbose bool) error 
 	}
 	if _, err := fmt.Fprintf(writer, " (%d reads, %d writes)\n", reads, writes); err != nil {
 		return err
-	}
-	if !verbose {
-		if _, err := fmt.Fprintln(writer, "  By SDK:"); err != nil {
-			return err
-		}
-		wrote := false
-		for _, item := range document.Summary.Observations.BySDK {
-			if item.Count == 0 {
-				continue
-			}
-			wrote = true
-			if _, err := fmt.Fprintf(writer, "    %s: %d (%d reads, %d writes)\n", item.SDKName, item.Count, item.ProjectAccess.Reads, item.ProjectAccess.Writes); err != nil {
-				return err
-			}
-		}
-		if !wrote {
-			_, err := fmt.Fprintln(writer, "    -")
-			return err
-		}
-		return nil
 	}
 	if document.Summary.Observations.Count == 0 {
 		_, err := fmt.Fprintln(writer, "    -")
@@ -227,11 +205,6 @@ func WriteSDKAssessmentsWithOptions(writer io.Writer, items []finding.SDKAssessm
 		}
 	}
 	return nil
-}
-
-// WriteAssessment renders the same assessment section used by scan text reports.
-func WriteAssessment(writer io.Writer, assessment finding.Assessment) error {
-	return writeAssessment(writer, assessment, false)
 }
 
 // WriteAssessmentWithOptions renders the scan assessment with explicit color settings.
@@ -410,7 +383,7 @@ func writeKeyRisks(writer io.Writer, highlights []finding.RiskHighlight, indent 
 	return nil
 }
 
-func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessment, compactFiles bool) error {
+func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessment) error {
 	if _, err := fmt.Fprintf(writer, "\nSummary\n  SDKs: %d (%d resolved, %d unresolved)\n    Resolved: %s\n    Unresolved: %s\n",
 		summary.SDKs.Count, summary.SDKs.Resolved, summary.SDKs.Unresolved,
 		formatSummaryItems(summary.SDKs.SDKNames.Resolved),
@@ -425,15 +398,7 @@ func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessme
 		return err
 	}
 	for _, item := range summary.Files.BySDK {
-		filePaths := item.FilePaths
-		omitted := 0
-		if compactFiles {
-			filePaths, omitted = compactSummaryFiles(item.FilePaths, item.Count)
-		}
-		formatted := formatSummaryItems(filePaths)
-		if omitted > 0 {
-			formatted += fmt.Sprintf(", ... and more files (%d)", omitted)
-		}
+		formatted := formatSummaryItems(item.FilePaths)
 		itemLabel := fmt.Sprintf("%s (%d", item.SDKName, item.Count)
 		if item.ContentSkipped > 0 {
 			itemLabel += fmt.Sprintf(", %d content skipped", item.ContentSkipped)
@@ -443,15 +408,7 @@ func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessme
 			return err
 		}
 		if item.ContentSkipped > 0 {
-			skipped := item.SkippedFiles
-			omittedSkipped := 0
-			if compactFiles && len(skipped) > 5 {
-				skipped, omittedSkipped = skipped[:5], len(skipped)-5
-			}
-			formattedSkipped := formatSkippedFiles(skipped)
-			if omittedSkipped > 0 {
-				formattedSkipped += fmt.Sprintf(", ... and more skipped files (%d)", omittedSkipped)
-			}
+			formattedSkipped := formatSkippedFiles(item.SkippedFiles)
 			if _, err := fmt.Fprintf(writer, "      Content skipped: %s\n", formattedSkipped); err != nil {
 				return err
 			}
@@ -543,36 +500,6 @@ func writeSummary(writer io.Writer, summary Summary, assessment finding.Assessme
 	return err
 }
 
-func compactSummaryFiles(filePaths []string, total int) ([]string, int) {
-	selected := make([]string, 0, len(filePaths))
-	for _, filePath := range filePaths {
-		if filePath == "sdk.yaml" || filePath == "meta/sdk.yaml" || isHookPath(filePath) {
-			selected = append(selected, filePath)
-		}
-	}
-	omitted := total - len(selected)
-	if omitted < 0 {
-		omitted = 0
-	}
-	return selected, omitted
-}
-
-func isHookPath(filePath string) bool {
-	prefix := "hooks/"
-	if strings.HasPrefix(filePath, "sdk/hooks/") {
-		prefix = "sdk/hooks/"
-	} else if !strings.HasPrefix(filePath, prefix) {
-		return false
-	}
-	name := strings.TrimPrefix(filePath, prefix)
-	for _, hookName := range sdk.HookNames {
-		if name == string(hookName) {
-			return true
-		}
-	}
-	return false
-}
-
 func formatCountedItems(items []CountedName) string {
 	if len(items) == 0 {
 		return "-"
@@ -617,7 +544,7 @@ func writeSDK(writer io.Writer, item SDK) error {
 	if err := writeFindings(writer, item.Findings); err != nil {
 		return err
 	}
-	if err := writeSDKInterfaces(writer, item, true); err != nil {
+	if err := writeSDKInterfaces(writer, item); err != nil {
 		return err
 	}
 	if item.State != sdk.StateResolved {
@@ -835,22 +762,7 @@ func writeMetadata(writer io.Writer, item SDK) error {
 	return nil
 }
 
-func writeInterfaceSummary(writer io.Writer, items []SDK) error {
-	if _, err := fmt.Fprintln(writer, "\nInterfaces (static declarations; connection status not inspected)"); err != nil {
-		return err
-	}
-	for _, item := range items {
-		if _, err := fmt.Fprintf(writer, "  %s (%s, %s)\n", interfaceview.Safe(item.Name), interfaceview.Safe(string(item.Source)), interfaceview.Safe(item.Channel)); err != nil {
-			return err
-		}
-		if err := writeSDKInterfaces(writer, item, false); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func writeTopology(writer io.Writer, document Document, verbose bool) error {
+func writeTopology(writer io.Writer, document Document) error {
 	if len(document.InterfaceTopology) == 0 {
 		return nil
 	}
@@ -885,17 +797,15 @@ func writeTopology(writer io.Writer, document Document, verbose bool) error {
 					return err
 				}
 			}
-			if verbose {
-				if _, err := fmt.Fprintf(writer, "      From: %s (%s)  To: %s (%s)  Policy: %s\n", interfaceview.Safe(edge.From.Type), interfaceview.Safe(edge.From.Origin), interfaceview.Safe(edge.To.Type), interfaceview.Safe(edge.To.Origin), edge.Policy); err != nil {
-					return err
-				}
+			if _, err := fmt.Fprintf(writer, "      From: %s (%s)  To: %s (%s)  Policy: %s\n", interfaceview.Safe(edge.From.Type), interfaceview.Safe(edge.From.Origin), interfaceview.Safe(edge.To.Type), interfaceview.Safe(edge.To.Origin), edge.Policy); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
 }
 
-func writeExposure(writer io.Writer, document Document, verbose bool) error {
+func writeExposure(writer io.Writer, document Document) error {
 	if len(document.InterfaceReviews) == 0 {
 		return nil
 	}
@@ -929,14 +839,12 @@ func writeExposure(writer io.Writer, document Document, verbose bool) error {
 					}
 				}
 			}
-			if verbose {
-				if _, err := fmt.Fprintf(writer, "      Declared value: %s\n      Limitation: %s\n", interfaceview.Safe(item.Value), interfaceview.Safe(item.Limitation)); err != nil {
+			if _, err := fmt.Fprintf(writer, "      Declared value: %s\n      Limitation: %s\n", interfaceview.Safe(item.Value), interfaceview.Safe(item.Limitation)); err != nil {
+				return err
+			}
+			for _, edge := range item.Related {
+				if _, err := fmt.Fprintf(writer, "      %s %s → %s [%s]\n", edge.Kind, interfaceview.Safe(edge.From.Reference), interfaceview.Safe(edge.To.Reference), edge.State); err != nil {
 					return err
-				}
-				for _, edge := range item.Related {
-					if _, err := fmt.Fprintf(writer, "      %s %s → %s [%s]\n", edge.Kind, interfaceview.Safe(edge.From.Reference), interfaceview.Safe(edge.To.Reference), edge.State); err != nil {
-						return err
-					}
 				}
 			}
 		}
@@ -944,7 +852,7 @@ func writeExposure(writer io.Writer, document Document, verbose bool) error {
 	return nil
 }
 
-func writeSDKInterfaces(writer io.Writer, item SDK, verbose bool) error {
+func writeSDKInterfaces(writer io.Writer, item SDK) error {
 	if _, err := fmt.Fprintln(writer, "    Interfaces (static; connection not inspected):"); err != nil {
 		return err
 	}
@@ -972,30 +880,7 @@ func writeSDKInterfaces(writer io.Writer, item SDK, verbose bool) error {
 		if _, err := fmt.Fprintf(writer, "      %s %s: %s [%s]\n", e.Kind, interfaceview.Safe(e.Name), interfaceview.Safe(kind), interfaceview.Safe(origin)); err != nil {
 			return err
 		}
-		if verbose {
-			if _, err := fmt.Fprintf(writer, "        Declared value: %s\n", interfaceview.Safe(e.Value)); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func writeInterfaces(writer io.Writer, label string, interfaces map[string]any) error {
-	if _, err := fmt.Fprintf(writer, "      %s: %d\n", label, len(interfaces)); err != nil {
-		return err
-	}
-	names := make([]string, 0, len(interfaces))
-	for name := range interfaces {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		encoded, err := json.Marshal(interfaces[name])
-		if err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(writer, "        %s: %s\n", name, encoded); err != nil {
+		if _, err := fmt.Fprintf(writer, "        Declared value: %s\n", interfaceview.Safe(e.Value)); err != nil {
 			return err
 		}
 	}
