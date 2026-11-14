@@ -17,6 +17,7 @@ type tuiSlotGroup struct {
 
 // tuiInterfaceSlotNodes groups static candidates; it does not inspect runtime state.
 func tuiInterfaceSlotNodes(review interfaceexposure.Review) []tuiNode {
+	review = interfaceexposure.WithBuiltInManualSlots(review)
 	var groups []tuiSlotGroup
 	indices := map[string][]int{}
 	addSlot := func(item interfaceexposure.Item) {
@@ -35,15 +36,15 @@ func tuiInterfaceSlotNodes(review interfaceexposure.Review) []tuiNode {
 			continue
 		}
 		state, target, basis := item.Startup, item.Target, item.Basis
-		if state == "Delegated" {
+		if state == interfaceexposure.StartupDelegated {
 			state, target, basis = item.ViaStartup, item.ViaTarget, "Binding via "+item.Target
 		}
-		if state != "Auto-connect candidate" && state != "Manual required" {
+		if state != interfaceexposure.StartupAuto && state != interfaceexposure.StartupManual {
 			target = ""
 		}
 		var targets []string
 		if target != "" {
-			if basis == "Declared slots (not selected)" {
+			if basis == interfaceexposure.BasisUnselectedSlots {
 				targets = strings.Split(target, ", ")
 			} else {
 				targets = []string{target}
@@ -68,21 +69,21 @@ func tuiInterfaceSlotNodes(review interfaceexposure.Review) []tuiNode {
 				continue
 			}
 			label := item.SDK + ":" + item.Name + "  [" + state + "]"
-			if item.Startup == "Delegated" {
+			if item.Startup == interfaceexposure.StartupDelegated {
 				label += " via " + item.Target
 			}
-			if basis == "Declared slots (not selected)" {
+			if basis == interfaceexposure.BasisUnselectedSlots || basis == interfaceexposure.BasisSystemSlot {
 				label += " · possible, not selected"
 			}
 			label += tunnelEndpointLabel(item)
 			entry := item
-			groups[index].plugs = append(groups[index].plugs, tuiNode{Kind: "exposure-review", Depth: 1, Name: interfaceview.Safe("└─ " + label), Review: &entry, SlotRef: ref, SlotBasis: basis})
+			groups[index].plugs = append(groups[index].plugs, tuiNode{Kind: "exposure-review", Depth: 1, Name: interfaceview.Safe("└─ " + label), Review: &entry, SlotRef: ref, SlotBasis: basis, CandidateUnselected: basis == interfaceexposure.BasisUnselectedSlots || basis == interfaceexposure.BasisSystemSlot})
 			attached = true
 		}
 		if !attached {
 			entry := item
 			label := item.SDK + ":" + item.Name + "  [" + item.Startup + "]"
-			if item.Startup == "Delegated" {
+			if item.Startup == interfaceexposure.StartupDelegated {
 				label += " via " + item.Target + " [" + item.ViaStartup + "]"
 			}
 			label += tunnelEndpointLabel(item)
@@ -136,31 +137,40 @@ func tuiInterfaceSlotNodes(review interfaceexposure.Review) []tuiNode {
 
 // tunnelEndpointLabel displays only the declared endpoint, not a runtime address.
 func tunnelEndpointLabel(item interfaceexposure.Item) string {
+	value := tunnelEndpointValue(item)
+	if value == "" {
+		return ""
+	}
+	return "  endpoint: " + value
+}
+
+// tunnelEndpointValue returns a declared endpoint or a description of its absence.
+func tunnelEndpointValue(item interfaceexposure.Item) string {
 	if item.Type != "tunnel" {
 		return ""
 	}
 	var value any
 	if err := json.Unmarshal([]byte(item.Value), &value); err != nil {
-		return "  endpoint: unavailable"
+		return "unavailable"
 	}
 	switch declaration := value.(type) {
 	case nil:
-		return "  endpoint: not specified"
+		return "not specified"
 	case string:
 		if declaration == "tunnel" {
-			return "  endpoint: not specified"
+			return "not specified"
 		}
 	case map[string]any:
 		endpoint, exists := declaration["endpoint"]
 		if !exists {
-			return "  endpoint: not specified"
+			return "not specified"
 		}
 		if text, ok := endpoint.(string); ok {
 			if text == "" {
-				return "  endpoint: \"\""
+				return "\"\""
 			}
-			return "  endpoint: " + text
+			return text
 		}
 	}
-	return "  endpoint: unavailable"
+	return "unavailable"
 }

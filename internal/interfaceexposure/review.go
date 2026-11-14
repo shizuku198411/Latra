@@ -12,6 +12,15 @@ import (
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
+// Startup and basis values are shared by analysis and presentation.
+const (
+	StartupAuto          = "Auto-connect candidate"
+	StartupManual        = "Manual required"
+	StartupDelegated     = "Delegated"
+	BasisUnselectedSlots = "Declared slots (not selected)"
+	BasisSystemSlot      = "System-provided slot (not selected)"
+)
+
 type Item struct {
 	ID, Workshop, Definition, SDK, Kind, Name, Source, Type, State, Fact, Value, Limitation string
 	Target, Startup, Basis, Reason                                                          string
@@ -76,9 +85,45 @@ func Build(config source.Configuration, sdks []sdk.SDK, graph interfacegraph.Gra
 	for i := range out.Items {
 		evaluate(&out.Items[i], out.Items, graph, out.Incomplete)
 	}
+	out = WithBuiltInManualSlots(out)
 	resolveBindings(out.Items)
 	sort.SliceStable(out.Items, func(i, j int) bool { return out.Items[i].ID < out.Items[j].ID })
 	return out
+}
+
+// WithBuiltInManualSlots adds known system-provided manual targets to a review.
+// It is idempotent and does not claim that any candidate is connected.
+func WithBuiltInManualSlots(review Review) Review {
+	items := append([]Item(nil), review.Items...)
+	known := make(map[string]bool)
+	for _, item := range items {
+		if item.SDK == "system" && item.Kind == "Slot" {
+			known[item.Name] = true
+		}
+	}
+	for i := range items {
+		item := &items[i]
+		if item.Kind != "Plug" || item.SDK == "system" || item.State != "declared" || item.Startup != StartupManual || item.Target != "" {
+			continue
+		}
+		switch item.Type {
+		case "camera", "desktop", "ssh-agent":
+			if item.Name != item.Type {
+				continue
+			}
+		case "custom-device":
+		default:
+			continue
+		}
+		name := item.Type
+		item.Target, item.Basis = "system:"+name, BasisSystemSlot
+		if !known[name] {
+			known[name] = true
+			items = append(items, Item{ID: strings.Join([]string{review.Definition, "system", "Slot", name, "System-provided"}, "\x00"), Workshop: review.Workshop, Definition: review.Definition, SDK: "system", Kind: "Slot", Name: name, Type: name, Source: "System-provided", State: "declared", Startup: "Provider declaration", Fact: "Built-in system slot", Limitation: "Runtime connection and per-plug host resources are not inspected"})
+		}
+	}
+	review.Items = items
+	return review
 }
 
 // Standalone reviews an SDK without inventing Workshop configuration.

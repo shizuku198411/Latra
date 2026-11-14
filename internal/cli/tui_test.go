@@ -211,6 +211,7 @@ func TestTUIUnifiedInterfacesShowsDelegationAndOrphans(t *testing.T) {
 			t.Fatalf("missing %q: %s", want, view)
 		}
 	}
+	m.toggleInterfaceView() // inspect the existing text view
 	for i, node := range m.Nodes {
 		if node.Review != nil && node.Review.SDK == "app" {
 			m.SelectedNode = i
