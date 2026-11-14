@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 
@@ -73,6 +74,7 @@ func tuiInterfaceSlotNodes(review interfaceexposure.Review) []tuiNode {
 			if basis == "Declared slots (not selected)" {
 				label += " · possible, not selected"
 			}
+			label += tunnelEndpointLabel(item)
 			entry := item
 			groups[index].plugs = append(groups[index].plugs, tuiNode{Kind: "exposure-review", Depth: 1, Name: interfaceview.Safe("└─ " + label), Review: &entry, SlotRef: ref, SlotBasis: basis})
 			attached = true
@@ -83,6 +85,7 @@ func tuiInterfaceSlotNodes(review interfaceexposure.Review) []tuiNode {
 			if item.Startup == "Delegated" {
 				label += " via " + item.Target + " [" + item.ViaStartup + "]"
 			}
+			label += tunnelEndpointLabel(item)
 			unassigned = append(unassigned, tuiNode{Kind: "exposure-review", Name: interfaceview.Safe(label), Review: &entry})
 		}
 	}
@@ -116,7 +119,7 @@ func tuiInterfaceSlotNodes(review interfaceexposure.Review) []tuiNode {
 			}
 			children = append(children, tuiNode{Header: true, Depth: 1, Name: message})
 		}
-		label := group.ref + "  [" + slot.Source + "]"
+		label := group.ref + "  [" + slot.Source + "]" + tunnelEndpointLabel(slot)
 		node := tuiNode{Kind: "slot-group", Directory: true, Expanded: true, Name: interfaceview.Safe(label), Children: children}
 		nodes = append(nodes, node)
 		nodes = append(nodes, children...)
@@ -129,4 +132,35 @@ func tuiInterfaceSlotNodes(review interfaceexposure.Review) []tuiNode {
 		nodes = append(nodes, tuiNode{Header: true, Name: "No interfaces declared"})
 	}
 	return nodes
+}
+
+// tunnelEndpointLabel displays only the declared endpoint, not a runtime address.
+func tunnelEndpointLabel(item interfaceexposure.Item) string {
+	if item.Type != "tunnel" {
+		return ""
+	}
+	var value any
+	if err := json.Unmarshal([]byte(item.Value), &value); err != nil {
+		return "  endpoint: unavailable"
+	}
+	switch declaration := value.(type) {
+	case nil:
+		return "  endpoint: not specified"
+	case string:
+		if declaration == "tunnel" {
+			return "  endpoint: not specified"
+		}
+	case map[string]any:
+		endpoint, exists := declaration["endpoint"]
+		if !exists {
+			return "  endpoint: not specified"
+		}
+		if text, ok := endpoint.(string); ok {
+			if text == "" {
+				return "  endpoint: \"\""
+			}
+			return "  endpoint: " + text
+		}
+	}
+	return "  endpoint: unavailable"
 }

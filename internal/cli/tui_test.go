@@ -708,3 +708,21 @@ func TestTUIInventoryIncludesWorkshopConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestTUIInventoryRootWorkshopDefinition(t *testing.T) {
+	for _, filename := range []string{"workshop.yaml", ".workshop.yaml"} {
+		t.Run(filename, func(t *testing.T) {
+			project := t.TempDir()
+			if err := os.WriteFile(filepath.Join(project, filename), []byte("name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: rust\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			inventory, err := discoverTUIInventory(project, t.TempDir(), nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(inventory.Workshops) != 1 || inventory.Workshops[0].Definition != filename || len(inventory.Configurations) != 1 || inventory.Configurations[0].Definition != filename || len(inventory.SDKs) != 1 || inventory.SDKs[0].Name != "rust" {
+				t.Fatalf("unexpected inventory: %+v", inventory)
+			}
+		})
+	}
+}

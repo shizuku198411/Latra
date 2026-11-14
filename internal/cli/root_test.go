@@ -758,3 +758,19 @@ func writeCachedFile(t *testing.T, name, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRunScanRootWorkshopDefinition(t *testing.T) {
+	for _, filename := range []string{"workshop.yaml", ".workshop.yaml"} {
+		t.Run(filename, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, filename), []byte("name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: rust\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			code := runCLI([]string{"scan", root}, &stdout, &stderr)
+			if code != 0 || !strings.Contains(stdout.String(), "Kind: project") || !strings.Contains(stdout.String(), "Definition: "+filename) || !strings.Contains(stdout.String(), "rust:") {
+				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+		})
+	}
+}

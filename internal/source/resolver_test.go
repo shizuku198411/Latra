@@ -319,3 +319,69 @@ func writeSourceFile(t *testing.T, name, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRootWorkshopDefinitions(t *testing.T) {
+	for _, filename := range []string{"workshop.yaml", ".workshop.yaml"} {
+		t.Run(filename, func(t *testing.T) {
+			project := t.TempDir()
+			writeSourceFile(t, filepath.Join(project, filename), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: rust\n    channel: 1.26/stable\n  - name: project-local\n")
+			writeSourceFile(t, filepath.Join(project, ".workshop", "local", "sdk.yaml"), "name: local\n")
+			result, err := source.Scan(project, sdk.DefaultLimits())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Kind != source.InputProject || len(result.Workshops) != 1 || result.Workshops[0].Definition != filename || len(result.SDKs) != 2 || len(result.Configurations) != 1 || result.Configurations[0].Definition != filename {
+				t.Fatalf("unexpected scan: %+v", result)
+			}
+			for _, item := range result.SDKs {
+				if len(item.Declarations) != 1 || item.Declarations[0].Definition != filename {
+					t.Fatalf("missing SDK declaration: %+v", item)
+				}
+			}
+			inventory, err := source.DiscoverProject(context.Background(), project, sdk.DefaultLimits())
+			if err != nil || len(inventory.Workshops) != 1 || inventory.Workshops[0].Definition != filename {
+				t.Fatalf("inventory=%+v err=%v", inventory, err)
+			}
+			ref, err := source.ResolveSDKReference(project, "rust")
+			if err != nil || ref.Channel != "1.26/stable" || len(ref.Definitions) != 1 || ref.Definitions[0] != filename {
+				t.Fatalf("reference=%+v err=%v", ref, err)
+			}
+			names, err := source.StoreSDKNames(project)
+			if err != nil || len(names) != 1 || names[0] != "rust" {
+				t.Fatalf("names=%v err=%v", names, err)
+			}
+		})
+	}
+}
+
+func TestRootWorkshopWithoutWorkshopDirectory(t *testing.T) {
+	project := t.TempDir()
+	writeSourceFile(t, filepath.Join(project, "workshop.yaml"), "name: dev\nbase: ubuntu@24.04\nsdks:\n  - name: rust\n")
+	result, err := source.Scan(project, sdk.DefaultLimits())
+	if err != nil || result.Kind != source.InputProject || len(result.Workshops) != 1 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestConflictingWorkshopDefinitions(t *testing.T) {
+	for _, other := range []string{".workshop.yaml", ".workshop/dev.yaml"} {
+		t.Run(other, func(t *testing.T) {
+			project := t.TempDir()
+			for _, filename := range []string{"workshop.yaml", other} {
+				writeSourceFile(t, filepath.Join(project, filename), "name: dev\nbase: ubuntu@24.04\n")
+			}
+			if _, err := source.Scan(project, sdk.DefaultLimits()); err == nil || !strings.Contains(err.Error(), "conflicting Workshop definitions") {
+				t.Fatalf("scan err=%v", err)
+			}
+			if _, err := source.DiscoverProject(context.Background(), project, sdk.DefaultLimits()); err == nil {
+				t.Fatal("Explorer discovery accepted conflicting definitions")
+			}
+			if _, err := source.ResolveSDKReference(project, "rust"); err == nil {
+				t.Fatal("reference accepted conflicting definitions")
+			}
+			if _, err := source.StoreSDKNames(project); err == nil {
+				t.Fatal("cache discovery accepted conflicting definitions")
+			}
+		})
+	}
+}

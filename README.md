@@ -54,7 +54,7 @@ The following walkthrough uses a project with two Workshop definitions, `rkc-act
 
 ### 1. Choose a Workshop
 
-Explorer starts with the Workshop definitions found under `.workshop`:
+Explorer starts with the Workshop definitions in the project. It supports `workshop.yaml` or `.workshop.yaml` at the project root, as well as `.workshop/<name>.yaml` definitions. In this example:
 
 <p>
   <img src="./assets/ss_1.png" alt="Latra Explorer in a terminal" width="800">

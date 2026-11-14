@@ -50,7 +50,7 @@ Input
 
 `Kind` identifies what Latra scanned:
 
-- `project` means a Workshop project containing definitions under `.workshop/`.
+- `project` means a Workshop project containing `workshop.yaml`, `.workshop.yaml`, or definitions under `.workshop/`.
 - `project-sdk` means an individual project SDK directory was scanned directly.
 
 `Root` is the normalized path used as the scan input.
@@ -96,7 +96,7 @@ latra hook project-base setup-base
 latra file rust meta/sdk.yaml
 ```
 
-When these commands are run from the project root, Latra uses the SDK channel declared in the current project's `.workshop/*.yaml` definitions.
+When these commands are run from the project root, Latra uses the SDK channel declared in the current project's Workshop definitions.
 
 ## Files
 

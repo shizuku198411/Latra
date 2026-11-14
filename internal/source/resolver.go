@@ -56,12 +56,16 @@ func ScanWithResolver(ctx context.Context, input string, limits sdk.Limits, reso
 	if err != nil {
 		return nil, fmt.Errorf("open input: %w", err)
 	}
+	definitions, discoveryErr := workshopDefinitions(root)
 	_, workshopErr := root.Stat(".workshop")
 	closeErr := root.Close()
+	if discoveryErr != nil {
+		return nil, discoveryErr
+	}
 	if closeErr != nil {
 		return nil, closeErr
 	}
-	if workshopErr == nil {
+	if len(definitions) > 0 || workshopErr == nil {
 		return readProject(ctx, absolute, limits, resolver, false)
 	}
 	if !errors.Is(workshopErr, fs.ErrNotExist) {
