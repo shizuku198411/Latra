@@ -62,3 +62,27 @@ func TestStartupCandidatesAcrossDeclarations(t *testing.T) {
 		t.Fatalf("secret: %+v", items["token"])
 	}
 }
+
+func TestBuiltInManualSlotsSharedInReview(t *testing.T) {
+	config := source.Configuration{Name: "dev", Definition: "dev.yaml", SDKs: []source.ConfigurationSDK{{Name: "project-app", Order: 0}}}
+	items := []sdk.SDK{{Metadata: &sdk.Metadata{Plugs: map[string]any{"camera": map[string]any{"interface": "camera"}, "token": map[string]any{"interface": "secret"}}}, Declarations: []sdk.Declaration{{Definition: "dev.yaml", Order: 0}}}}
+	review := Build(config, items, interfacegraph.Graph{})
+	var camera, slot bool
+	for _, item := range review.Items {
+		if item.Kind == "Plug" && item.Name == "camera" {
+			camera = item.Target == "system:camera" && item.Basis == BasisSystemSlot && item.Startup == StartupManual
+		}
+		if item.Kind == "Slot" && item.SDK == "system" && item.Name == "camera" {
+			slot = item.Source == "System-provided"
+		}
+		if item.Kind == "Slot" && item.Type == "secret" {
+			t.Fatal("secret slot must not be invented")
+		}
+	}
+	if !camera || !slot {
+		t.Fatalf("missing built-in candidate: %+v", review.Items)
+	}
+	if len(WithBuiltInManualSlots(review).Items) != len(review.Items) {
+		t.Fatal("builtin slot augmentation must be idempotent")
+	}
+}

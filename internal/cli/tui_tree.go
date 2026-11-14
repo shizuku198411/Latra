@@ -21,22 +21,23 @@ import (
 )
 
 type tuiNode struct {
-	Name, Path       string
-	Depth            int
-	Directory        bool
-	Symlink          bool
-	Expanded         bool
-	Header           bool
-	Group            string
-	Kind             string
-	Interface        *interfaceview.Entry
-	Children         []tuiNode
-	Edge             *interfacegraph.Edge
-	Review           *interfaceexposure.Item
-	SlotRef          string
-	SlotBasis        string
-	Index            int
-	DeclarationOrder int
+	Name, Path          string
+	Depth               int
+	Directory           bool
+	Symlink             bool
+	Expanded            bool
+	Header              bool
+	Group               string
+	Kind                string
+	Interface           *interfaceview.Entry
+	Children            []tuiNode
+	Edge                *interfacegraph.Edge
+	Review              *interfaceexposure.Item
+	SlotRef             string
+	SlotBasis           string
+	CandidateUnselected bool
+	Index               int
+	DeclarationOrder    int
 }
 
 type tuiFrame struct {
@@ -47,25 +48,30 @@ type tuiFrame struct {
 }
 
 type tuiExplorer struct {
-	SDKs            []tuiSDK
-	SelectedSDK     int
-	InTree          bool
-	SelectedNode    int
-	Nodes           []tuiNode
-	Message         string
-	ScanStatus      string
-	Preview         *tuiPreview
-	Scan            *report.Document
-	Scanning        bool
-	Topology        []interfacegraph.Graph
-	Reviews         []interfaceexposure.Review
-	InTopology      bool
-	Configurations  []source.Configuration
-	Workshops       []source.Workshop
-	CurrentWorkshop int
-	Title           string
-	History         []tuiFrame
-	DiscoveryError  string
+	SDKs                        []tuiSDK
+	SelectedSDK                 int
+	InTree                      bool
+	SelectedNode                int
+	Nodes                       []tuiNode
+	Message                     string
+	ScanStatus                  string
+	Preview                     *tuiPreview
+	Scan                        *report.Document
+	Scanning                    bool
+	Topology                    []interfacegraph.Graph
+	Reviews                     []interfaceexposure.Review
+	InTopology                  bool
+	Configurations              []source.Configuration
+	Workshops                   []source.Workshop
+	CurrentWorkshop             int
+	Title                       string
+	History                     []tuiFrame
+	DiscoveryError              string
+	InterfacesActive            bool
+	VisualInterfaces            bool
+	VisualPages                 []tuiVisualPage
+	VisualPage, VisualSelection int
+	VisualScroll                int
 }
 
 func (m *tuiExplorer) enter() {
@@ -89,6 +95,12 @@ func (m *tuiExplorer) enter() {
 		return
 	}
 	node := m.Nodes[m.SelectedNode]
+	if m.InterfacesActive && m.VisualInterfaces {
+		if len(m.VisualPages) == 0 || len(m.VisualPages[m.VisualPage].Items) == 0 {
+			return
+		}
+		node = m.VisualPages[m.VisualPage].Items[m.VisualSelection]
+	}
 	switch node.Kind {
 	case "workshop":
 		m.openWorkshop(node.Index)
@@ -224,6 +236,10 @@ func (m *tuiExplorer) back() {
 		m.Preview = nil
 		m.Message = ""
 		return
+	}
+	if m.InterfacesActive {
+		m.InterfacesActive = false
+		m.VisualInterfaces = false
 	}
 	if m.InTree || len(m.History) > 0 {
 		if !m.pop() {
@@ -430,6 +446,12 @@ func (m *tuiExplorer) openWorkshopInterfaces() {
 		nodes = append(nodes, orphans...)
 	}
 	m.show(nodes, interfaceview.Safe(" Workshop: "+c.Name+"  ›  Interfaces (runtime not inspected)"))
+	m.InterfacesActive, m.VisualInterfaces = true, true
+	m.VisualPages = buildTUIVisualPages(nodes)
+	m.VisualPage, m.VisualSelection, m.VisualScroll = 0, 0, 0
+	if len(m.VisualPages) > 0 {
+		m.VisualSelection = visualSelectionOrder(m.VisualPages[0])[0]
+	}
 }
 
 func (m *tuiExplorer) openAssessment() {
@@ -524,6 +546,10 @@ func (m *tuiExplorer) move(delta int) {
 	}
 	if m.Preview != nil {
 		m.Preview.Scroll = max(0, min(max(0, len(m.Preview.Lines)-1), m.Preview.Scroll+delta))
+		return
+	}
+	if m.InterfacesActive && m.VisualInterfaces {
+		m.moveVisual(delta)
 		return
 	}
 	count := len(m.SDKs)

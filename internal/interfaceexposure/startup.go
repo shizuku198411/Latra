@@ -16,7 +16,7 @@ import (
 func resolveBindings(items []Item) {
 	for i := range items {
 		item := &items[i]
-		if item.Kind != "Plug" || item.Startup != "Delegated" {
+		if item.Kind != "Plug" || item.Startup != StartupDelegated {
 			continue
 		}
 		item.ViaTarget, item.ViaStartup, item.ViaReason = "", "", ""
@@ -40,7 +40,7 @@ func resolveBindings(items []Item) {
 			continue
 		}
 		item.ViaStartup, item.ViaReason = target.Startup, target.Reason
-		if target.Basis != "Declared slots (not selected)" {
+		if target.Basis != BasisUnselectedSlots && target.Basis != BasisSystemSlot {
 			item.ViaTarget = target.Target
 		}
 	}
@@ -105,7 +105,7 @@ func evaluate(item *Item, items []Item, graph interfacegraph.Graph, incomplete b
 			item.Reason = "Binding target could not be resolved"
 			return
 		}
-		item.Startup = "Delegated"
+		item.Startup = StartupDelegated
 		item.Reason = "This plug follows the target plug; binding is not a slot connection"
 		return
 	}
@@ -129,7 +129,7 @@ func evaluate(item *Item, items []Item, graph interfacegraph.Graph, incomplete b
 			return
 		}
 		if item.Type == "secret" || item.Type == "ssh-agent" || item.Type == "camera" || item.Type == "custom-device" || item.Type == "desktop" {
-			item.Startup = "Manual required"
+			item.Startup = StartupManual
 			item.Reason = "Interface policy does not permit automatic connection"
 			return
 		}
@@ -145,7 +145,7 @@ func evaluate(item *Item, items []Item, graph interfacegraph.Graph, incomplete b
 		}
 		if item.Type == "tunnel" {
 			if item.SDK != "system" {
-				item.Startup = "Manual required"
+				item.Startup = StartupManual
 				item.Reason = "Automatic tunnel connection requires a system plug"
 				return
 			}
@@ -155,13 +155,13 @@ func evaluate(item *Item, items []Item, graph interfacegraph.Graph, incomplete b
 				return
 			}
 			if !allowed {
-				item.Startup = "Manual required"
+				item.Startup = StartupManual
 				item.Reason = "Tunnel plug endpoint is not loopback or a Unix socket"
 				return
 			}
 		}
 		if item.Type == "mount" || item.Type == "gpu" || item.Type == "tunnel" {
-			item.Startup = "Auto-connect candidate"
+			item.Startup = StartupAuto
 			item.Reason = "Explicit pairing is eligible for further Workshop policy and endpoint validation"
 			return
 		}
@@ -169,7 +169,7 @@ func evaluate(item *Item, items []Item, graph interfacegraph.Graph, incomplete b
 	}
 	switch item.Type {
 	case "secret", "ssh-agent", "camera", "custom-device", "desktop":
-		item.Startup = "Manual required"
+		item.Startup = StartupManual
 		item.Basis = "Interface policy"
 		item.Reason = "Interface policy does not permit automatic connection"
 		var slots []string
@@ -181,7 +181,7 @@ func evaluate(item *Item, items []Item, graph interfacegraph.Graph, incomplete b
 		sort.Strings(slots)
 		if len(slots) > 0 {
 			item.Target = strings.Join(slots, ", ")
-			item.Basis = "Declared slots (not selected)"
+			item.Basis = BasisUnselectedSlots
 		}
 	case "mount":
 		if item.SDK == "system" {
@@ -191,7 +191,7 @@ func evaluate(item *Item, items []Item, graph interfacegraph.Graph, incomplete b
 		}
 		item.Target = "system:mount"
 		item.Basis = "Default auto-connect policy"
-		item.Startup = "Auto-connect candidate"
+		item.Startup = StartupAuto
 		item.Reason = "Default system mount slot; Workshop validates the declaration at launch"
 	case "gpu":
 		if item.SDK == "system" {
@@ -201,12 +201,12 @@ func evaluate(item *Item, items []Item, graph interfacegraph.Graph, incomplete b
 		}
 		item.Target = "system:gpu"
 		item.Basis = "Default auto-connect policy"
-		item.Startup = "Auto-connect candidate"
+		item.Startup = StartupAuto
 		item.Reason = "Default system GPU slot; Workshop validates the declaration at launch"
 	case "tunnel":
 		item.Basis = "Auto-connect policy"
 		if item.SDK != "system" {
-			item.Startup = "Manual required"
+			item.Startup = StartupManual
 			item.Reason = "Automatic tunnel connection requires a system plug"
 			return
 		}
@@ -216,7 +216,7 @@ func evaluate(item *Item, items []Item, graph interfacegraph.Graph, incomplete b
 			return
 		}
 		if !allowed {
-			item.Startup = "Manual required"
+			item.Startup = StartupManual
 			item.Reason = "Tunnel plug endpoint is not loopback or a Unix socket"
 			return
 		}
@@ -228,7 +228,7 @@ func evaluate(item *Item, items []Item, graph interfacegraph.Graph, incomplete b
 		}
 		if len(candidates) == 1 && !incomplete {
 			item.Target = candidates[0]
-			item.Startup = "Auto-connect candidate"
+			item.Startup = StartupAuto
 			item.Reason = "Matching tunnel slot; Workshop validates endpoints at launch"
 			return
 		}

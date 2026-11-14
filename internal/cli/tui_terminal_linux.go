@@ -134,6 +134,12 @@ func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) 
 				}
 			}
 		}
+		if model.Preview == nil && model.InterfacesActive && model.VisualInterfaces {
+			for _, line := range model.visualRows(width, available) {
+				b.WriteString(fitLine(" "+line, width) + "\r\n")
+			}
+			count = -1 // Visual rows replace the tree.
+		}
 		var treeRisks map[string]string
 		if model.InTree && !model.InTopology && len(entries) > 0 {
 			treeRisks = tuiTreeRisks(model.Scan, entries[model.SelectedSDK].Name)
@@ -214,7 +220,13 @@ func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) 
 		}
 		help := " ↑/↓: move    Enter/→: open SDK    Esc/←: workshops    q: quit"
 		if model.Preview != nil {
-			help = " ↑/↓: scroll    Esc/←: file tree    q: quit"
+			help = " ↑/↓: scroll    Esc/←: back    q: quit"
+		} else if model.InterfacesActive {
+			if model.VisualInterfaces {
+				help = " ↑/↓: select  j/k: scroll  Enter: details  v: text  Esc: back  q: quit"
+			} else {
+				help = " ↑/↓: select    Enter/→: open / toggle    v: visual view    Esc/←: back    q: quit"
+			}
 		} else if model.InTree {
 			help = " ↑/↓: move    Enter/→: open / toggle    Esc/←: back    q: quit"
 			if len(model.History) == 0 {
@@ -250,6 +262,16 @@ func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) 
 		switch key {
 		case 's':
 			model.openSDKList()
+		case 'v':
+			model.toggleInterfaceView()
+		case 'j', 'k':
+			if model.InterfacesActive && model.VisualInterfaces && model.Preview == nil {
+				if key == 'j' {
+					model.VisualScroll++
+				} else {
+					model.VisualScroll--
+				}
+			}
 		case 'q', 3:
 			return nil
 		case '\r', '\n':

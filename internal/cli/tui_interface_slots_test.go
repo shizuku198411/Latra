@@ -75,3 +75,28 @@ func TestInterfaceTunnelEndpoints(t *testing.T) {
 		t.Fatalf("unsafe or non-tunnel endpoint in:\n%s", view)
 	}
 }
+
+func TestManualBuiltInSlotsArePossibleCandidates(t *testing.T) {
+	for _, typ := range []string{"camera", "desktop", "ssh-agent", "custom-device"} {
+		review := interfaceexposure.Review{Items: []interfaceexposure.Item{{Kind: "Plug", SDK: "app", Name: typ, Type: typ, State: "declared", Startup: "Manual required"}}}
+		nodes := tuiInterfaceSlotNodes(review)
+		var slot, plug bool
+		for _, node := range nodes {
+			if node.Kind == "slot-group" && strings.Contains(node.Name, "system:"+typ) {
+				slot = true
+			}
+			if node.Review != nil && node.Review.Kind == "Plug" && strings.Contains(node.Name, "not selected") {
+				plug = true
+			}
+		}
+		if !slot || !plug {
+			t.Fatalf("%s: %+v", typ, nodes)
+		}
+	}
+	secret := tuiInterfaceSlotNodes(interfaceexposure.Review{Items: []interfaceexposure.Item{{Kind: "Plug", SDK: "app", Name: "key", Type: "secret", State: "declared", Startup: "Manual required"}}})
+	for _, node := range secret {
+		if node.Kind == "slot-group" {
+			t.Fatal("secret slot was invented")
+		}
+	}
+}
