@@ -18,6 +18,18 @@ SDKs can include hooks that run during environment setup, health checks, and ref
 - **Review with evidence.** Latra reports review priority, risk, assurance, and analysis coverage separately, with findings and source locations to guide investigation.
 - **Use the CLI and JSON too.** Get a concise assessment in the terminal or export detailed results for local tooling and CI.
 
+## What Latra can detect
+
+Latra analyzes SDK hooks for behavior and data flows that may deserve review, including:
+
+- **Sensitive data exposure:** reads of credential-like files, project-sensitive data sent to an external endpoint, and sensitive project data persisted in SDK state.
+- **Remote content and execution:** downloaded content executed by a shell or written into the Workshop project.
+- **Project changes:** modification or deletion of project files, changes to build or execution controls, and rewritten version-control state.
+- **Persistent behavior:** writes to startup or service configuration, and configuration of repository hooks.
+- **Privileged or hard-to-analyze behavior:** unknown commands in root hooks, dynamic code execution, unresolved SDKs, and incomplete hook analysis.
+
+**Review priority indicates where to investigate first; it does not mean an SDK is malicious.** Legitimate SDKs may need some of these behaviors. Review the evidence and the SDK's intended purpose in context. Latra performs static analysis without executing hooks, so findings describe detected behavior or potential data flows, not proof that an action occurred. Analysis gaps can also leave behavior undetected.
+
 ## Get started
 
 ### Install
@@ -50,17 +62,17 @@ Explorer currently requires Linux and an interactive terminal. It opens on the W
 
 ## Explore a Workshop
 
-The following walkthrough uses a project with two Workshop definitions, `rkc-actions` and `rkc-dev`. Names, SDK versions, cache status, and scores depend on the project and scan environment.
+Use Explorer to investigate the Workshops and SDKs defined in your project. Names, SDK versions, cache status, and scores depend on your project and scan environment.
 
 ### 1. Choose a Workshop
 
-Explorer starts with the Workshop definitions in the project. It supports `workshop.yaml` or `.workshop.yaml` at the project root, as well as `.workshop/<name>.yaml` definitions. In this example:
+Explorer starts with the Workshop definitions in the project. It supports `workshop.yaml` or `.workshop.yaml` at the project root, as well as `.workshop/<name>.yaml` definitions:
 
 <p>
   <img src="./assets/ss_1.png" alt="Latra Explorer in a terminal" width="800">
 </p>
 
-Select `rkc-dev` to see its SDKs, interface configuration, and scan results. When the scan finishes, SDK rows show their review priority where available.
+Select a Workshop to see its SDKs, interface configuration, and scan results. When the scan finishes, SDK rows show their review priority where available.
 
 <p>
   <img src="./assets/ss_2.png" alt="Latra Explorer in a terminal" width="800">
@@ -74,7 +86,7 @@ Open **SDK assessment** for the assessments of SDKs used by this Workshop. The a
 
 ### 2. Follow interfaces
 
-Open **Configuration → Interfaces** to view interfaces around their slots and associated plugs. For example, a tunnel slot in `rkc-dev` is shown with a plug that could connect to it:
+Open **Configuration → Interfaces** to view declared slots and their associated plugs. Tunnel endpoints are shown when declared:
 
 <p>
   <img src="./assets/ss_4.png" alt="Exploring SDKs and Workshop configuration in Latra" width="800">
@@ -109,11 +121,11 @@ The assessment separates **review priority**, **risk**, **assurance**, **coverag
 Inspect a hook or file from an SDK declared by the current project:
 
 ```bash
-latra hook rkc-base setup-project
-latra file rkc-base hooks/setup-project
+latra hook <sdk> <hook>
+latra file <sdk> <file>
 ```
 
-For Store SDKs, these inspection commands use an SDK already in Latra's cache; run a scan first if needed. Replace the SDK and paths with values from your own project.
+Replace the placeholders with an SDK name, hook name, and file path from your scan results. For Store SDKs, these inspection commands use an SDK already in Latra's cache; run a scan first if needed.
 
 Export a compact JSON summary or a complete report:
 
