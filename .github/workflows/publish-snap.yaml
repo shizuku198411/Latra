@@ -1,0 +1,49 @@
+# Build and release the snap to latest/edge on every commit to main.
+#
+# The snap version comes from `git describe` on the repository, so the
+# checkout needs full history (not the default shallow clone).
+# Releases are serialized per branch: uploading and releasing must not
+# race between two pushes to main, or the edge channel could end up
+# pointing at a revision we did not intend.
+
+name: Release snap to edge
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-to-edge-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: 🛠 Pack and release to latest/edge
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: ⬇️ Check out the repository with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          # The job only packs and uploads to the store; it never pushes,
+          # so the checked-out token does not need to outlive the step.
+          persist-credentials: false
+
+      - name: 🛠 Pack the snap
+        id: pack
+        uses: canonical/craft-actions/snapcraft/pack@d2add174925f9bca7b0a826010c8e1ce2a4bbc3d # v1
+
+      - name: 🚢 Upload and release to latest/edge
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_EDGE }}
+          SNAPS: ${{ steps.pack.outputs.snaps }}
+        run: |
+          set -euo pipefail
+          command -v snapcraft >/dev/null || sudo snap install snapcraft --classic
+          for snap_file in $SNAPS; do
+            snapcraft upload "$snap_file" --release=latest/edge
+          done
