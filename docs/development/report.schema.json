@@ -23,6 +23,7 @@
         },
         "summary": { "$ref": "#/$defs/summary" },
         "assessment": { "$ref": "#/$defs/assessment" },
+        "suppressions": { "type": "array", "items": { "$ref": "#/$defs/suppression" } },
         "diagnostics": {
           "type": "array",
           "items": { "$ref": "#/$defs/documentDiagnostic" }
@@ -40,6 +41,7 @@
         "input": { "$ref": "#/$defs/input" },
         "summary": { "$ref": "#/$defs/summary" },
         "assessment": { "$ref": "#/$defs/assessment" },
+        "suppressions": { "type": "array", "items": { "$ref": "#/$defs/suppression" } },
         "workshops": {
           "type": "array",
           "items": { "$ref": "#/$defs/workshop" }
@@ -961,11 +963,23 @@
         "endColumn": { "$ref": "#/$defs/nonNegativeInteger" }
       }
     },
+    "suppression": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "risk", "sdk", "hook", "reason", "status", "count"],
+      "properties": {
+        "id": {"type":"string"}, "risk": {"type":"string"}, "sdk": {"type":"string"},
+        "hook": {"type":"string"}, "reason": {"type":"string"},
+        "status": {"enum":["applied","unmatched"]},
+        "count": {"type":"integer","minimum":0},
+        "line": {"type":"array","minItems":1,"items":{"type":"integer","minimum":1}}
+      }
+    },
     "finding": {
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "kind", "family", "title", "confidence", "weight", "scope", "evidence", "message"],
       "properties": {
+        "suppressedBy": {"type":"string"},
         "id": { "type": "string", "pattern": "^(risk|assurance|observation)\\.[a-z0-9.-]+$" },
         "kind": { "type": "string", "enum": ["risk", "assurance", "observation"] },
         "family": { "type": "string" },

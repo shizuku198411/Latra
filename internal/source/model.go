@@ -1,7 +1,10 @@
 // Package source resolves SDK declarations from Workshop projects.
 package source
 
-import "github.com/shizuku198411/Latra/internal/sdk"
+import (
+	"github.com/shizuku198411/Latra/internal/finding"
+	"github.com/shizuku198411/Latra/internal/sdk"
+)
 
 // InputKind describes what the scan path resolved to.
 type InputKind string
@@ -28,11 +31,13 @@ type Workshop struct {
 
 // Result is the resolved SDK source inventory returned before shell analysis.
 type Result struct {
-	Kind           InputKind       `json:"kind"`
-	Root           string          `json:"root"`
-	Workshops      []Workshop      `json:"workshops,omitempty"`
-	SDKs           []sdk.SDK       `json:"sdks"`
-	Configurations []Configuration `json:"-"`
+	SuppressionWarning string                    `json:"-"`
+	SuppressionRules   []finding.SuppressionRule `json:"-"`
+	Kind               InputKind                 `json:"kind"`
+	Root               string                    `json:"root"`
+	Workshops          []Workshop                `json:"workshops,omitempty"`
+	SDKs               []sdk.SDK                 `json:"sdks"`
+	Configurations     []Configuration           `json:"-"`
 }
 
 // Configuration retains declarations independently of the scan SDK inventory.

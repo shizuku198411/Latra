@@ -80,6 +80,8 @@ type CompositionRelation struct {
 }
 
 type Finding struct {
+	CommandLine     int        `json:"-"`
+	SuppressedBy    string     `json:"suppressedBy,omitempty"`
 	ID              string     `json:"id"`
 	Kind            Kind       `json:"kind"`
 	Family          string     `json:"family"`

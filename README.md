@@ -106,7 +106,19 @@ Open an SDK to browse its metadata, hooks, interfaces, and files. Select a file 
   <img src="./assets/ss_3.png" alt="Exploring SDKs and Workshop configuration in Latra" width="800">
 </p>
 
-Use `↑` / `↓` to move or scroll, `Enter` / `→` to open or expand, and `Esc` / `←` to go back. Press `q` to quit. From the Workshop list, press `s` to browse the project-wide SDK list instead.
+## Suppress a reviewed risk
+
+When a flagged command is expected SDK behavior, such as installing a development service, you can accept that risk in Explorer.  
+Review the command, add a suppression rule, and record why your project accepts it. Explorer rescans automatically.  
+The finding stays visible as suppressed, and the assessment reflects the remaining risks.
+
+<p>
+  <img src="./assets/ss_7.png" alt="Exploring SDKs and Workshop configuration in Latra" width="800">
+</p>
+
+<p>
+  <img src="./assets/ss_8.png" alt="Exploring SDKs and Workshop configuration in Latra" width="800">
+</p>
 
 ## Scan from the command line
 

@@ -17,6 +17,7 @@ import (
 
 // tuiRisk is a view-only annotation. Source lines and their numbering remain unchanged.
 type tuiRisk struct {
+	RuleID                           string
 	Kind, ID, Title, Severity, Value string
 	Score                            int
 	Resolution                       analysis.Resolution
@@ -82,7 +83,7 @@ func risksForPreview(document *report.Document, sdkName, file string) map[int][]
 			}
 		}
 		for _, gap := range assessment.Coverage.Semantics.Gaps {
-			location := tuiSemanticGapLocation(document, sdkName, gap.Hook, gap.OperationID)
+			location := tuiScanOperationLocation(document, sdkName, gap.Hook, gap.OperationID)
 			if location == nil || location.StartLine < 1 || tuiRiskPath(location.Path, sdkName) != path.Clean(file) {
 				continue
 			}
@@ -90,6 +91,35 @@ func risksForPreview(document *report.Document, sdkName, file string) map[int][]
 			annotations[location.StartLine] = append(annotations[location.StartLine], item)
 		}
 		break
+	}
+	for _, item := range document.SDKs {
+		if item.Name != sdkName {
+			continue
+		}
+		reasons := make(map[string]string)
+		for _, r := range document.Suppressions {
+			reasons[r.ID] = r.Reason
+		}
+		for _, f := range item.Findings {
+			if f.SuppressedBy == "" {
+				continue
+			}
+			for _, e := range f.Evidence {
+				loc := e.ValueLocation
+				if loc == nil {
+					loc = e.Location
+				}
+				if loc == nil || tuiRiskPath(loc.Path, sdkName) != file {
+					continue
+				}
+				value := e.Value
+				if value == "" {
+					value = e.Expression
+				}
+				annotations[loc.StartLine] = append(annotations[loc.StartLine], tuiRisk{RuleID: f.SuppressedBy, Kind: "suppressed", ID: f.ID, Title: f.SuppressedBy + " — " + reasons[f.SuppressedBy], Value: value, ValueLocation: e.ValueLocation})
+
+			}
+		}
 	}
 	return annotations
 }
@@ -125,7 +155,7 @@ func sameTUIRiskEvidence(left, right tuiRisk) bool {
 	return *left.ValueLocation == *right.ValueLocation
 }
 
-func tuiSemanticGapLocation(document *report.Document, sdkName string, hook sdk.HookName, operationID string) *shell.Location {
+func tuiScanOperationLocation(document *report.Document, sdkName string, hook sdk.HookName, operationID string) *shell.Location {
 	if operationID == "" {
 		return nil
 	}
@@ -201,7 +231,7 @@ func tuiTreeRisks(document *report.Document, sdkName string) map[string]string {
 			}
 		}
 		for _, gap := range assessment.Coverage.Semantics.Gaps {
-			location := tuiSemanticGapLocation(document, sdkName, gap.Hook, gap.OperationID)
+			location := tuiScanOperationLocation(document, sdkName, gap.Hook, gap.OperationID)
 			if location == nil || location.StartLine < 1 {
 				continue
 			}
@@ -240,6 +270,61 @@ func tuiRiskSeverityRank(level string) int {
 	}
 }
 
+type previewRiskCursor struct {
+	RuleID string
+	Line   int
+	ID     string
+}
+
+func (m *tuiExplorer) selectPreviewRisk(forward bool) {
+	p := m.Preview
+	if p == nil || p.DetailKind != "" {
+		return
+	}
+	if m.Scan == nil {
+		m.Message = "Scan result unavailable"
+		return
+	}
+	annotations := risksForPreview(m.Scan, m.SDKs[m.SelectedSDK].Name, p.Path)
+	var targets []previewRiskCursor
+	var lines []int
+	for line := range annotations {
+		lines = append(lines, line)
+	}
+	sort.Ints(lines)
+	for _, line := range lines {
+		seen := make(map[previewRiskCursor]bool)
+		for _, risk := range annotations[line] {
+			target := previewRiskCursor{risk.RuleID, line, risk.ID}
+			if (risk.Kind == "risk" || risk.Kind == "suppressed") && !seen[target] {
+				targets = append(targets, target)
+				seen[target] = true
+			}
+		}
+	}
+	if len(targets) == 0 {
+		m.Message = "No risks in this file"
+		return
+	}
+	index := sort.Search(len(targets), func(i int) bool { return targets[i].Line >= p.Scroll+1 })
+	if !forward && (index == len(targets) || targets[index].Line > p.Scroll+1) {
+		index--
+	}
+	for i, target := range targets {
+		if target == p.SelectedRisk {
+			if forward {
+				index = i + 1
+			} else {
+				index = i - 1
+			}
+			break
+		}
+	}
+	p.SelectedRisk = targets[max(0, min(index, len(targets)-1))]
+	p.Scroll = p.SelectedRisk.Line - 1
+	m.Message = ""
+}
+
 // tuiPreviewRows counts terminal rows, not source lines. Scroll remains a source
 // line index, so inserted risk labels cannot change navigation semantics.
 func tuiPreviewRows(preview *tuiPreview, annotations map[int][]tuiRisk, width, height int) []string {
@@ -261,8 +346,17 @@ func tuiPreviewRows(preview *tuiPreview, annotations map[int][]tuiRisk, width, h
 			// A finding may have several evidence values on the same line.
 			// Display its label once, but retain every value for highlighting.
 			seen := make(map[string]bool)
+			if preview.SelectedRisk.Line == i+1 {
+				// Keep the cursor visible even when one line has more labels than screen rows.
+				atLine = append([]tuiRisk(nil), atLine...)
+				sort.SliceStable(atLine, func(a, b int) bool {
+					isSelected := func(r tuiRisk) bool { return preview.SelectedRisk == (previewRiskCursor{r.RuleID, i + 1, r.ID}) }
+					return isSelected(atLine[a]) && !isSelected(atLine[b])
+				})
+			}
 			for _, risk := range atLine {
-				if risk.HighlightOnly {
+				selected := preview.SelectedRisk == (previewRiskCursor{risk.RuleID, i + 1, risk.ID})
+				if risk.HighlightOnly && !selected {
 					continue
 				}
 				key := risk.Kind + "\x00" + risk.ID + "\x00" + risk.Title + "\x00" + risk.Severity + fmt.Sprint(risk.Score)
@@ -270,15 +364,21 @@ func tuiPreviewRows(preview *tuiPreview, annotations map[int][]tuiRisk, width, h
 					continue
 				}
 				seen[key] = true
-				label := fmt.Sprintf(" #Risk > %s, %s, score=%d/100", risk.Title, risk.Severity, risk.Score)
+				label := fmt.Sprintf(" #Risk > [%s] %s, %s, score=%d/100", risk.ID, risk.Title, risk.Severity, risk.Score)
 				if risk.Derivation != "" {
 					label += fmt.Sprintf(", evidence=%s", risk.Derivation)
 				}
 				if risk.Resolution != "" && risk.Resolution != analysis.Resolved {
 					label += fmt.Sprintf(", resolution=%s", risk.Resolution)
 				}
+				if risk.Kind == "suppressed" {
+					label = fmt.Sprintf(" #Suppressed > %s [%s]", risk.ID, risk.Title)
+				}
 				if risk.Kind == "semantic-gap" {
 					label = fmt.Sprintf(" #Semantic Gap > [%s] %s", risk.ID, risk.Title)
+				}
+				if selected {
+					label = "❯" + label
 				}
 				rows = append(rows, report.ColorReviewPriority(fitLine(safeTUILabel(label), width), risk.Severity))
 				if len(rows) == height {
@@ -308,11 +408,25 @@ func tuiPreviewRows(preview *tuiPreview, annotations map[int][]tuiRisk, width, h
 
 func highlightTUIRiskValuesAtLine(contents, source string, risks []tuiRisk, line int) string {
 	var exact []tuiHighlightMatch
-	var fallback []tuiRisk
+	var active, suppressed []tuiHighlightMatch
 	for _, risk := range risks {
 		location := risk.ValueLocation
 		if location == nil {
-			fallback = append(fallback, risk)
+			value := strings.ReplaceAll(risk.Value, "\t", "    ")
+			for offset := 0; value != "" && offset < len(contents); {
+				index := strings.Index(contents[offset:], value)
+				if index < 0 {
+					break
+				}
+				start := offset + index
+				match := tuiHighlightMatch{start, start + len(value), risk.Severity}
+				if risk.Kind == "suppressed" {
+					suppressed = append(suppressed, match)
+				} else {
+					active = append(active, match)
+				}
+				offset = match.end
+			}
 			continue
 		}
 		if line < location.StartLine || line > location.EndLine || location.EndLine < location.StartLine {
@@ -328,13 +442,27 @@ func highlightTUIRiskValuesAtLine(contents, source string, risks []tuiRisk, line
 		if start < 0 || end <= start || start >= len(contents) || end > len(contents) {
 			continue
 		}
-		exact = append(exact, tuiHighlightMatch{start: start, end: end, severity: risk.Severity})
+		match := tuiHighlightMatch{start, end, risk.Severity}
+		if risk.Kind == "suppressed" {
+			suppressed = append(suppressed, match)
+		} else {
+			exact = append(exact, match)
+		}
 	}
-	styled := highlightTUIRanges(contents, exact)
-	if len(fallback) == 0 {
-		return styled
+	active = append(exact, active...)
+	for _, match := range suppressed {
+		overlap := false
+		for _, other := range active {
+			if other.severity != "" && match.start < other.end && other.start < match.end {
+				overlap = true
+				break
+			}
+		}
+		if !overlap {
+			active = append(active, match)
+		}
 	}
-	return highlightTUIRiskValues(styled, fallback)
+	return highlightTUIRanges(contents, active)
 }
 
 func tuiDisplayOffset(source string, sourceOffset int) int {
@@ -352,7 +480,10 @@ func highlightTUIRanges(contents string, ranges []tuiHighlightMatch) string {
 		if ranges[i].start != ranges[j].start {
 			return ranges[i].start < ranges[j].start
 		}
-		return ranges[i].end > ranges[j].end
+		if ranges[i].end != ranges[j].end {
+			return ranges[i].end > ranges[j].end
+		}
+		return tuiRiskSeverityRank(ranges[i].severity) > tuiRiskSeverityRank(ranges[j].severity)
 	})
 	var result strings.Builder
 	last := 0
@@ -363,52 +494,6 @@ func highlightTUIRanges(contents string, ranges []tuiHighlightMatch) string {
 		result.WriteString(contents[last:item.start])
 		result.WriteString(report.ColorReviewPriority(contents[item.start:item.end], item.severity))
 		last = item.end
-	}
-	result.WriteString(contents[last:])
-	return result.String()
-}
-
-// highlightTUIRiskValues colors every distinct evidence value present in a
-// source line, without allowing overlapping matches to corrupt ANSI sequences.
-func highlightTUIRiskValues(contents string, risks []tuiRisk) string {
-	type match struct {
-		start, end int
-		severity   string
-	}
-	var matches []match
-	for _, risk := range risks {
-		value := strings.ReplaceAll(risk.Value, "\t", "    ")
-		if value == "" {
-			continue
-		}
-		for offset := 0; offset < len(contents); {
-			index := strings.Index(contents[offset:], value)
-			if index < 0 {
-				break
-			}
-			start := offset + index
-			matches = append(matches, match{start, start + len(value), risk.Severity})
-			offset = start + len(value)
-		}
-	}
-	sort.Slice(matches, func(i, j int) bool {
-		if matches[i].start != matches[j].start {
-			return matches[i].start < matches[j].start
-		}
-		if matches[i].end != matches[j].end {
-			return matches[i].end > matches[j].end
-		}
-		return tuiRiskSeverityRank(matches[i].severity) > tuiRiskSeverityRank(matches[j].severity)
-	})
-	var result strings.Builder
-	last := 0
-	for _, m := range matches {
-		if m.start < last {
-			continue
-		}
-		result.WriteString(contents[last:m.start])
-		result.WriteString(report.ColorReviewPriority(contents[m.start:m.end], m.severity))
-		last = m.end
 	}
 	result.WriteString(contents[last:])
 	return result.String()

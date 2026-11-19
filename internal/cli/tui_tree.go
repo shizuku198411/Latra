@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 
@@ -245,7 +246,7 @@ func (m *tuiExplorer) enter() {
 
 func (m *tuiExplorer) back() {
 	if m.Preview != nil {
-		m.Preview = nil
+		m.Preview = m.Preview.Previous
 		m.Message = ""
 		return
 	}
@@ -476,12 +477,12 @@ func (m *tuiExplorer) openWorkshopInterfaces() {
 }
 
 func (m *tuiExplorer) openAssessment() {
+	if m.Scanning {
+		m.Message = "Scan in progress"
+		return
+	}
 	if m.Scan == nil {
-		if m.Scanning {
-			m.Message = "Scan in progress"
-		} else {
-			m.Message = "Scan result unavailable"
-		}
+		m.Message = "Scan result unavailable"
 		return
 	}
 	var output bytes.Buffer
@@ -516,6 +517,20 @@ func (m *tuiExplorer) openAssessment() {
 	}
 	if err != nil {
 		m.Message = "Cannot display assessment: " + err.Error()
+		return
+	}
+	var sdkNames []string
+	for _, item := range assessment.BySDK {
+		sdkNames = append(sdkNames, item.SDK)
+	}
+	var rules []finding.SuppressionResult
+	for _, r := range m.Scan.Suppressions {
+		if !workshop || slices.Contains(sdkNames, r.SDK) {
+			rules = append(rules, r)
+		}
+	}
+	if err := report.WriteSuppressionSummary(&output, rules, true); err != nil {
+		m.Message = err.Error()
 		return
 	}
 	lines := strings.Split(strings.Trim(output.String(), "\n"), "\n")
@@ -566,6 +581,7 @@ func (m *tuiExplorer) move(delta int) {
 		return
 	}
 	if m.Preview != nil {
+		m.Preview.SelectedRisk = previewRiskCursor{}
 		m.Preview.Scroll = max(0, min(max(0, len(m.Preview.Lines)-1), m.Preview.Scroll+delta))
 		return
 	}

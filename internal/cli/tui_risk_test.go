@@ -34,11 +34,11 @@ func TestTUIRiskAnnotationsMatchSDKFileAndLine(t *testing.T) {
 		t.Fatalf("deduplication failed: %+v", risks)
 	}
 	preview := &tuiPreview{Lines: []string{"    1  cat <<EOF >/etc/profile.d/go.sh", "    2  export PATH=foo"}}
-	rows := tuiPreviewRows(preview, risks, 100, 10)
+	rows := tuiPreviewRows(preview, risks, 140, 10)
 	if len(rows) != 3 {
 		t.Fatalf("rows: %#v", rows)
 	}
-	if !strings.Contains(rows[0], "#Risk > Shell environment profile is written during base setup, low, score=10/100") {
+	if !strings.Contains(rows[0], "#Risk > [risk.profile-environment-write] Shell environment profile is written during base setup, low, score=10/100") {
 		t.Fatalf("labels: %#v", rows)
 	}
 	if !strings.Contains(rows[1], "\x1b[36m/etc/profile.d/go.sh\x1b[0m") {
@@ -48,7 +48,7 @@ func TestTUIRiskAnnotationsMatchSDKFileAndLine(t *testing.T) {
 		t.Fatalf("unrelated line colored: %q", rows[2])
 	}
 	preview.Scroll = 1
-	rows = tuiPreviewRows(preview, risks, 100, 10)
+	rows = tuiPreviewRows(preview, risks, 140, 10)
 	if len(rows) != 1 || !strings.Contains(rows[0], "2  export") {
 		t.Fatalf("source-line scrolling: %#v", rows)
 	}
@@ -60,7 +60,7 @@ func TestTUIRiskLabelShowsEvidenceDerivation(t *testing.T) {
 		Scopes: []finding.RiskScope{{SDK: "go", Location: &shell.Location{Path: "go/hooks/setup-project", StartLine: 1},
 			Expression: "$URL", Resolution: analysis.Unknown, Derivation: finding.EvidenceUnresolved}},
 	}}}}}}
-	rows := tuiPreviewRows(&tuiPreview{Lines: []string{"    1  curl \"$URL\""}}, risksForPreview(document, "go", "hooks/setup-project"), 120, 4)
+	rows := tuiPreviewRows(&tuiPreview{Lines: []string{"    1  curl \"$URL\""}}, risksForPreview(document, "go", "hooks/setup-project"), 150, 4)
 	if len(rows) < 1 || !strings.Contains(rows[0], "evidence=unresolved, resolution=Unknown") {
 		t.Fatalf("evidence label = %#v", rows)
 	}
@@ -310,5 +310,19 @@ func TestTUIValueLocationAccountsForDisplayedTabExpansion(t *testing.T) {
 	rows := tuiPreviewRows(preview, annotations, 120, 3)
 	if len(rows) != 2 || !strings.Contains(rows[1], "install \x1b[33mopensbi\x1b[0m") {
 		t.Fatalf("tab-adjusted highlight = %#v", rows)
+	}
+}
+
+func TestSuppressedCommandHighlight(t *testing.T) {
+	loc := &shell.Location{Path: "demo/hooks/setup-project", StartLine: 2, StartColumn: 1, EndLine: 2, EndColumn: 10}
+	doc := &report.Document{SDKs: []report.SDK{{Name: "demo", Findings: []finding.Finding{{ID: "risk.persistence-write", SuppressedBy: "accepted", Evidence: []finding.Evidence{{Value: "systemctl", ValueLocation: loc}, {Expression: "service", Location: loc}}}}}}}
+	risks := risksForPreview(doc, "demo", "hooks/setup-project")[2]
+	const code = "systemctl enable service"
+	if got := highlightTUIRiskValuesAtLine(code, code, risks, 2); got != "\x1b[32msystemctl\x1b[0m enable \x1b[32mservice\x1b[0m" {
+		t.Fatalf("suppressed highlights: %q", got)
+	}
+	risks = append(risks, tuiRisk{Kind: "risk", Severity: "high", Value: "systemctl"})
+	if got := highlightTUIRiskValuesAtLine(code, code, risks, 2); !strings.HasPrefix(got, "\x1b[31msystemctl\x1b[0m") {
+		t.Fatalf("overlapping active risk: %q", got)
 	}
 }

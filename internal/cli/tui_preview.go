@@ -9,6 +9,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/shizuku198411/Latra/internal/finding"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"github.com/shizuku198411/Latra/internal/sdkcache"
 )
@@ -17,13 +18,17 @@ import (
 const maxTUIPreviewBytes = 1 << 20
 
 type tuiPreview struct {
-	DetailKind  string
-	Colored     bool
-	Path        string
-	Status      string
-	Lines       []string
-	SourceLines []string
-	Scroll      int
+	DeleteRule   *finding.SuppressionRule
+	Rules        []finding.SuppressionRule
+	Previous     *tuiPreview
+	SelectedRisk previewRiskCursor
+	DetailKind   string
+	Colored      bool
+	Path         string
+	Status       string
+	Lines        []string
+	SourceLines  []string
+	Scroll       int
 }
 
 func loadTUIPreview(entry sdkcache.Entry, name string) (tuiPreview, error) {

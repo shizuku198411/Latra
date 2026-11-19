@@ -16,10 +16,13 @@ import (
 	"github.com/shizuku198411/Latra/internal/source"
 )
 
+const InvalidSuppressionCode = "invalid-suppression-rules"
+
 const SchemaVersion = "6"
 
 // Document is the stable, versioned JSON inventory representation.
 type Document struct {
+	Suppressions         []finding.SuppressionResult   `json:"suppressions,omitempty"`
 	SchemaVersion        string                        `json:"schemaVersion"`
 	Scanner              Scanner                       `json:"scanner"`
 	FindingDB            finding.Database              `json:"findingDatabase"`
@@ -279,6 +282,9 @@ func NewDocumentWithOptions(result *source.Result, options DocumentOptions) Docu
 		CompositionRelations: compositionRelations,
 		Diagnostics:          []DocumentDiagnostic{},
 	}
+	if result.SuppressionWarning != "" {
+		document.Diagnostics = append(document.Diagnostics, DocumentDiagnostic{Code: InvalidSuppressionCode, Severity: string(sdk.SeverityWarning), Phase: "suppression", Message: result.SuppressionWarning})
+	}
 	if options.IncludeTopology || options.IncludeInterfaceReviews {
 		for _, configuration := range result.Configurations {
 			graph := interfacegraph.Build(configuration, result.SDKs)
@@ -300,6 +306,9 @@ func NewDocumentWithOptions(result *source.Result, options DocumentOptions) Docu
 		return document.Workshops[i].Definition < document.Workshops[j].Definition
 	})
 
+	for _, rule := range result.SuppressionRules {
+		document.Suppressions = append(document.Suppressions, finding.SuppressionResult{SuppressionRule: rule, Status: "unmatched"})
+	}
 	items := append([]sdk.SDK(nil), result.SDKs...)
 	assessmentInputs := make([]finding.AssessmentInput, 0, len(items))
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
@@ -315,7 +324,7 @@ func NewDocumentWithOptions(result *source.Result, options DocumentOptions) Docu
 			LifecycleRelations: append([]sdk.LifecycleRelation{}, item.LifecycleRelations...),
 		}
 		reported.Findings = append(reported.Findings, compositionBySDK[item.Name]...)
-		assessmentInputs = append(assessmentInputs, finding.AssessmentInput{SDK: item, Findings: reported.Findings})
+		assessmentInputs = append(assessmentInputs, finding.AssessmentInput{SDK: item, Findings: finding.ApplySuppressions(reported.Findings, document.Suppressions)})
 		for _, diagnostic := range item.Diagnostics {
 			document.Diagnostics = append(document.Diagnostics, DocumentDiagnostic{
 				SDK: item.Name, Code: diagnostic.Code, Severity: string(diagnostic.Severity),

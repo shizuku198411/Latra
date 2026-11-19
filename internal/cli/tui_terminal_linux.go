@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 	"unsafe"
 
 	"github.com/shizuku198411/Latra/internal/finding"
@@ -78,12 +79,23 @@ func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) 
 		err      error
 	}
 	scanDone := make(chan scanOutcome, 1)
-	model.Scanning = true
-	model.ScanStatus = "Scanning..."
-	go func() {
-		document, scanErr := scanExplorer(project, resolver)
-		scanDone <- scanOutcome{document: document, err: scanErr}
-	}()
+	startScan := func(status string) {
+		model.Scanning = true
+		model.ScanStatus = status
+		go func() {
+			document, scanErr := scanExplorer(project, resolver)
+			scanDone <- scanOutcome{document: document, err: scanErr}
+		}()
+	}
+	startScan("Scanning...")
+	finishRuleEdit := func(status string) {
+		model.back()
+		model.Preview.SelectedRisk = previewRiskCursor{}
+		startScan(status)
+	}
+	previewWidth := 80
+	var editingReason bool
+	var reason []rune
 	draw := func() {
 		var size struct{ Row, Col, X, Y uint16 }
 		_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&size)))
@@ -91,6 +103,7 @@ func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) 
 		if errno != 0 || height == 0 || width == 0 {
 			height, width = 24, 80
 		}
+		previewWidth = width
 		var b strings.Builder
 		name := "SDK Explorer"
 		if model.InTopology || (model.InTree && len(model.History) > 0 && model.History[len(model.History)-1].InTopology) {
@@ -211,7 +224,9 @@ func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) 
 			}
 		}
 		b.WriteString(fmt.Sprintf("\x1b[%d;1H", max(1, height-2)))
-		if model.Message != "" {
+		if editingReason {
+			b.WriteString(" Reason: " + string(reason[max(0, len(reason)-max(1, width-10)):]) + "▏\r\n")
+		} else if model.Message != "" {
 			b.WriteString(fitLine(" "+model.Message, width) + "\r\n")
 		} else if model.Preview != nil {
 			b.WriteString(fitLine(" "+model.Preview.Status, width) + "\r\n")
@@ -221,6 +236,10 @@ func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) 
 		help := " ↑/↓: move    Enter/→: open SDK    Esc/←: workshops    q: quit"
 		if model.Preview != nil {
 			help = " ↑/↓: scroll    Esc/←: back    q: quit"
+			if model.Preview.DetailKind == "" {
+				help = " ↑/↓: scroll  j/k: select risk  r: suppression rule review  Esc: back"
+			}
+
 		} else if model.InterfacesActive {
 			if model.VisualInterfaces {
 				help = " ↑/↓: select  j/k: scroll  Enter: details  v: text  Esc: back  q: quit"
@@ -232,6 +251,16 @@ func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) 
 			if len(model.History) == 0 {
 				help = " ↑/↓: move    Enter/→: open Workshop    s: SDKs    Esc/←: quit"
 			}
+		}
+		if editingReason {
+			help = " Enter: save    Esc: cancel    Backspace: delete"
+			if model.Message != "" {
+				help += "    " + model.Message
+			}
+		} else if model.Preview != nil && model.Preview.DeleteRule != nil {
+			help = " d: delete entire rule    Esc: back"
+		} else if model.Preview != nil && len(model.Preview.Rules) > 0 {
+			help = " a: add suppression rule    ↑/↓: scroll    Esc: back"
 		}
 		b.WriteString(fitLine(help, width))
 		fmt.Fprint(tty, b.String())
@@ -254,17 +283,82 @@ func runTerminalExplorer(inventory tuiInventory, resolver source.StoreResolver) 
 		if reader.Buffered() == 0 && !ttyInputReady(fd, 100*time.Millisecond) {
 			continue
 		}
-		key, err := reader.ReadByte()
+		key, _, err := reader.ReadRune()
 		if err != nil {
 			return err
 		}
+		if editingReason {
+			switch key {
+			case 3:
+				return nil
+			case 27:
+				// Consume terminal cursor-key sequences without leaving the prompt.
+				if reader.Buffered() > 0 || ttyInputReady(fd, 80*time.Millisecond) {
+					if prefix, _ := reader.Peek(1); len(prefix) > 0 && (prefix[0] == '[' || prefix[0] == 'O') {
+						reader.ReadByte()
+						for {
+							ch, err := reader.ReadByte()
+							if err != nil {
+								return err
+							}
+							if ch >= 0x40 && ch <= 0x7e {
+								break
+							}
+						}
+						continue
+					}
+				}
+				editingReason = false
+				model.Message = ""
+			case 127, 8:
+				if len(reason) > 0 {
+					reason = reason[:len(reason)-1]
+				}
+			case '\r', '\n':
+				if strings.TrimSpace(string(reason)) == "" {
+					model.Message = "A reason is required"
+					break
+				}
+				err := saveReviewedRules(project, model.Preview.Rules, string(reason))
+				editingReason = false
+				if err != nil {
+					model.Message = safeTUILabel(err.Error())
+				} else {
+					finishRuleEdit("Rule saved. Rescanning...")
+				}
+			default:
+				if unicode.IsPrint(key) {
+					reason = append(reason, key)
+					model.Message = ""
+				}
+			}
+			draw()
+			continue
+		}
 		move := 0
 		switch key {
+		case 'd':
+			if p := model.Preview; p != nil && p.DeleteRule != nil {
+				if err := deleteReviewedRule(project, *p.DeleteRule); err != nil {
+					model.Message = safeTUILabel(err.Error())
+				} else {
+					finishRuleEdit("Rule deleted. Rescanning...")
+				}
+			}
+		case 'a':
+			if model.Preview != nil && len(model.Preview.Rules) > 0 {
+				reason = nil
+				editingReason = true
+				model.Message = ""
+			}
+		case 'r':
+			model.previewSuppression(previewWidth)
 		case 's':
 			model.openSDKList()
 		case 'v':
 			model.toggleInterfaceView()
 		case 'j', 'k':
+			model.selectPreviewRisk(key == 'j')
 			if model.InterfacesActive && model.VisualInterfaces && model.Preview == nil {
 				if key == 'j' {
 					model.VisualScroll++

@@ -29,6 +29,7 @@ func DatabaseInfo() Database {
 func AnalyzeSDK(item sdk.SDK) []Finding {
 	config := findingconfig.MustDefault()
 	var findings []Finding
+	operations := make(map[*sdk.Hook]map[string]analysis.Operation)
 	seen := make(map[string]bool)
 	for _, rule := range config.Rules {
 		for _, matched := range evaluate(item, rule) {
@@ -55,7 +56,15 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 			if matched.confidence != "" {
 				confidence = lowerConfidence(confidence, matched.confidence)
 			}
-			findings = append(findings, Finding{
+			var commandLine int
+			if rule.Kind == string(KindRisk) && matched.hook != nil && matched.hook.Analysis != nil {
+				h := matched.hook
+				if operations[h] == nil {
+					operations[h] = operationMap(h.Analysis.Operations)
+				}
+				commandLine = singleCommandLine(item.Name, h, matched.evidence, operations[h])
+			}
+			findings = append(findings, Finding{CommandLine: commandLine,
 				ID: rule.ID, Kind: Kind(rule.Kind), Family: rule.Family, Title: rule.Title,
 				Severity: rule.Severity, Strength: rule.Strength, Confidence: confidence, Weight: rule.Weight,
 				Scope: Scope{SDK: item.Name, Hook: hookName}, Context: context, Evidence: matched.evidence,
@@ -67,6 +76,25 @@ func AnalyzeSDK(item sdk.SDK) []Finding {
 	findings = suppressSubsumedFindings(findings)
 	sortFindings(findings)
 	return findings
+}
+
+// Only offer a command selector when all evidence describes one operation in
+// the declared hook. Cross-operation and included-file findings need hook scope.
+func singleCommandLine(name string, hook *sdk.Hook, evidence []Evidence, ops map[string]analysis.Operation) int {
+	if len(evidence) == 0 {
+		return 0
+	}
+	id := evidence[0].OperationID
+	op, ok := ops[id]
+	if id == "" || !ok || op.Kind != analysis.OperationCommand || op.Location.Path != filepath.Join(name, hook.Path) {
+		return 0
+	}
+	for _, e := range evidence {
+		if e.OperationID != id || (e.FromOperationID != "" && e.FromOperationID != id) || (e.ToOperationID != "" && e.ToOperationID != id) || (e.SDK != "" && e.SDK != name) || len(e.Relations) != 0 {
+			return 0
+		}
+	}
+	return op.Location.StartLine
 }
 
 func unresolvedArgumentEvidence(hook *sdk.Hook, evidence []Evidence) []Evidence {
