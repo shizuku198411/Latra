@@ -81,6 +81,9 @@ func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextO
 	if err := writeObservations(writer, document); err != nil {
 		return err
 	}
+	if err := writeSuppressions(writer, document, true); err != nil {
+		return err
+	}
 	if err := writeAssessment(writer, document.Assessment, options.Color); err != nil {
 		return err
 	}
@@ -108,7 +111,66 @@ func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, option
 			}
 		}
 	}
+	if result.SuppressionWarning != "" {
+		if _, err := fmt.Fprintln(writer, "Warning:", interfaceview.Safe(result.SuppressionWarning)); err != nil {
+			return err
+		}
+	}
+	if err := writeSuppressions(writer, document, false); err != nil {
+		return err
+	}
 	return writeAssessment(writer, document.Assessment, options.Color)
+}
+
+func writeSuppressions(w io.Writer, doc Document, verbose bool) error {
+	if err := WriteSuppressionSummary(w, doc.Suppressions, verbose); err != nil {
+		return err
+	}
+	if verbose {
+		for _, item := range doc.SDKs {
+			for _, f := range item.Findings {
+				if f.SuppressedBy == "" {
+					continue
+				}
+				where := string(f.Scope.Hook)
+				for _, e := range f.Evidence {
+					if e.Location != nil {
+						where = fmt.Sprintf("%s:%d:%d", interfaceview.Safe(e.Location.Path), e.Location.StartLine, e.Location.StartColumn)
+						break
+					}
+				}
+				if _, err := fmt.Fprintf(w, "  %s %s [%s] at %s\n", interfaceview.Safe(item.Name), f.ID, interfaceview.Safe(f.SuppressedBy), where); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// WriteSuppressionSummary renders assessment adjustments and rule status.
+func WriteSuppressionSummary(w io.Writer, rules []finding.SuppressionResult, verbose bool) error {
+	if len(rules) == 0 {
+		return nil
+	}
+	count, applied := 0, 0
+	for _, r := range rules {
+		count += r.Count
+		if r.Count > 0 {
+			applied++
+		}
+	}
+	if _, err := fmt.Fprintf(w, "\nSuppressed: %d risk findings (%d applied rules)\n", count, applied); err != nil {
+		return err
+	}
+	for _, r := range rules {
+		if verbose || r.Status != "applied" {
+			if _, err := fmt.Fprintf(w, "  %s [%s] %s %s/%s (%d): %s\n", interfaceview.Safe(r.ID), r.Status, r.Risk, interfaceview.Safe(r.SDK), r.Hook, r.Count, interfaceview.Safe(r.Reason)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func writeObservations(writer io.Writer, document Document) error {
@@ -704,6 +766,9 @@ func writeDocumentDiagnostics(writer io.Writer, diagnostics []DocumentDiagnostic
 	}
 	for _, diagnostic := range diagnostics {
 		context := diagnostic.SDK
+		if context == "" {
+			context = "Project"
+		}
 		if diagnostic.Hook != "" {
 			context += "/" + string(diagnostic.Hook)
 		}
@@ -712,7 +777,7 @@ func writeDocumentDiagnostics(writer io.Writer, diagnostics []DocumentDiagnostic
 			phase = " (" + diagnostic.Phase + ")"
 		}
 		if _, err := fmt.Fprintf(writer, "  %s: [%s] %s%s: %s\n",
-			context, diagnostic.Severity, diagnostic.Code, phase, diagnostic.Message); err != nil {
+			context, diagnostic.Severity, diagnostic.Code, phase, interfaceview.Safe(diagnostic.Message)); err != nil {
 			return err
 		}
 	}

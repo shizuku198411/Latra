@@ -28,6 +28,12 @@ func (m *tuiExplorer) finishScan(document *report.Document, err error) {
 		} else {
 			m.ScanStatus = "Scan complete"
 		}
+		for _, d := range document.Diagnostics {
+			if d.Code == report.InvalidSuppressionCode {
+				m.ScanStatus += " · " + safeTUILabel(d.Message)
+				break
+			}
+		}
 	} else if err != nil {
 		// Preserve the last successful scan when a new attempt fails.
 		m.ScanStatus = "Scan failed: " + err.Error()

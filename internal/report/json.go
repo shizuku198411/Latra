@@ -20,15 +20,17 @@ func WriteJSON(writer io.Writer, result *source.Result) error {
 func WriteJSONSummary(writer io.Writer, result *source.Result) error {
 	document := NewDocumentWithOptions(result, DocumentOptions{})
 	compact := struct {
-		SchemaVersion string               `json:"schemaVersion"`
-		Scanner       Scanner              `json:"scanner"`
-		FindingDB     finding.Database     `json:"findingDatabase"`
-		Input         Input                `json:"input"`
-		Workshops     []source.Workshop    `json:"workshops"`
-		Summary       Summary              `json:"summary"`
-		Assessment    finding.Assessment   `json:"assessment"`
-		Diagnostics   []DocumentDiagnostic `json:"diagnostics"`
+		Suppressions  []finding.SuppressionResult `json:"suppressions,omitempty"`
+		SchemaVersion string                      `json:"schemaVersion"`
+		Scanner       Scanner                     `json:"scanner"`
+		FindingDB     finding.Database            `json:"findingDatabase"`
+		Input         Input                       `json:"input"`
+		Workshops     []source.Workshop           `json:"workshops"`
+		Summary       Summary                     `json:"summary"`
+		Assessment    finding.Assessment          `json:"assessment"`
+		Diagnostics   []DocumentDiagnostic        `json:"diagnostics"`
 	}{
+		Suppressions:  document.Suppressions,
 		SchemaVersion: document.SchemaVersion,
 		Scanner:       document.Scanner,
 		FindingDB:     document.FindingDB,

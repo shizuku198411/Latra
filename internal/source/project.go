@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/shizuku198411/Latra/internal/finding"
 	"github.com/shizuku198411/Latra/internal/sdk"
 	"go.yaml.in/yaml/v3"
 )
@@ -93,6 +94,17 @@ func readProject(ctx context.Context, projectPath string, limits sdk.Limits, res
 	}
 
 	result := &Result{Kind: InputProject, Root: projectPath}
+	if !includeUnsupported { // Explorer discovery reads only inventory; its scan loads the rules.
+		data, err := readBounded(root, finding.SuppressionPath, maxDefinitionBytes)
+		if err == nil {
+			result.SuppressionRules, err = finding.ParseSuppression(data)
+			if err != nil {
+				result.SuppressionWarning = fmt.Sprintf("Suppression rules ignored (%s): %v", finding.SuppressionPath, err)
+			}
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+	}
 	index := make(map[string]int)
 	for _, relative := range definitions {
 		content, err := readBounded(root, relative, maxDefinitionBytes)

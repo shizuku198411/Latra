@@ -10,6 +10,7 @@ Latra documentation is organized by audience and purpose.
   options, exit codes, and environment variables.
 - [Understanding scan output](user/report-output.md) — interpret inventory,
   observations, findings, diagnostics, and assessment results.
+- [Suppression rules](user/suppression-rules.md) — record expected SDK behavior in Explorer or YAML.
 
 ## Development documentation
 
