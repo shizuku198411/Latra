@@ -3,6 +3,9 @@ name: Publish snap
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - '.github/workflows/**'
   release:
     types: [published]
 
