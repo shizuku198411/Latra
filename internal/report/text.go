@@ -38,7 +38,10 @@ func WriteText(writer io.Writer, result *source.Result) error {
 
 // WriteTextWithOptions renders the complete SDK inventory with explicit text options.
 func WriteTextWithOptions(writer io.Writer, result *source.Result, options TextOptions) error {
-	document := NewDocument(result)
+	return textDocument(writer, NewDocument(result), options)
+}
+
+func textDocument(writer io.Writer, document Document, options TextOptions) error {
 	if _, err := fmt.Fprintf(writer, "Input\n  Kind: %s\n  Root: %s\n", document.Input.Kind, document.Input.Root); err != nil {
 		return err
 	}
@@ -97,7 +100,10 @@ func WriteTextSummary(writer io.Writer, result *source.Result) error {
 
 // WriteTextSummaryWithOptions renders the compact representation with explicit text options.
 func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, options TextOptions) error {
-	document := NewDocumentWithOptions(result, DocumentOptions{})
+	return textSummaryDocument(writer, NewDocumentWithOptions(result, DocumentOptions{}), options)
+}
+
+func textSummaryDocument(writer io.Writer, document Document, options TextOptions) error {
 	if _, err := fmt.Fprintf(writer, "Input\n  Kind: %s\n  Root: %s\n", document.Input.Kind, document.Input.Root); err != nil {
 		return err
 	}
@@ -111,8 +117,11 @@ func WriteTextSummaryWithOptions(writer io.Writer, result *source.Result, option
 			}
 		}
 	}
-	if result.SuppressionWarning != "" {
-		if _, err := fmt.Fprintln(writer, "Warning:", interfaceview.Safe(result.SuppressionWarning)); err != nil {
+	for _, diagnostic := range document.Diagnostics {
+		if diagnostic.Code != InvalidSuppressionCode {
+			continue
+		}
+		if _, err := fmt.Fprintln(writer, "Warning:", interfaceview.Safe(diagnostic.Message)); err != nil {
 			return err
 		}
 	}

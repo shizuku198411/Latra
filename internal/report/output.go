@@ -54,6 +54,30 @@ func WriteSummaryFile(path string, format Format, result *source.Result) (return
 	})
 }
 
+// WriteDocument renders a prepared assessment to stdout or atomically to a file.
+func WriteDocument(stdout io.Writer, path string, format Format, doc Document, verbose bool, options TextOptions) error {
+	render := func(w io.Writer) error {
+		switch format {
+		case FormatText:
+			if verbose {
+				return textDocument(w, doc, options)
+			}
+			return textSummaryDocument(w, doc, options)
+		case FormatJSON:
+			if verbose {
+				return encodeJSON(w, doc)
+			}
+			return jsonSummaryDocument(w, doc)
+		default:
+			return fmt.Errorf("unsupported report format %q", format)
+		}
+	}
+	if path == "-" {
+		return render(stdout)
+	}
+	return writeFile(path, render)
+}
+
 func writeFile(path string, serialize func(io.Writer) error) (returnErr error) {
 	directory := filepath.Dir(path)
 	temporary, err := os.CreateTemp(directory, ".latra-report-*")

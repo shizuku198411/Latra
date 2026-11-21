@@ -105,7 +105,7 @@ func TestReviewedPersistenceWorkflow(t *testing.T) {
 	}
 	for _, verbose := range []bool{false, true} {
 		var out bytes.Buffer
-		if err := writeReport(scanOptions{output: "-", format: report.FormatText, verbose: verbose}, &out, result); err != nil {
+		if err := writeReport(scanOptions{output: "-", format: report.FormatText, verbose: verbose}, &out, report.NewDocument(result)); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(out.String(), "Suppressed: 1") || strings.Contains(out.String(), rule.Reason) != verbose {
