@@ -451,8 +451,8 @@ func riskHighlights(findings []Finding) []RiskHighlight {
 		if highlights[i].Score != highlights[j].Score {
 			return highlights[i].Score > highlights[j].Score
 		}
-		if levelRank(highlights[i].Severity) != levelRank(highlights[j].Severity) {
-			return levelRank(highlights[i].Severity) > levelRank(highlights[j].Severity)
+		if LevelRank(highlights[i].Severity) != LevelRank(highlights[j].Severity) {
+			return LevelRank(highlights[i].Severity) > LevelRank(highlights[j].Severity)
 		}
 		return highlights[i].ID < highlights[j].ID
 	})
@@ -473,7 +473,7 @@ func scoreAxis(findings []Finding, kind Kind) ScoredAxis {
 		if kind == KindRisk {
 			level = item.Severity
 		}
-		if levelRank(level) > levelRank(maxLevel) {
+		if LevelRank(level) > LevelRank(maxLevel) {
 			maxLevel = level
 		}
 	}
@@ -704,7 +704,7 @@ func assuranceLevel(score int) string {
 	}
 }
 
-func levelRank(level string) int {
+func LevelRank(level string) int {
 	switch strings.ToLower(level) {
 	case "critical":
 		return 4

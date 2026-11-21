@@ -10,15 +10,22 @@ import (
 
 // WriteJSON writes one complete, indented JSON document.
 func WriteJSON(writer io.Writer, result *source.Result) error {
+	return encodeJSON(writer, NewDocumentWithOptions(result, DocumentOptions{IncludeTopology: true}))
+}
+
+func encodeJSON(writer io.Writer, value any) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(NewDocumentWithOptions(result, DocumentOptions{IncludeTopology: true}))
+	return encoder.Encode(value)
 }
 
 // WriteJSONSummary writes metadata and the project-wide summary without SDK details.
 func WriteJSONSummary(writer io.Writer, result *source.Result) error {
-	document := NewDocumentWithOptions(result, DocumentOptions{})
+	return jsonSummaryDocument(writer, NewDocumentWithOptions(result, DocumentOptions{}))
+}
+
+func jsonSummaryDocument(writer io.Writer, document Document) error {
 	compact := struct {
 		Suppressions  []finding.SuppressionResult `json:"suppressions,omitempty"`
 		SchemaVersion string                      `json:"schemaVersion"`
@@ -40,8 +47,5 @@ func WriteJSONSummary(writer io.Writer, result *source.Result) error {
 		Assessment:    document.Assessment,
 		Diagnostics:   document.Diagnostics,
 	}
-	encoder := json.NewEncoder(writer)
-	encoder.SetEscapeHTML(false)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(compact)
+	return encodeJSON(writer, compact)
 }

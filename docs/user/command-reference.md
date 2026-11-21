@@ -39,12 +39,23 @@ latra scan <PROJECT_OR_PROJECT_SDK> [options]
 | `--format text|json` | Select the report format. The default is `text`. |
 | `--output PATH`, `-o PATH` | Write the report to a file. Use `-` for stdout, which is the default. |
 | `--verbose` | Include complete SDK, file, hook, parse, operation, and capability details. |
+| `--fail-on CONDITION` | Fail when any SDK meets the Risk condition after suppression. |
 | `--quiet` | Suppress non-error status output, including the scan spinner. |
 | `--no-color` | Disable terminal colors where supported. |
 
 The `--format` and `--output` options also accept `--format=<value>` and `--output=<value>`.
 
 Use one root definition or `.workshop/*.yaml` definitions. Latra reports an error if both root filenames exist or if a root definition is mixed with `.workshop/*.yaml`. A `.workshop/` directory containing project SDKs can coexist with a root definition.
+
+### Risk conditions
+
+Quote the condition to protect the shell redirection operator. Accept one
+condition per scan: `risk>=80` (inclusive), `risk>90` (exclusive), or
+`risk>=high` (inclusive level). Scores range from 0 through 100 and levels
+increase from info to low, medium, high and critical. High begins at 50 and
+critical at 80. The check uses each SDK’s Risk in the report. An empty SDK
+inventory passes with zero evaluated. Reports are written before returning
+a threshold failure.
 
 ### Compact and verbose reports
 
@@ -375,7 +386,7 @@ Use `--output` when a scan or database report should be written directly to a fi
 | Code | Meaning |
 | --- | --- |
 | `0` | The command completed successfully. |
-| `1` | Scanning, resolution, analysis, file access, output, or database lookup failed. |
+| `1` | A scan met its Risk condition, or scanning, resolution, analysis, file access, output, or database lookup failed. |
 | `2` | Command syntax or option usage was invalid. |
 
 A scan can produce a report and still return `1` when hook parsing was incomplete. Always check the exit code when using Latra in automation.

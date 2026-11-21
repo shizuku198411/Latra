@@ -194,24 +194,22 @@ func runScan(args []string, stdout, stderr io.Writer, dependencies Dependencies)
 	result, parseErr := scanAndParse(context.Background(), options.path, dependencies.StoreResolver)
 	if result == nil {
 		progress.stop(false)
-		fmt.Fprintf(stderr, "latra: scan failed: %v\n", parseErr)
-		return exitError
+		return options.gate.finish(stderr, nil, fmt.Errorf("scan failed: %w", parseErr))
 	}
-	if parseErr != nil && options.output != "-" {
+	if parseErr != nil && options.output != "-" && options.gate == nil {
 		progress.stop(false)
 		fmt.Fprintf(stderr, "latra: scan incomplete: %v\n", parseErr)
 		return exitError
 	}
-	progress.stop(true)
-	if err := writeReport(options, stdout, result); err != nil {
-		fmt.Fprintf(stderr, "latra: write report: %v\n", err)
-		return exitError
+	progress.stop(parseErr == nil)
+	doc := report.NewDocumentWithOptions(result, report.DocumentOptions{IncludeTopology: options.verbose, IncludeInterfaceReviews: options.verbose && options.format == report.FormatText})
+	if err := writeReport(options, stdout, doc); err != nil {
+		return options.gate.finish(stderr, nil, fmt.Errorf("write report: %w", err))
 	}
 	if parseErr != nil {
-		fmt.Fprintf(stderr, "latra: scan incomplete: %v\n", parseErr)
-		return exitError
+		return options.gate.finish(stderr, nil, fmt.Errorf("scan incomplete: %w", parseErr))
 	}
-	return exitOK
+	return options.gate.finish(stderr, doc.Assessment.BySDK, nil)
 }
 
 // scanAndParse is shared by the scan command and the interactive Explorer.
@@ -225,6 +223,7 @@ func scanAndParse(ctx context.Context, path string, resolver source.StoreResolve
 }
 
 type scanOptions struct {
+	gate    *riskCondition
 	path    string
 	format  report.Format
 	output  string
@@ -238,6 +237,23 @@ func parseScanOptions(args []string) (scanOptions, error) {
 	for index := 0; index < len(args); index++ {
 		argument := args[index]
 		switch {
+		case argument == "--fail-on" || strings.HasPrefix(argument, "--fail-on="):
+			if options.gate != nil {
+				return options, fmt.Errorf("--fail-on may be specified only once")
+			}
+			value := strings.TrimPrefix(argument, "--fail-on=")
+			if argument == "--fail-on" {
+				index++
+				if index >= len(args) {
+					return options, fmt.Errorf("--fail-on requires a condition such as 'risk>=high'")
+				}
+				value = args[index]
+			}
+			gate, err := parseRiskCondition(value)
+			if err != nil {
+				return options, err
+			}
+			options.gate = gate
 		case argument == "--format":
 			index++
 			if index >= len(args) {
@@ -295,24 +311,9 @@ func parseScanOptions(args []string) (scanOptions, error) {
 	return options, nil
 }
 
-func writeReport(options scanOptions, stdout io.Writer, result *source.Result) error {
-	if options.output == "-" {
-		if options.format == report.FormatText {
-			textOptions := report.TextOptions{Color: !options.noColor && os.Getenv("NO_COLOR") == "" && isTerminalWriter(stdout)}
-			if !options.verbose {
-				return report.WriteTextSummaryWithOptions(stdout, result, textOptions)
-			}
-			return report.WriteTextWithOptions(stdout, result, textOptions)
-		}
-		if !options.verbose {
-			return report.WriteSummary(stdout, options.format, result)
-		}
-		return report.Write(stdout, options.format, result)
-	}
-	if !options.verbose {
-		return report.WriteSummaryFile(options.output, options.format, result)
-	}
-	return report.WriteFile(options.output, options.format, result)
+func writeReport(options scanOptions, stdout io.Writer, doc report.Document) error {
+	color := options.output == "-" && !options.noColor && os.Getenv("NO_COLOR") == "" && isTerminalWriter(stdout)
+	return report.WriteDocument(stdout, options.output, options.format, doc, options.verbose, report.TextOptions{Color: color})
 }
 
 func usageError(stderr io.Writer, format string, args ...any) int {
@@ -350,6 +351,7 @@ Cache:
 Options:
   --format text|json  Report format (default: text)
   --output, -o PATH   Write report to PATH or stdout with - (default: -)
+  --fail-on CONDITION Fail when an SDK matches e.g. 'risk>=high' or 'risk>90'
   --no-color          Disable terminal colors
   --quiet             Suppress non-error status output
   --verbose           Include complete SDK, file, hook, and analysis details
